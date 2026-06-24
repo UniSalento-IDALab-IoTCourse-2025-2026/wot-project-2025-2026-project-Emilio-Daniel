@@ -1,0 +1,24 @@
+patient:
+  id: patient-001
+
+window:
+  minutes: 15
+  timezone: Europe/Rome
+
+paths:
+  latest_window_csv: data/processed/latest_window.csv
+  baseline_csv: data/processed/baseline.csv
+
+fitbit:
+  enabled: false
+  token_file: config/fitbit_token.json
+  user_id: "-"
+  api_base_url: https://api.fitbit.com
+
+ble:
+  enabled: false
+  raw_csv: data/raw/ble_samples.csv
+
+shelly:
+  enabled: false
+  raw_csv: data/raw/shelly_samples.csv
