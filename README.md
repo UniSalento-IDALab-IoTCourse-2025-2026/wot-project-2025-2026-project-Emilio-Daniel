@@ -213,6 +213,16 @@ si aspetta un `access_token` valido.
 
 ## BLE indoor positioning
 
+Per il nostro progetto scegliamo questa impostazione come riferimento:
+
+- beacon/tag BLE mobile sul paziente;
+- scanner BLE fissi oppure Raspberry Pi posizionato in modo strategico;
+- il sistema rileva il segnale del tag indossato e stima la stanza;
+- questa soluzione e' piu' vicina all'idea "seguo il paziente in casa".
+
+Questa parte verra' implementata piu' avanti, quando avremo scelto e acquistato
+l'hardware BLE reale.
+
 L'adapter BLE attuale aggrega un CSV reale gia' raccolto dal Raspberry:
 
 ```text
