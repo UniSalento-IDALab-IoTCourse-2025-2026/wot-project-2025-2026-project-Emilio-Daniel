@@ -7,6 +7,9 @@ venv/
 desktop.ini
 config/edge.yml
 config/fitbit_token.json
+android_app/.gradle/
+android_app/.idea/
+android_app/**/build/
 *.joblib
 *.pkl
 *.sqlite

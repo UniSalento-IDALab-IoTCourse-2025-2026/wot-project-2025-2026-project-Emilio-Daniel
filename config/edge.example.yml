@@ -2,7 +2,7 @@ patient:
   id: patient-001
 
 window:
-  minutes: 15
+  minutes: 8
   timezone: Europe/Rome
 
 paths:
@@ -16,7 +16,7 @@ fitbit:
   api_base_url: https://api.fitbit.com
 
 ble:
-  enabled: false
+  enabled: true
   raw_csv: data/raw/ble_samples.csv
   scanner_room: living_room
   scanner_id: rpi-main

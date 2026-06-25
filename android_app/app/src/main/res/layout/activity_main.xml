@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/surface"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_header"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0"
+                android:text="@string/app_name"
+                android:textColor="@color/on_primary"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:letterSpacing="0"
+                android:text="Edge BLE companion"
+                android:textColor="@color/on_primary_muted"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Panel"
+            android:layout_marginTop="14dp">
+
+            <TextView
+                style="@style/SectionTitle"
+                android:text="Configurazione" />
+
+            <TextView
+                style="@style/InputLabel"
+                android:layout_marginTop="14dp"
+                android:text="Receiver Raspberry URL" />
+
+            <EditText
+                android:id="@+id/receiverUrlInput"
+                style="@style/InputField"
+                android:inputType="textUri"
+                android:singleLine="true" />
+
+            <TextView
+                style="@style/InputLabel"
+                android:text="Phone ID" />
+
+            <EditText
+                android:id="@+id/phoneIdInput"
+                style="@style/InputField"
+                android:singleLine="true" />
+
+            <TextView
+                style="@style/InputLabel"
+                android:text="Mappa beacon" />
+
+            <EditText
+                android:id="@+id/beaconMapInput"
+                style="@style/InputField"
+                android:layout_height="132dp"
+                android:gravity="top"
+                android:inputType="textMultiLine" />
+
+            <Button
+                android:id="@+id/saveConfigButton"
+                style="@style/ButtonSecondary"
+                android:layout_marginTop="10dp"
+                android:text="Salva configurazione" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Panel"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                style="@style/SectionTitle"
+                android:text="Invio manuale" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/InputLabel"
+                        android:text="Stanza" />
+
+                    <EditText
+                        android:id="@+id/manualRoomInput"
+                        style="@style/InputField"
+                        android:hint="kitchen"
+                        android:singleLine="true" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="92dp"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/InputLabel"
+                        android:text="RSSI" />
+
+                    <EditText
+                        android:id="@+id/manualRssiInput"
+                        style="@style/InputField"
+                        android:hint="-61"
+                        android:inputType="numberSigned"
+                        android:singleLine="true" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                style="@style/InputLabel"
+                android:text="Beacon ID" />
+
+            <EditText
+                android:id="@+id/manualBeaconInput"
+                style="@style/InputField"
+                android:hint="AA:BB:CC:DD:EE:01"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/sendManualButton"
+                style="@style/ButtonPrimary"
+                android:text="Invia campione manuale" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Panel"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                style="@style/SectionTitle"
+                android:text="BLE reale" />
+
+            <Button
+                android:id="@+id/startScanButton"
+                style="@style/ButtonPrimary"
+                android:layout_marginTop="12dp"
+                android:text="Avvia monitoraggio BLE" />
+
+            <Button
+                android:id="@+id/stopScanButton"
+                style="@style/ButtonSecondary"
+                android:text="Ferma monitoraggio BLE" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Panel"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                style="@style/SectionTitle"
+                android:text="Stato" />
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_status"
+                android:letterSpacing="0"
+                android:minHeight="44dp"
+                android:padding="12dp"
+                android:text="Pronto"
+                android:textColor="@color/status_text"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/discoveredText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:fontFamily="monospace"
+                android:letterSpacing="0"
+                android:text=""
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

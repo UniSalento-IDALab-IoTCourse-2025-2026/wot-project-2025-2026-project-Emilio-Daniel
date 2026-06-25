@@ -1,6 +1,6 @@
 # Edge AI Feature Schema
 
-Ogni riga rappresenta una finestra temporale gia' aggregata dal Raspberry Pi, ad esempio 15 minuti.
+Ogni riga rappresenta una finestra temporale gia' aggregata dal Raspberry Pi, ad esempio 8 minuti.
 Il modello non riceve dati grezzi continui: riceve feature compatte prodotte dagli adapter reali
 Fitbit/Google Health, BLE e Shelly/NILM.
 

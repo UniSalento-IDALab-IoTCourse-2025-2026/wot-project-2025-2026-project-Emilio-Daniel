@@ -48,13 +48,13 @@ python -m edge_ai.cli infer \
 ## Cron provvisorio
 
 ```cron
-*/15 * * * * cd /home/pi/progetto-iot && . .venv/bin/activate && python -m edge_ingest.cli --config config/edge.yml --collect-ble && python -m edge_ai.cli infer --model models/patient-001.pkl --input data/processed/latest_window.csv --state data/state/patient-001-debounce.json --output outputs/patient-001-decision.json
+*/8 * * * * cd /home/pi/progetto-iot && . .venv/bin/activate && python -m edge_ingest.cli --config config/edge.yml --collect-ble && python -m edge_ai.cli infer --model models/patient-001.pkl --input data/processed/latest_window.csv --state data/state/patient-001-debounce.json --output outputs/patient-001-decision.json
 ```
 
 Durante le prime due settimane di baseline, usare invece:
 
 ```cron
-*/15 * * * * cd /home/pi/progetto-iot && . .venv/bin/activate && python -m edge_ingest.cli --config config/edge.yml --collect-ble --append-baseline
+*/8 * * * * cd /home/pi/progetto-iot && . .venv/bin/activate && python -m edge_ingest.cli --config config/edge.yml --collect-ble --append-baseline
 ```
 
 In produzione i collector reali scriveranno i campioni grezzi in `data/raw/`, poi

@@ -20,7 +20,7 @@ Google Pixel Watch 2 / Fitbit API
         v
 Fitbit/Google Health adapter
 
-BLE samples da tag/beacon indoor
+BLE samples da Android/beacon indoor
         |
         v
 BLE adapter
@@ -33,7 +33,7 @@ Shelly adapter
         tutti gli adapter
               |
               v
-edge_ingest aggrega una finestra da 15 minuti
+edge_ingest aggrega una finestra da 8 minuti
               |
               v
 data/processed/latest_window.csv
@@ -51,11 +51,14 @@ outputs/patient-001-decision.json
 config/
   edge.example.yml      Configurazione esempio dell'edge node
 
+android_app/
+  app Android per scansione BLE/manual test e invio dati al Raspberry
+
 edge_ingest/
   config.py             Lettura configurazione YAML
   time_windows.py       Calcolo finestre temporali
-  ble_collector.py      Scanner BLE reale per tag indossato
-  ble_cli.py            Comando BLE discover/scan
+  ble_collector.py      Scanner BLE alternativo da Raspberry
+  ble_cli.py            Comando BLE discover/scan alternativo
   fitbit_adapter.py     Polling reale Fitbit Web API via OAuth token
   ble_adapter.py        Aggregazione campioni BLE gia' raccolti
   shelly_adapter.py     Aggregazione campioni Shelly/NILM gia' raccolti
@@ -75,6 +78,7 @@ edge_receiver/
   cli.py                Comando per avviare il receiver
 
 docs/
+  ANDROID_APP.md        Guida app Android, emulatore e APK
   API_CONSTRAINTS.md    Vincoli reali Google/Fitbit e BLE
   FEATURE_SCHEMA.md     Schema dataset reale
   REAL_DATA_PLAN.md     Piano raccolta dati reali
@@ -103,6 +107,10 @@ docs/
   da `data/raw/ble_samples.csv` e trasformarli in feature per il modello.
 - Ho aggiunto il receiver HTTP locale per Android: il telefono potra' inviare campioni BLE
   al Raspberry con `POST /ble/sample`.
+- Ho creato l'app Android `IoT Edge Companion` in `android_app/`, con modalita manuale
+  per emulatore e modalita BLE reale per telefono fisico.
+- Ho aggiunto il Foreground Service BLE nell'app Android, cosi' il monitoraggio puo'
+  restare attivo in background con notifica persistente.
 - Ho aggiunto il comando che genera `data/processed/latest_window.csv`.
 - Ho aggiornato la documentazione di deployment su Raspberry Pi.
 - Ho eseguito controlli di compilazione/import e test tecnici end-to-end della pipeline.
@@ -143,7 +151,7 @@ python -m edge_ingest.cli --config config/edge.example.yml
 Questo comando:
 
 1. legge la configurazione;
-2. calcola l'ultima finestra temporale da 15 minuti;
+2. calcola l'ultima finestra temporale da 8 minuti;
 3. interroga gli adapter abilitati;
 4. fonde le feature in una singola riga;
 5. scrive `data/processed/latest_window.csv`.
@@ -168,20 +176,21 @@ Il file di partenza e':
 config/edge.example.yml
 ```
 
-Per ora gli adapter sono disabilitati:
+Nel file di esempio BLE e' abilitato per testare subito il flusso Android/receiver,
+mentre Fitbit e Shelly restano disabilitati finche' non avremo credenziali o hardware:
 
 ```yaml
 fitbit:
   enabled: false
 
 ble:
-  enabled: false
+  enabled: true
 
 shelly:
   enabled: false
 ```
 
-Quando avremo credenziali e hardware, abiliteremo una sorgente alla volta.
+Quando avremo credenziali e hardware, abiliteremo anche le altre sorgenti una alla volta.
 
 ## Fitbit / Pixel Watch 2
 
@@ -232,12 +241,9 @@ Per il nostro progetto scegliamo questa impostazione come riferimento:
 - il telefono invia al Raspberry Pi una riga con `timestamp`, `room`, `rssi` e `beacon_id`;
 - questa soluzione e' piu' vicina all'idea "seguo il paziente in casa" con un solo Raspberry Pi fisso.
 
-Questa parte verra' implementata piu' avanti. Dovremo creare una piccola app Android
-che faccia da scanner BLE mobile e un receiver sul Raspberry Pi che salvi i campioni
-ricevuti in `data/raw/ble_samples.csv`.
-
-Il receiver Raspberry e' gia' predisposto lato software: manca solo l'app Android che
-scansionera' davvero i beacon e inviera' i campioni.
+Questa parte e' gia' predisposta lato software: abbiamo creato sia il receiver locale
+sul Raspberry/PC sia l'app Android che puo' inviare campioni manuali e avviare un
+Foreground Service BLE per il monitoraggio in background.
 
 ### Hardware previsto
 
@@ -261,17 +267,35 @@ beacons:
 L'app Android usera' questa mappa per trasformare il beacon piu' vicino nella stanza
 corrente. Il Raspberry non dovra' stimare la stanza: dovra' ricevere e salvare il dato.
 
-### Cosa faremo dopo con Android
+### Cosa abbiamo fatto con Android
 
-Quando saremo pronti, faremo:
+Abbiamo preparato:
 
-1. app Android minimale per scansione beacon BLE;
+1. app Android minimale per invio manuale e scansione beacon BLE;
 2. mappa `beacon_id -> stanza`;
 3. scelta della stanza tramite RSSI piu' forte;
-4. invio HTTP/MQTT al Raspberry Pi;
+4. invio HTTP al Raspberry Pi;
 5. receiver locale sul Raspberry, gia' predisposto in `edge_receiver`;
 6. salvataggio in `data/raw/ble_samples.csv`;
-7. aggregazione con il codice gia' presente.
+7. aggregazione con il codice gia' presente;
+8. Foreground Service BLE, cioe' monitoraggio in background con notifica persistente.
+
+L'app Android e' gia' stata creata in:
+
+```text
+android_app/
+```
+
+Ha due modalita:
+
+- manuale/emulatore: inseriamo stanza, RSSI e beacon id a mano e testiamo l'invio HTTP;
+- BLE reale: su telefono Android fisico scansionera' i beacon e inviera' automaticamente
+  la stanza stimata.
+
+La modalita BLE reale viene gestita da un Foreground Service Android: dopo aver premuto
+`Avvia monitoraggio BLE`, l'app continua a lavorare in background e mostra una notifica
+persistente. Questo e' importante per il progetto reale, perche' il telefono deve restare
+attivo anche quando lo schermo e' spento o l'app non e' in primo piano.
 
 ### Receiver Raspberry per Android
 
@@ -313,6 +337,76 @@ Il receiver appende il campione a:
 ```text
 data/raw/ble_samples.csv
 ```
+
+### Test app Android senza beacon
+
+Senza telefono Android fisico e senza beacon non possiamo testare il BLE reale, ma possiamo
+testare tutta la parte applicativa e di rete:
+
+```text
+App Android in emulatore
+        |
+        v
+POST /ble/sample
+        |
+        v
+Receiver Raspberry/PC
+        |
+        v
+data/raw/ble_samples.csv
+        |
+        v
+edge_ingest
+```
+
+Per provarla:
+
+1. avviare il receiver sul PC:
+
+```bash
+python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --port 8000
+```
+
+2. aprire `android_app/` in Android Studio;
+3. avviare l'app su emulatore;
+4. usare come URL:
+
+```text
+http://10.0.2.2:8000/ble/sample
+```
+
+5. premere `Invia campione manuale`;
+6. controllare che il campione arrivi in:
+
+```text
+data/raw/ble_samples.csv
+```
+
+### Rendere l'app installabile su Android
+
+Per generare un APK:
+
+1. aprire Android Studio;
+2. `File -> Open`;
+3. selezionare la cartella `android_app`;
+4. attendere il sync Gradle;
+5. scegliere `Build -> Build Bundle(s) / APK(s) -> Build APK(s)`;
+6. al termine cliccare `locate` per trovare l'APK.
+
+Per installarla su un telefono Android:
+
+1. abilitare le opzioni sviluppatore;
+2. abilitare debug USB;
+3. collegare il telefono via USB;
+4. premere `Run` da Android Studio oppure installare l'APK generato.
+
+Per una versione finale firmata:
+
+1. `Build -> Generate Signed Bundle / APK`;
+2. scegliere `APK`;
+3. creare o selezionare un keystore;
+4. scegliere build type `release`;
+5. generare l'APK firmato.
 
 Il collector scrive un CSV reale:
 
@@ -436,9 +530,9 @@ python -m edge_ai.cli infer \
 
 ## Prossimi step
 
-1. Creare app Android scanner BLE + receiver Raspberry per beacon indoor.
+1. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
 2. Implementare OAuth Fitbit completo con refresh token.
-3. Implementare collector Shelly reale via HTTP e salvataggio campioni.
+3. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
 4. Preparare `config/edge.yml` reale per il vostro paziente/test.
 5. Avviare raccolta baseline reale.
 6. Addestrare il modello.
@@ -453,7 +547,7 @@ ogni volta che aggiungiamo un nuovo pezzo al sistema.
 
 Abbiamo creato il modulo `edge_ai`.
 
-Questo e' il cervello del sistema. Legge dati aggregati ogni 15 minuti, usa un modello
+Questo e' il cervello del sistema. Legge dati aggregati ogni 8 minuti, usa un modello
 `IsolationForest` e produce un livello di rischio:
 
 - verde: routine normale;
@@ -544,7 +638,27 @@ data/raw/ble_samples.csv
 
 Poi `edge_ingest` li aggrega e li passa al modello AI.
 
-### 6. Shelly / NILM
+### 6. App Android
+
+Abbiamo creato l'app `IoT Edge Companion` dentro `android_app/`.
+
+L'app serve per due cose:
+
+- test manuale da emulatore, senza beacon fisici;
+- scansione BLE reale quando avremo telefono Android e beacon.
+
+In modalita manuale possiamo gia' inviare campioni finti al receiver Raspberry e vedere
+come vengono salvati nel CSV.
+
+In modalita reale l'app scansionera' i beacon nelle stanze, scegliera' quello con RSSI
+piu' forte e inviera' la stanza stimata al Raspberry.
+
+Abbiamo aggiunto anche un Foreground Service BLE: quando viene premuto `Avvia monitoraggio
+BLE`, Android mantiene l'app attiva in background con una notifica persistente. Il servizio
+fa cicli periodici di scansione, sceglie il beacon/stanza piu' forte e invia il campione
+al receiver locale.
+
+### 7. Shelly / NILM
 
 Abbiamo predisposto un adapter per dati Shelly/NILM.
 
@@ -555,18 +669,18 @@ misurazione consumi. Il codice e' pronto a leggere dati da:
 data/raw/shelly_samples.csv
 ```
 
-### 7. Documentazione
+### 8. Documentazione
 
 Abbiamo documentato architettura, comandi, deployment Raspberry, schema feature e vincoli
 reali delle API.
 
 Il README deve rimanere il punto principale da leggere per capire lo stato del progetto.
 
-### 8. Cosa manca ancora
+### 9. Cosa manca ancora
 
-Mancano ancora i collegamenti reali con hardware e app:
+Mancano ancora i collegamenti reali con hardware:
 
-- app Android che scansiona i beacon BLE;
+- test app Android su telefono fisico;
 - beacon BLE fisici nelle stanze;
 - Raspberry Pi reale;
 - Fitbit OAuth completo;
