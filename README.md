@@ -54,6 +54,8 @@ config/
 edge_ingest/
   config.py             Lettura configurazione YAML
   time_windows.py       Calcolo finestre temporali
+  ble_collector.py      Scanner BLE reale per tag indossato
+  ble_cli.py            Comando BLE discover/scan
   fitbit_adapter.py     Polling reale Fitbit Web API via OAuth token
   ble_adapter.py        Aggregazione campioni BLE gia' raccolti
   shelly_adapter.py     Aggregazione campioni Shelly/NILM gia' raccolti
@@ -66,6 +68,11 @@ edge_ai/
   model.py              Isolation Forest paziente-specifica
   debounce.py           Anti alarm fatigue e alert tecnici
   cli.py                Comandi train/infer
+
+edge_receiver/
+  app.py                Receiver HTTP locale sul Raspberry Pi
+  ble_storage.py        Scrittura campioni BLE Android nel CSV grezzo
+  cli.py                Comando per avviare il receiver
 
 docs/
   API_CONSTRAINTS.md    Vincoli reali Google/Fitbit e BLE
@@ -92,6 +99,10 @@ docs/
 - Ho implementato un primo adapter Fitbit Web API, pronto a usare un token OAuth reale.
 - Ho implementato adapter CSV per BLE e Shelly/NILM, cosi' appena il Raspberry raccoglie campioni
   grezzi possiamo aggregarli in feature.
+- Ho predisposto la parte BLE lato aggregazione: il sistema sa leggere campioni stanza/RSSI
+  da `data/raw/ble_samples.csv` e trasformarli in feature per il modello.
+- Ho aggiunto il receiver HTTP locale per Android: il telefono potra' inviare campioni BLE
+  al Raspberry con `POST /ble/sample`.
 - Ho aggiunto il comando che genera `data/processed/latest_window.csv`.
 - Ho aggiornato la documentazione di deployment su Raspberry Pi.
 - Ho eseguito controlli di compilazione/import e test tecnici end-to-end della pipeline.
@@ -114,7 +125,7 @@ deciso e implementato come dovranno parlare con il resto del sistema. Quando arr
 il Raspberry Pi, dovremo collegare una sorgente alla volta:
 
 1. Fitbit/Pixel Watch tramite API e OAuth.
-2. BLE tramite scanner sul Raspberry Pi.
+2. BLE tramite telefono Android come scanner mobile dei beacon nelle stanze.
 3. Shelly tramite lettura HTTP dei consumi.
 
 Dopo il collegamento, il Raspberry raccogliera' dati veri per circa due settimane.
@@ -215,15 +226,95 @@ si aspetta un `access_token` valido.
 
 Per il nostro progetto scegliamo questa impostazione come riferimento:
 
-- beacon/tag BLE mobile sul paziente;
-- scanner BLE fissi oppure Raspberry Pi posizionato in modo strategico;
-- il sistema rileva il segnale del tag indossato e stima la stanza;
-- questa soluzione e' piu' vicina all'idea "seguo il paziente in casa".
+- beacon BLE fissi nelle stanze;
+- telefono Android indossato/tenuto dal paziente come scanner mobile;
+- il telefono scansiona i beacon, sceglie quello con RSSI piu' forte e stima la stanza;
+- il telefono invia al Raspberry Pi una riga con `timestamp`, `room`, `rssi` e `beacon_id`;
+- questa soluzione e' piu' vicina all'idea "seguo il paziente in casa" con un solo Raspberry Pi fisso.
 
-Questa parte verra' implementata piu' avanti, quando avremo scelto e acquistato
-l'hardware BLE reale.
+Questa parte verra' implementata piu' avanti. Dovremo creare una piccola app Android
+che faccia da scanner BLE mobile e un receiver sul Raspberry Pi che salvi i campioni
+ricevuti in `data/raw/ble_samples.csv`.
 
-L'adapter BLE attuale aggrega un CSV reale gia' raccolto dal Raspberry:
+Il receiver Raspberry e' gia' predisposto lato software: manca solo l'app Android che
+scansionera' davvero i beacon e inviera' i campioni.
+
+### Hardware previsto
+
+Per la prima versione reale servono:
+
+- beacon BLE configurabili, uno per stanza;
+- un telefono Android che resta vicino/addosso al paziente;
+- un Raspberry Pi locale fisso, usato come gateway e receiver dati;
+- rete locale condivisa tra telefono Android e Raspberry Pi.
+
+Ogni beacon avra' una stanza associata, ad esempio:
+
+```yaml
+beacons:
+  AA:BB:CC:DD:EE:01: kitchen
+  AA:BB:CC:DD:EE:02: bedroom
+  AA:BB:CC:DD:EE:03: bathroom
+  AA:BB:CC:DD:EE:04: living_room
+```
+
+L'app Android usera' questa mappa per trasformare il beacon piu' vicino nella stanza
+corrente. Il Raspberry non dovra' stimare la stanza: dovra' ricevere e salvare il dato.
+
+### Cosa faremo dopo con Android
+
+Quando saremo pronti, faremo:
+
+1. app Android minimale per scansione beacon BLE;
+2. mappa `beacon_id -> stanza`;
+3. scelta della stanza tramite RSSI piu' forte;
+4. invio HTTP/MQTT al Raspberry Pi;
+5. receiver locale sul Raspberry, gia' predisposto in `edge_receiver`;
+6. salvataggio in `data/raw/ble_samples.csv`;
+7. aggregazione con il codice gia' presente.
+
+### Receiver Raspberry per Android
+
+Avvio del receiver locale:
+
+```bash
+python -m edge_receiver.cli --config config/edge.yml --host 0.0.0.0 --port 8000
+```
+
+Endpoint disponibile:
+
+```text
+POST /ble/sample
+```
+
+Payload che l'app Android dovra' inviare:
+
+```json
+{
+  "timestamp": "2026-06-25T10:00:00Z",
+  "room": "kitchen",
+  "rssi": -61,
+  "beacon_id": "AA:BB:CC:DD:EE:01",
+  "beacon_name": "KitchenBeacon",
+  "phone_id": "android-phone"
+}
+```
+
+Test manuale da terminale:
+
+```bash
+curl -X POST http://RASPBERRY_IP:8000/ble/sample \
+  -H "Content-Type: application/json" \
+  -d '{"room":"kitchen","rssi":-61,"beacon_id":"AA:BB:CC:DD:EE:01","beacon_name":"KitchenBeacon","phone_id":"android-phone"}'
+```
+
+Il receiver appende il campione a:
+
+```text
+data/raw/ble_samples.csv
+```
+
+Il collector scrive un CSV reale:
 
 ```text
 data/raw/ble_samples.csv
@@ -232,9 +323,9 @@ data/raw/ble_samples.csv
 Formato minimo:
 
 ```csv
-timestamp,room,rssi
-2026-06-24T10:00:00Z,kitchen,-61
-2026-06-24T10:02:00Z,living_room,-70
+timestamp,room,scanner_id,address,name,rssi,tx_power,distance_m,service_uuids,manufacturer_data
+2026-06-24T10:00:00Z,kitchen,android-phone,AA:BB:CC:DD:EE:01,KitchenBeacon,-61,-59,1.259,[],{}
+2026-06-24T10:02:00Z,living_room,android-phone,AA:BB:CC:DD:EE:04,LivingBeacon,-70,-59,3.548,[],{}
 ```
 
 Feature prodotte:
@@ -247,8 +338,8 @@ Feature prodotte:
 - `living_room_minutes`;
 - `longest_single_room_minutes`.
 
-Quando avremo il Raspberry, aggiungeremo lo scanner BLE reale con `bleak` o libreria
-equivalente. L'aggregatore e' gia' pronto a leggere il file prodotto dallo scanner.
+L'aggregatore legge questo file e produce feature di permanenza stanza compatibili con
+il modello AI.
 
 ## Shelly / NILM
 
@@ -345,10 +436,139 @@ python -m edge_ai.cli infer \
 
 ## Prossimi step
 
-1. Implementare OAuth Fitbit completo con refresh token.
-2. Implementare collector BLE reale su Raspberry Pi.
+1. Creare app Android scanner BLE + receiver Raspberry per beacon indoor.
+2. Implementare OAuth Fitbit completo con refresh token.
 3. Implementare collector Shelly reale via HTTP e salvataggio campioni.
 4. Preparare `config/edge.yml` reale per il vostro paziente/test.
 5. Avviare raccolta baseline reale.
 6. Addestrare il modello.
 7. Collegare output JSON al backend/dashboard.
+
+## Stato attuale del progetto
+
+Questa sezione riassume in parole povere cosa e' stato fatto finora. Va aggiornata
+ogni volta che aggiungiamo un nuovo pezzo al sistema.
+
+### 1. Modulo AI
+
+Abbiamo creato il modulo `edge_ai`.
+
+Questo e' il cervello del sistema. Legge dati aggregati ogni 15 minuti, usa un modello
+`IsolationForest` e produce un livello di rischio:
+
+- verde: routine normale;
+- giallo: sospetto lieve;
+- rosso: anomalia severa;
+- tecnico: problema non clinico, per esempio wearable scarico o non indossato.
+
+Il modello non fa diagnosi medica. Serve solo a segnalare anomalie nella routine del
+paziente.
+
+### 2. Aggregatore dati
+
+Abbiamo creato il modulo `edge_ingest`.
+
+Questo modulo prende dati da Fitbit, BLE e Shelly, li mette tutti nello stesso formato
+e produce il file:
+
+```text
+data/processed/latest_window.csv
+```
+
+Durante la fase di baseline puo' anche costruire:
+
+```text
+data/processed/baseline.csv
+```
+
+Questi file sono quelli che il modello AI sa leggere.
+
+### 3. Fitbit / Pixel Watch
+
+Abbiamo preparato un primo adapter per Fitbit Web API.
+
+La struttura e' pronta per leggere dati biometrici dal Pixel Watch tramite API, ma manca
+ancora la parte completa di OAuth con refresh token. Questa verra' fatta quando avremo
+account, permessi e dispositivo configurati.
+
+### 4. BLE indoor positioning
+
+Abbiamo chiarito l'architettura corretta per il nostro caso:
+
+```text
+Beacon BLE fissi nelle stanze
+        +
+Telefono Android come scanner mobile
+        +
+Raspberry Pi come receiver/gateway
+```
+
+Il telefono Android stara' vicino/addosso al paziente, scansionera' i beacon nelle stanze
+e inviera' al Raspberry la stanza stimata.
+
+Il sistema sa gia' leggere campioni BLE da CSV e trasformarli in feature come:
+
+- minuti in camera;
+- minuti in cucina;
+- minuti in bagno;
+- minuti in soggiorno;
+- cambi stanza;
+- cambi stanza notturni;
+- permanenza piu' lunga in una singola stanza.
+
+### 5. Receiver Raspberry per Android
+
+Abbiamo creato il modulo `edge_receiver`.
+
+Questo sara' il server locale sul Raspberry Pi. Espone l'endpoint:
+
+```text
+POST /ble/sample
+```
+
+L'app Android inviera' dati di questo tipo:
+
+```json
+{
+  "room": "kitchen",
+  "rssi": -61,
+  "beacon_id": "AA:BB:CC:DD:EE:01"
+}
+```
+
+Il Raspberry salva questi campioni in:
+
+```text
+data/raw/ble_samples.csv
+```
+
+Poi `edge_ingest` li aggrega e li passa al modello AI.
+
+### 6. Shelly / NILM
+
+Abbiamo predisposto un adapter per dati Shelly/NILM.
+
+Per ora non abbiamo ancora deciso se useremo davvero Shelly o un altro dispositivo di
+misurazione consumi. Il codice e' pronto a leggere dati da:
+
+```text
+data/raw/shelly_samples.csv
+```
+
+### 7. Documentazione
+
+Abbiamo documentato architettura, comandi, deployment Raspberry, schema feature e vincoli
+reali delle API.
+
+Il README deve rimanere il punto principale da leggere per capire lo stato del progetto.
+
+### 8. Cosa manca ancora
+
+Mancano ancora i collegamenti reali con hardware e app:
+
+- app Android che scansiona i beacon BLE;
+- beacon BLE fisici nelle stanze;
+- Raspberry Pi reale;
+- Fitbit OAuth completo;
+- eventuale Shelly o alternativa per consumi;
+- backend/dashboard finale.

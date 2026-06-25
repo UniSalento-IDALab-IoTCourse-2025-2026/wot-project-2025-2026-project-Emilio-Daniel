@@ -18,6 +18,15 @@ fitbit:
 ble:
   enabled: false
   raw_csv: data/raw/ble_samples.csv
+  scanner_room: living_room
+  scanner_id: rpi-main
+  target_addresses: []
+  target_names: []
+  allow_unfiltered_scan: false
+  scan_seconds: 30
+  rssi_min: -95
+  tx_power_at_1m: -59
+  path_loss_exponent: 2.0
 
 shelly:
   enabled: false

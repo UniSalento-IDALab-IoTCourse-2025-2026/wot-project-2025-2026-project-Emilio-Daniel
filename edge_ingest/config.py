@@ -36,6 +36,15 @@ class FitbitConfig:
 class BleConfig:
     enabled: bool = False
     raw_csv: Path = Path("data/raw/ble_samples.csv")
+    scanner_room: str = "living_room"
+    scanner_id: str = "rpi-main"
+    target_addresses: tuple[str, ...] = ()
+    target_names: tuple[str, ...] = ()
+    allow_unfiltered_scan: bool = False
+    scan_seconds: float = 30.0
+    rssi_min: int = -95
+    tx_power_at_1m: int = -59
+    path_loss_exponent: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -105,6 +114,23 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
                     "data/raw/ble_samples.csv",
                 )
             ),
+            scanner_room=str(_section(payload, "ble").get("scanner_room", "living_room")),
+            scanner_id=str(_section(payload, "ble").get("scanner_id", "rpi-main")),
+            target_addresses=_tuple_of_strings(
+                _section(payload, "ble").get("target_addresses", [])
+            ),
+            target_names=_tuple_of_strings(
+                _section(payload, "ble").get("target_names", [])
+            ),
+            allow_unfiltered_scan=bool(
+                _section(payload, "ble").get("allow_unfiltered_scan", False)
+            ),
+            scan_seconds=float(_section(payload, "ble").get("scan_seconds", 30.0)),
+            rssi_min=int(_section(payload, "ble").get("rssi_min", -95)),
+            tx_power_at_1m=int(_section(payload, "ble").get("tx_power_at_1m", -59)),
+            path_loss_exponent=float(
+                _section(payload, "ble").get("path_loss_exponent", 2.0)
+            ),
         ),
         shelly=ShellyConfig(
             enabled=bool(_section(payload, "shelly").get("enabled", False)),
@@ -123,3 +149,13 @@ def _section(payload: dict[str, Any], key: str) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _tuple_of_strings(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, list):
+        return tuple(str(item) for item in value if str(item).strip())
+    return ()

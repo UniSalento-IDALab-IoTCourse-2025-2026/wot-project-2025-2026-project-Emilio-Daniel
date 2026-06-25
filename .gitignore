@@ -4,6 +4,7 @@ __pycache__/
 venv/
 .env
 .env.*
+desktop.ini
 config/edge.yml
 config/fitbit_token.json
 *.joblib

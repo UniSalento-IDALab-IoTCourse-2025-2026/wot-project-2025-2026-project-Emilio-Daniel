@@ -44,7 +44,10 @@ class BleCsvAdapter:
         if window.empty:
             return {}
 
-        window["room_key"] = window["room"].astype(str).str.strip().str.lower()
+        room_sequence = _resolve_room_sequence(window)
+        if room_sequence.empty:
+            return {}
+
         features = {
             "bedroom_minutes": 0.0,
             "kitchen_minutes": 0.0,
@@ -55,8 +58,8 @@ class BleCsvAdapter:
             "longest_single_room_minutes": 0.0,
         }
 
-        timestamps = list(window["timestamp"])
-        rooms = list(window["room_key"])
+        timestamps = list(room_sequence["timestamp"])
+        rooms = list(room_sequence["room_key"])
         durations_by_room: dict[str, float] = {}
         longest_single_room = 0.0
 
@@ -82,3 +85,23 @@ class BleCsvAdapter:
             features["night_room_changes"] = float(changes)
         features["longest_single_room_minutes"] = longest_single_room
         return features
+
+
+def _resolve_room_sequence(window: pd.DataFrame) -> pd.DataFrame:
+    prepared = window.copy()
+    prepared["room_key"] = prepared["room"].astype(str).str.strip().str.lower()
+
+    if "rssi" not in prepared.columns:
+        return prepared[["timestamp", "room_key"]].sort_values("timestamp")
+
+    prepared["rssi_value"] = pd.to_numeric(prepared["rssi"], errors="coerce")
+    prepared = prepared.dropna(subset=["rssi_value"])
+    if prepared.empty:
+        return pd.DataFrame(columns=["timestamp", "room_key"])
+
+    # Multiple fixed scanners can hear the same wearable tag. For each 30-second bucket,
+    # keep the room with the strongest RSSI, which is the closest scanner.
+    prepared["bucket"] = prepared["timestamp"].dt.floor("30s")
+    strongest_indexes = prepared.groupby("bucket")["rssi_value"].idxmax()
+    resolved = prepared.loc[strongest_indexes].sort_values("timestamp")
+    return resolved[["timestamp", "room_key"]]

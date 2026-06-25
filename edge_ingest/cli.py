@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
+from edge_ingest.ble_collector import collect_ble_samples
 from edge_ingest.aggregator import (
     append_baseline_row,
     build_feature_window,
@@ -28,12 +29,21 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also append the generated window to the baseline CSV.",
     )
+    parser.add_argument(
+        "--collect-ble",
+        action="store_true",
+        help="Scan the wearable BLE tag before aggregating the feature window.",
+    )
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
     config = load_config(args.config)
+    ble_samples = []
+    if args.collect_ble:
+        ble_samples = collect_ble_samples(config.ble)
+
     requested_end = parse_datetime(args.window_end, config.window.timezone)
     window_start, window_end = window_from_end(requested_end, config.window.minutes)
 
@@ -51,6 +61,7 @@ def main() -> None:
                 "window_end": row["window_end"],
                 "latest_window_csv": str(config.paths.latest_window_csv),
                 "baseline_appended": bool(args.append_baseline),
+                "ble_samples_collected": len(ble_samples),
             },
             indent=2,
         )
