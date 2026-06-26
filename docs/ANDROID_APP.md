@@ -3,7 +3,7 @@
 L'app Android del progetto si trova in:
 
 ```text
-android_app/
+companion_app/
 ```
 
 Nome app:
@@ -15,6 +15,9 @@ IoT Edge Companion
 ## Obiettivo
 
 L'app serve a collegare la localizzazione BLE al Raspberry Pi.
+
+Nota sui percorsi: il codice Raspberry/AI si trova in `edge_node/`. Quindi i comandi
+Python sotto vanno eseguiti entrando prima in quella cartella.
 
 Nel sistema reale:
 
@@ -98,11 +101,12 @@ app, cosi' Android non limita il servizio dopo molto tempo.
 1. Avviare il receiver sul PC:
 
 ```bash
+cd edge_node
 python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --port 8000
 ```
 
 2. Aprire Android Studio.
-3. Aprire la cartella `android_app`.
+3. Aprire la cartella `companion_app`.
 4. Avviare un emulatore.
 5. Nell'app usare:
 
@@ -122,6 +126,7 @@ data/raw/ble_samples.csv
 1. Avviare il receiver sul Raspberry:
 
 ```bash
+cd edge_node
 python -m edge_receiver.cli --config config/edge.yml --host 0.0.0.0 --port 8000
 ```
 
@@ -178,6 +183,7 @@ AA:BB:CC:DD:EE:04=living_room
 ### 3. Avviare il receiver sul Raspberry
 
 ```bash
+cd edge_node
 python -m edge_receiver.cli --config config/edge.yml --host 0.0.0.0 --port 8000
 ```
 
@@ -242,6 +248,7 @@ Se il sistema sbaglia stanza, verificare:
 Quando il rilevamento e' stabile:
 
 ```bash
+cd edge_node
 python -m edge_ingest.cli --config config/edge.yml --append-baseline
 ```
 
@@ -261,7 +268,7 @@ Beacon veri
 Da Android Studio:
 
 1. `File -> Open`.
-2. Selezionare `android_app`.
+2. Selezionare `companion_app`.
 3. Attendere il sync Gradle.
 4. `Build -> Build Bundle(s) / APK(s) -> Build APK(s)`.
 5. Cliccare `locate` quando Android Studio ha finito.

@@ -1,6 +1,8 @@
-# IoT Edge Companion Android
+﻿# IoT Edge Companion Android
 
 Questa app e' il client mobile che useremo per la localizzazione indoor BLE.
+
+Il receiver Python e il modello AI non sono in questa cartella: stanno in `../edge_node/`.
 
 ## Scopo
 
@@ -101,7 +103,7 @@ batteria per questa app, altrimenti Android puo' limitarla dopo molto tempo.
 
 1. Aprire Android Studio.
 2. `File -> Open`.
-3. Selezionare la cartella `android_app`.
+3. Selezionare la cartella `companion_app`.
 4. Attendere il sync Gradle.
 5. Avviare un emulatore oppure collegare un telefono Android.
 6. Premere `Run`.
@@ -129,6 +131,7 @@ Per una versione firmata:
 1. Avviare il receiver:
 
 ```bash
+cd ../edge_node
 python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --port 8000
 ```
 
@@ -149,6 +152,7 @@ data/raw/ble_samples.csv
 6. Generare le feature:
 
 ```bash
+cd ../edge_node
 python -m edge_ingest.cli --config config/edge.example.yml
 ```
 
@@ -170,6 +174,7 @@ AA:BB:CC:DD:EE:04=living_room
 4. avviare il receiver sul Raspberry:
 
 ```bash
+cd ../edge_node
 python -m edge_receiver.cli --config config/edge.yml --host 0.0.0.0 --port 8000
 ```
 
@@ -207,3 +212,4 @@ I permessi Android usati sono:
 - localizzazione, necessaria per la scansione BLE;
 - notifiche, necessarie per mostrare la notifica persistente;
 - foreground service, necessario per lavorare in background.
+

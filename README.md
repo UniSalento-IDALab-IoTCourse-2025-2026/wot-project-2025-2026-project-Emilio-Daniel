@@ -36,46 +36,57 @@ Shelly adapter
 edge_ingest aggrega una finestra da 8 minuti
               |
               v
-data/processed/latest_window.csv
+edge_node/data/processed/latest_window.csv
               |
               v
 edge_ai esegue Isolation Forest + debounce
               |
               v
-outputs/patient-001-decision.json
+edge_node/outputs/patient-001-decision.json
 ```
 
 ## Struttura
 
 ```text
-config/
-  edge.example.yml      Configurazione esempio dell'edge node
+edge_node/
+  requirements.txt      Dipendenze Python del Raspberry/edge node
 
-android_app/
+  config/
+    edge.example.yml    Configurazione esempio dell'edge node
+
+  edge_ingest/
+    config.py           Lettura configurazione YAML
+    time_windows.py     Calcolo finestre temporali
+    ble_collector.py    Scanner BLE alternativo da Raspberry
+    ble_cli.py          Comando BLE discover/scan alternativo
+    fitbit_adapter.py   Polling reale Fitbit Web API via OAuth token
+    ble_adapter.py      Aggregazione campioni BLE gia' raccolti
+    shelly_adapter.py   Aggregazione campioni Shelly/NILM gia' raccolti
+    aggregator.py       Fusione dati in una riga feature
+    cli.py              Comando collect-window
+
+  edge_ai/
+    schema.py           Contratto delle feature in ingresso
+    features.py         Lettura e validazione CSV/JSON
+    model.py            Isolation Forest paziente-specifica
+    debounce.py         Anti alarm fatigue e alert tecnici
+    cli.py              Comandi train/infer
+
+  edge_receiver/
+    app.py              Receiver HTTP locale sul Raspberry Pi
+    ble_storage.py      Scrittura campioni BLE Android nel CSV grezzo
+    cli.py              Comando per avviare il receiver
+
+  data/
+    raw/                Campioni grezzi reali da app/sensori
+    processed/          Finestre aggregate per AI
+    state/              Stato debounce/allarmi
+
+  models/               Modelli addestrati paziente-specifici
+  outputs/              Decisioni JSON prodotte dall'AI
+
+companion_app/
   app Android per scansione BLE/manual test e invio dati al Raspberry
-
-edge_ingest/
-  config.py             Lettura configurazione YAML
-  time_windows.py       Calcolo finestre temporali
-  ble_collector.py      Scanner BLE alternativo da Raspberry
-  ble_cli.py            Comando BLE discover/scan alternativo
-  fitbit_adapter.py     Polling reale Fitbit Web API via OAuth token
-  ble_adapter.py        Aggregazione campioni BLE gia' raccolti
-  shelly_adapter.py     Aggregazione campioni Shelly/NILM gia' raccolti
-  aggregator.py         Fusione dati in una riga feature
-  cli.py                Comando collect-window
-
-edge_ai/
-  schema.py             Contratto delle feature in ingresso
-  features.py           Lettura e validazione CSV/JSON
-  model.py              Isolation Forest paziente-specifica
-  debounce.py           Anti alarm fatigue e alert tecnici
-  cli.py                Comandi train/infer
-
-edge_receiver/
-  app.py                Receiver HTTP locale sul Raspberry Pi
-  ble_storage.py        Scrittura campioni BLE Android nel CSV grezzo
-  cli.py                Comando per avviare il receiver
 
 docs/
   ANDROID_APP.md        Guida app Android, emulatore e APK
@@ -84,6 +95,9 @@ docs/
   REAL_DATA_PLAN.md     Piano raccolta dati reali
   RPI_DEPLOYMENT.md     Setup Raspberry Pi
 ```
+
+Regola pratica: i comandi Python del Raspberry/AI vanno eseguiti entrando prima in
+`edge_node/`. L'app Android invece si apre da Android Studio selezionando `companion_app/`.
 
 ## Cosa e' stato fatto finora
 
@@ -99,19 +113,20 @@ docs/
 - Ho creato la CLI AI con due comandi: training della baseline reale e inferenza sull'ultima finestra.
 - Ho rimosso `joblib` e ora salvo/carico i modelli con `pickle` standard in file `.pkl`.
 - Ho creato il nuovo pacchetto `edge_ingest`, cioe' il ponte tra dati reali e modello AI.
-- Ho aggiunto una configurazione YAML di esempio in `config/edge.example.yml`.
+- Ho aggiunto una configurazione YAML di esempio in `edge_node/config/edge.example.yml`.
 - Ho implementato un primo adapter Fitbit Web API, pronto a usare un token OAuth reale.
 - Ho implementato adapter CSV per BLE e Shelly/NILM, cosi' appena il Raspberry raccoglie campioni
   grezzi possiamo aggregarli in feature.
 - Ho predisposto la parte BLE lato aggregazione: il sistema sa leggere campioni stanza/RSSI
-  da `data/raw/ble_samples.csv` e trasformarli in feature per il modello.
+  da `edge_node/data/raw/ble_samples.csv` e trasformarli in feature per il modello.
 - Ho aggiunto il receiver HTTP locale per Android: il telefono potra' inviare campioni BLE
   al Raspberry con `POST /ble/sample`.
-- Ho creato l'app Android `IoT Edge Companion` in `android_app/`, con modalita manuale
+- Ho creato l'app Android `IoT Edge Companion` in `companion_app/`, con modalita manuale
   per emulatore e modalita BLE reale per telefono fisico.
 - Ho aggiunto il Foreground Service BLE nell'app Android, cosi' il monitoraggio puo'
   restare attivo in background con notifica persistente.
-- Ho aggiunto il comando che genera `data/processed/latest_window.csv`.
+- Ho riordinato il repository separando `edge_node/`, `companion_app/` e `docs/`.
+- Ho aggiunto il comando che genera `edge_node/data/processed/latest_window.csv`.
 - Ho aggiornato la documentazione di deployment su Raspberry Pi.
 - Ho eseguito controlli di compilazione/import e test tecnici end-to-end della pipeline.
 
@@ -145,6 +160,7 @@ addestreremo il modello definitivo e lo useremo per rilevare anomalie reali.
 Il nuovo step implementato e' l'aggregatore Edge:
 
 ```bash
+cd edge_node
 python -m edge_ingest.cli --config config/edge.example.yml
 ```
 
@@ -159,6 +175,7 @@ Questo comando:
 Se vuoi costruire la baseline reale, il comando diventa:
 
 ```bash
+cd edge_node
 python -m edge_ingest.cli --config config/edge.example.yml --append-baseline
 ```
 
@@ -173,7 +190,7 @@ data/processed/baseline.csv
 Il file di partenza e':
 
 ```text
-config/edge.example.yml
+edge_node/config/edge.example.yml
 ```
 
 Nel file di esempio BLE e' abilitato per testare subito il flusso Android/receiver,
@@ -283,7 +300,7 @@ Abbiamo preparato:
 L'app Android e' gia' stata creata in:
 
 ```text
-android_app/
+companion_app/
 ```
 
 Ha due modalita:
@@ -367,7 +384,7 @@ Per provarla:
 python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --port 8000
 ```
 
-2. aprire `android_app/` in Android Studio;
+2. aprire `companion_app/` in Android Studio;
 3. avviare l'app su emulatore;
 4. usare come URL:
 
@@ -388,7 +405,7 @@ Per generare un APK:
 
 1. aprire Android Studio;
 2. `File -> Open`;
-3. selezionare la cartella `android_app`;
+3. selezionare la cartella `companion_app`;
 4. attendere il sync Gradle;
 5. scegliere `Build -> Build Bundle(s) / APK(s) -> Build APK(s)`;
 6. al termine cliccare `locate` per trovare l'APK.
@@ -469,6 +486,12 @@ Feature prodotte:
 
 ## Comandi principali
 
+Tutti questi comandi vanno eseguiti da `edge_node/`:
+
+```bash
+cd edge_node
+```
+
 Raccogliere ultima finestra reale:
 
 ```bash
@@ -533,7 +556,7 @@ python -m edge_ai.cli infer \
 1. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
 2. Implementare OAuth Fitbit completo con refresh token.
 3. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
-4. Preparare `config/edge.yml` reale per il vostro paziente/test.
+4. Preparare `edge_node/config/edge.yml` reale per il vostro paziente/test.
 5. Avviare raccolta baseline reale.
 6. Addestrare il modello.
 7. Collegare output JSON al backend/dashboard.
@@ -640,7 +663,7 @@ Poi `edge_ingest` li aggrega e li passa al modello AI.
 
 ### 6. App Android
 
-Abbiamo creato l'app `IoT Edge Companion` dentro `android_app/`.
+Abbiamo creato l'app `IoT Edge Companion` dentro `companion_app/`.
 
 L'app serve per due cose:
 
