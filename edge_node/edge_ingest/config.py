@@ -28,6 +28,7 @@ class PathsConfig:
 class FitbitConfig:
     enabled: bool = False
     token_file: Path = Path("config/fitbit_token.json")
+    client_file: Path = Path("config/fitbit_client.json")
     user_id: str = "-"
     api_base_url: str = "https://api.fitbit.com"
 
@@ -96,6 +97,12 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
                 _section(payload, "fitbit").get(
                     "token_file",
                     "config/fitbit_token.json",
+                )
+            ),
+            client_file=Path(
+                _section(payload, "fitbit").get(
+                    "client_file",
+                    "config/fitbit_client.json",
                 )
             ),
             user_id=str(_section(payload, "fitbit").get("user_id", "-")),

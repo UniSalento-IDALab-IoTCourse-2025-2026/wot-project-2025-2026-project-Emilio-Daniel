@@ -42,7 +42,8 @@ class EdgeAnomalyDetector:
         if len(frame) < 50:
             raise ValueError(
                 "At least 50 baseline records are required. "
-                "For production, collect about two weeks of real windows."
+                "For this project, collect about 5-6 days of real windows; "
+                "longer baselines are better for production."
             )
 
         patient_frame = frame[frame["patient_id"].astype(str) == str(patient_id)]

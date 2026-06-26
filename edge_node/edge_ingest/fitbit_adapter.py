@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from edge_auth.fitbit_oauth import load_valid_access_token, refresh_access_token
 from edge_ingest.config import FitbitConfig
 
 
@@ -101,7 +102,7 @@ class FitbitAdapter:
             status["wearable_battery_pct"] = float(battery_level)
         return status
 
-    def _get_json(self, token: str, path: str) -> Any:
+    def _get_json(self, token: str, path: str, *, allow_refresh: bool = True) -> Any:
         url = f"{self.config.api_base_url}{path}"
         request = Request(
             url,
@@ -114,6 +115,17 @@ class FitbitAdapter:
             with urlopen(request, timeout=30) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
+            if exc.code == 401 and allow_refresh:
+                refreshed = refresh_access_token(
+                    self.config.token_file,
+                    self.config.client_file,
+                )
+                refreshed_token = str(refreshed["access_token"])
+                return self._get_json(
+                    refreshed_token,
+                    path,
+                    allow_refresh=False,
+                )
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Fitbit API HTTP {exc.code}: {body}") from exc
         except URLError as exc:
@@ -126,9 +138,7 @@ class FitbitAdapter:
             return None
 
     def _load_access_token(self) -> str:
-        with self.config.token_file.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        token = payload.get("access_token")
-        if not token:
-            raise ValueError(f"Missing access_token in {self.config.token_file}")
-        return str(token)
+        return load_valid_access_token(
+            self.config.token_file,
+            self.config.client_file,
+        )

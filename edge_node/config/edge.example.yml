@@ -12,6 +12,7 @@ paths:
 fitbit:
   enabled: false
   token_file: config/fitbit_token.json
+  client_file: config/fitbit_client.json
   user_id: "-"
   api_base_url: https://api.fitbit.com
 
