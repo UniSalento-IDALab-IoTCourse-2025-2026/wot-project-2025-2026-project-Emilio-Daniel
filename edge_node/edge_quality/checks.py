@@ -45,6 +45,12 @@ class QualityReport:
     metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        """Converte il report qualita in dizionario JSON-serializzabile.
+
+        Le issue sono dataclass annidate, quindi vengono trasformate in
+        dizionari espliciti. Il risultato puo' essere salvato su file e letto
+        facilmente durante debug, baseline o deployment su Raspberry.
+        """
         payload = asdict(self)
         payload["issues"] = [asdict(issue) for issue in self.issues]
         return payload
@@ -57,6 +63,12 @@ def evaluate_quality(
     window_end: datetime,
     now: datetime | None = None,
 ) -> QualityReport:
+    """Valuta se una finestra dati e' utilizzabile per baseline/training.
+
+    La funzione coordina controlli su limiti temporali, BLE, Fitbit e Shelly. Il
+    risultato distingue errori bloccanti, warning e semplici osservazioni, cosi'
+    il sistema evita di addestrare il modello con dati tecnicamente corrotti.
+    """
     now_utc = _as_utc(now or datetime.now(timezone.utc))
     start_utc = _as_utc(window_start)
     end_utc = _as_utc(window_end)
@@ -88,6 +100,12 @@ def _check_window_bounds(
     issues: list[QualityIssue],
     metrics: dict[str, Any],
 ) -> None:
+    """Controlla che la finestra temporale sia valida e non futura.
+
+    Una finestra con durata nulla/negativa o troppo avanti nel tempo indica un
+    errore di timestamp o configurazione. In questi casi la riga non deve essere
+    usata per la baseline.
+    """
     duration_minutes = (window_end - window_start).total_seconds() / 60.0
     metrics["window_duration_minutes"] = round(duration_minutes, 3)
     if duration_minutes <= 0:
@@ -117,6 +135,13 @@ def _check_ble(
     issues: list[QualityIssue],
     metrics: dict[str, Any],
 ) -> None:
+    """Esegue i controlli di qualita sui campioni BLE grezzi.
+
+    Verifica esistenza del CSV, colonne obbligatorie, timestamp, duplicati e
+    numero di campioni nella finestra corrente. Il BLE e' centrale per la
+    localizzazione indoor, quindi l'assenza di campioni e' un errore bloccante
+    quando la sorgente e' abilitata.
+    """
     if not config.ble.enabled:
         metrics["ble_enabled"] = False
         return
@@ -276,6 +301,12 @@ def _check_static_room(
     issues: list[QualityIssue],
     metrics: dict[str, Any],
 ) -> None:
+    """Rileva permanenza prolungata nella stessa stanza come osservazione.
+
+    Restare nella stessa stanza per ore non e' un errore tecnico: puo' essere un
+    comportamento clinicamente interessante. Per questo viene registrato come
+    `info` e non blocca la baseline.
+    """
     lookback_start = pd.Timestamp(window_end - timedelta(hours=4))
     recent = frame.loc[frame["timestamp"] >= lookback_start].copy()
     if recent.empty:
@@ -318,6 +349,12 @@ def _check_fitbit(
     issues: list[QualityIssue],
     metrics: dict[str, Any],
 ) -> None:
+    """Controlla disponibilita e coerenza dei dati Fitbit nella finestra.
+
+    Se Fitbit e' abilitato ma token o metriche biometriche mancano, la finestra
+    non e' affidabile per il training. Viene anche verificata la presenza del
+    wearable per separare problemi tecnici da anomalie comportamentali.
+    """
     if not config.fitbit.enabled:
         metrics["fitbit_enabled"] = False
         return
@@ -377,6 +414,12 @@ def _check_shelly(
     issues: list[QualityIssue],
     metrics: dict[str, Any],
 ) -> None:
+    """Controlla i campioni Shelly/NILM quando la sorgente e' abilitata.
+
+    Nel nostro progetto Shelly e' opzionale, quindi le anomalie su questa fonte
+    vengono trattate come warning e non come errori bloccanti. Il controllo resta
+    utile se decideremo di includere i consumi elettrici.
+    """
     if not config.shelly.enabled:
         metrics["shelly_enabled"] = False
         return
@@ -436,6 +479,11 @@ def _check_shelly(
 
 
 def _overall_status(issues: list[QualityIssue]) -> str:
+    """Calcola lo stato complessivo del report a partire dalle severita.
+
+    La regola e' conservativa: basta un errore per bloccare la finestra dalla
+    baseline, mentre i warning indicano dati utilizzabili ma non perfetti.
+    """
     severities = {issue.severity for issue in issues}
     if "error" in severities:
         return "error"
@@ -445,12 +493,23 @@ def _overall_status(issues: list[QualityIssue]) -> str:
 
 
 def _as_utc(value: datetime) -> datetime:
+    """Normalizza un `datetime` in UTC.
+
+    I dati arrivano da sorgenti diverse e possono avere fusi orari differenti o
+    assenti. Portarli tutti in UTC evita confronti temporali incoerenti.
+    """
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
 
 
 def _is_missing(value: Any) -> bool:
+    """Stabilisce se un valore deve essere considerato mancante.
+
+    La funzione gestisce `None`, stringhe vuote, rappresentazioni testuali di
+    null e `nan` numerici. Serve per capire se una feature biometrica e'
+    effettivamente disponibile.
+    """
     if value is None:
         return True
     if isinstance(value, str):
@@ -467,6 +526,11 @@ def report_from_latest_window(
     config: EdgeIngestConfig,
     latest_window_csv: str | Path,
 ) -> QualityReport:
+    """Genera un report qualita leggendo l'ultima riga del CSV latest window.
+
+    Questa funzione e' usata dal comando manuale `edge_quality`: permette di
+    controllare una finestra gia' aggregata senza rilanciare tutto il runtime.
+    """
     frame = pd.read_csv(latest_window_csv)
     if frame.empty:
         raise ValueError(f"Latest window CSV is empty: {latest_window_csv}")

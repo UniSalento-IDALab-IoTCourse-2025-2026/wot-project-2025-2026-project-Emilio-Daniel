@@ -21,6 +21,13 @@ class DebounceConfig:
 
 class AlertDebouncer:
     def __init__(self, config: Union[DebounceConfig, None] = None):
+        """Inizializza lo stato del debounce degli allarmi.
+
+        Il debounce serve a ridurre il rischio di `alarm fatigue`: il sistema
+        mantiene memoria delle finestre recenti e decide se una sequenza di
+        anomalie e' davvero rilevante. La configurazione consente di modificare
+        soglie e durata della finestra temporale senza cambiare la logica.
+        """
         self.config = config or DebounceConfig()
         self.history: list[dict[str, Any]] = []
 
@@ -30,6 +37,13 @@ class AlertDebouncer:
         path: Union[str, Path],
         config: Union[DebounceConfig, None] = None,
     ) -> "AlertDebouncer":
+        """Carica da disco la storia recente usata per il debounce.
+
+        Se il file non esiste viene creato un oggetto vuoto, scelta utile sul
+        primo avvio del Raspberry. Se invece il file e' presente, la lista
+        `history` permette di continuare il ragionamento tra un ciclo edge e il
+        successivo.
+        """
         debouncer = cls(config=config)
         source = Path(path)
         if source.exists():
@@ -41,12 +55,25 @@ class AlertDebouncer:
         return debouncer
 
     def save(self, path: Union[str, Path]) -> None:
+        """Salva su disco la storia del debounce.
+
+        La persistenza e' necessaria perche' il ciclo edge puo' essere eseguito
+        ogni 8 minuti da cron/systemd: senza salvataggio ogni esecuzione
+        perderebbe memoria delle anomalie precedenti.
+        """
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("w", encoding="utf-8") as handle:
             json.dump({"history": self.history}, handle, indent=2)
 
     def update(self, result: InferenceResult) -> TriageDecision:
+        """Trasforma il risultato del modello in una decisione di triage.
+
+        La funzione distingue tre casi principali: problemi tecnici del
+        wearable, anomalie severe immediate e anomalie moderate ripetute nel
+        tempo. In questo modo il modello non produce una diagnosi, ma un livello
+        operativo utile al personale sanitario.
+        """
         self._append(result)
         self._prune(result.window_end)
 
@@ -111,6 +138,12 @@ class AlertDebouncer:
         )
 
     def _append(self, result: InferenceResult) -> None:
+        """Aggiunge alla memoria interna la finestra appena valutata.
+
+        Vengono salvati solo i dati necessari al debounce: paziente, fine
+        finestra, score e label del modello. Si evita cosi' di duplicare dati
+        sanitari completi nello stato tecnico.
+        """
         self.history.append(
             {
                 "patient_id": result.patient_id,
@@ -121,6 +154,12 @@ class AlertDebouncer:
         )
 
     def _prune(self, now: datetime) -> None:
+        """Elimina dalla memoria le finestre ormai fuori dalla finestra debounce.
+
+        Il sistema deve ricordare solo un intervallo recente, ad esempio 48 ore.
+        Questo limita la crescita del file di stato e rende la decisione
+        dipendente dal comportamento attuale del paziente.
+        """
         cutoff = now.astimezone(timezone.utc) - timedelta(hours=self.config.yellow_window_hours)
         kept = []
         for item in self.history:
@@ -132,6 +171,12 @@ class AlertDebouncer:
         self.history = kept
 
     def _technical_reasons(self, result: InferenceResult) -> list[str]:
+        """Rileva problemi tecnici da separare dagli allarmi clinici.
+
+        Un wearable non indossato o con batteria scarica non deve essere
+        interpretato come peggioramento del paziente. Per questo motivo tali
+        condizioni generano motivazioni tecniche dedicate.
+        """
         reasons = []
         present = result.context.get("wearable_present")
         if str(present).strip().lower() in {"false", "0", "no"}:
@@ -149,6 +194,12 @@ class AlertDebouncer:
 
 
 def decision_to_json(decision: TriageDecision) -> dict[str, Any]:
+    """Converte una decisione di triage in dizionario serializzabile JSON.
+
+    Le date vengono trasformate in stringhe ISO per poter salvare il risultato
+    su file o inviarlo in futuro a backend/dashboard senza perdere il riferimento
+    temporale della finestra analizzata.
+    """
     payload = asdict(decision)
     payload["window_start"] = decision.window_start.isoformat()
     payload["window_end"] = decision.window_end.isoformat()
@@ -156,6 +207,12 @@ def decision_to_json(decision: TriageDecision) -> dict[str, Any]:
 
 
 def _parse_optional_float(value: object) -> Union[float, None]:
+    """Converte un valore opzionale in float quando possibile.
+
+    Questa funzione evita errori quando i dati arrivano vuoti, mancanti o in
+    formato stringa. E' usata soprattutto per la batteria del wearable, dato che
+    il dato puo' non essere disponibile in tutte le risposte API.
+    """
     if value is None:
         return None
     if isinstance(value, str):

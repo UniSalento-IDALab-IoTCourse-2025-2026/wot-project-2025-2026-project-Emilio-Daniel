@@ -1,4 +1,4 @@
-﻿# IoT Edge Companion Android
+# IoT Edge Companion Android
 
 Questa app e' il client mobile che useremo per la localizzazione indoor BLE.
 
@@ -153,8 +153,17 @@ data/raw/ble_samples.csv
 
 ```bash
 cd ../edge_node
-python -m edge_ingest.cli --config config/edge.example.yml
+python -m edge_runtime.cli --config config/edge.example.yml
 ```
+
+7. Controllare il report qualita:
+
+```text
+../edge_node/outputs/last-quality-report.json
+```
+
+Senza beacon reali, eventuali errori BLE nel report sono attesi: servono proprio a evitare
+di addestrare la baseline con dati incompleti.
 
 ## Quando avremo i beacon reali
 
@@ -190,6 +199,22 @@ http://IP_DEL_RASPBERRY:8000/ble/sample
 9. calibrare posizione beacon, RSSI e filtro anti-rimbalzo;
 10. iniziare raccolta baseline quando la stima stanza e' stabile.
 
+La baseline reale si avvia dal modulo edge:
+
+Per i tempi del progetto useremo una baseline compatta da 5/6 giorni.
+
+```bash
+cd ../edge_node
+python -m edge_baseline.cli --config config/edge.yml start --days 6
+python -m edge_runtime.cli --config config/edge.yml --append-baseline
+```
+
+Lo stato si controlla con:
+
+```bash
+python -m edge_baseline.cli --config config/edge.yml status
+```
+
 ## Foreground Service BLE
 
 Il servizio in background si trova in:
@@ -212,4 +237,3 @@ I permessi Android usati sono:
 - localizzazione, necessaria per la scansione BLE;
 - notifiche, necessarie per mostrare la notifica persistente;
 - foreground service, necessario per lavorare in background.
-

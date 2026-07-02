@@ -25,6 +25,12 @@ class AndroidBleSample:
 
 
 def append_android_ble_sample(path: str | Path, sample: AndroidBleSample) -> dict[str, Any]:
+    """Normalizza e salva un campione BLE proveniente dall'app Android.
+
+    La funzione traduce il formato ricevuto via HTTP nello stesso schema CSV
+    usato dal collector BLE del Raspberry. In questo modo l'aggregatore puo'
+    leggere campioni Android e campioni Raspberry senza logiche separate.
+    """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
 

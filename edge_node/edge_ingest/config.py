@@ -65,6 +65,12 @@ class EdgeIngestConfig:
 
 
 def load_config(path: str | Path) -> EdgeIngestConfig:
+    """Carica il file YAML dell'edge node e costruisce configurazioni tipizzate.
+
+    Il progetto usa un solo file YAML per paziente, finestre temporali, percorsi
+    dati e sorgenti hardware. Trasformarlo in dataclass rende il resto del codice
+    piu' chiaro e riduce errori dovuti a chiavi mancanti.
+    """
     source = Path(path)
     with source.open("r", encoding="utf-8") as handle:
         payload = yaml.safe_load(handle) or {}
@@ -152,6 +158,11 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
 
 
 def _section(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    """Restituisce una sezione YAML come dizionario, anche se assente o invalida.
+
+    Questa helper permette di usare valori di default quando una sezione non e'
+    presente nel file, evitando controlli ripetuti in `load_config`.
+    """
     value = payload.get(key, {})
     if isinstance(value, dict):
         return value
@@ -159,6 +170,12 @@ def _section(payload: dict[str, Any], key: str) -> dict[str, Any]:
 
 
 def _tuple_of_strings(value: Any) -> tuple[str, ...]:
+    """Normalizza un valore YAML in una tupla di stringhe.
+
+    Alcuni campi, come target BLE, possono essere scritti come stringa singola o
+    come lista. La funzione produce sempre una tupla pulita, piu' comoda da usare
+    nei filtri runtime.
+    """
     if value is None:
         return ()
     if isinstance(value, str):

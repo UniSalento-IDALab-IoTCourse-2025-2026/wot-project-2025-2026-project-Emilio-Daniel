@@ -8,6 +8,12 @@ from edge_ingest.config import load_config
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Definisce i comandi per scansione e discovery BLE da terminale.
+
+    La CLI permette sia di cercare dispositivi vicini sia di salvare campioni
+    grezzi. E' pensata per la fase di installazione e calibrazione dei beacon o
+    del tag indossato.
+    """
     parser = argparse.ArgumentParser(
         prog="ble-scan",
         description="Scan the wearable BLE tag and append raw samples to CSV.",
@@ -22,6 +28,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Esegue discovery BLE oppure scansione reale in base agli argomenti.
+
+    Con `--discover` non viene scritto alcun CSV: si visualizzano solo i device
+    vicini. Senza `--discover`, i campioni vengono raccolti e appesi al file raw
+    usato dall'aggregatore BLE.
+    """
     args = build_parser().parse_args()
     config = load_config(args.config)
 

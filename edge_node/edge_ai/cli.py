@@ -10,6 +10,12 @@ from edge_ai.model import EdgeAnomalyDetector
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Costruisce il parser CLI per addestrare il modello o lanciare inferenza.
+
+    Questa funzione concentra in un solo punto tutti gli argomenti disponibili
+    da terminale. In questo modo l'uso manuale e l'eventuale automazione su
+    Raspberry Pi rimangono coerenti e facilmente documentabili.
+    """
     parser = argparse.ArgumentParser(
         prog="edge-ai",
         description="Train and run ADL anomaly detection on the edge node.",
@@ -32,6 +38,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def train_model(args: argparse.Namespace) -> None:
+    """Esegue il training del modello paziente-specifico a partire dalla baseline.
+
+    La funzione legge il dataset di finestre reali, filtra il paziente indicato
+    e salva su disco l'artefatto `.pkl`. Nel progetto questo comando viene usato
+    dopo la fase di baseline, quindi non deve essere alimentato con dati casuali
+    o simulati se si vuole ottenere un modello realistico.
+    """
     frame = load_feature_frame(args.input)
     detector = EdgeAnomalyDetector.train(
         frame=frame,
@@ -53,6 +66,13 @@ def train_model(args: argparse.Namespace) -> None:
 
 
 def run_inference(args: argparse.Namespace) -> None:
+    """Esegue una predizione sull'ultima finestra e applica il debounce clinico.
+
+    L'inferenza grezza del modello viene trasformata in una decisione operativa
+    tramite `AlertDebouncer`, cosi' una singola finestra sospetta non genera
+    necessariamente un allarme. L'output finale e' un JSON pensato per il futuro
+    backend o per la dashboard clinica.
+    """
     detector = EdgeAnomalyDetector.load(args.model)
     frame = load_feature_frame(args.input)
     result = detector.predict_record(latest_record(frame))
@@ -70,6 +90,12 @@ def run_inference(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    """Punto di ingresso della CLI `edge_ai`.
+
+    Interpreta il comando richiesto dall'utente (`train` oppure `infer`) e
+    delega alla funzione specifica. Questa separazione rende il codice piu'
+    leggibile e permette di testare training e inferenza separatamente.
+    """
     parser = build_parser()
     args = parser.parse_args()
 

@@ -9,6 +9,12 @@ from edge_quality.checks import report_from_latest_window
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Costruisce la CLI per generare manualmente un report qualita.
+
+    Il comando permette di controllare `latest_window.csv` e capire se la
+    finestra sarebbe accettata nella baseline. E' utile prima del training e
+    durante la calibrazione dei sensori reali.
+    """
     parser = argparse.ArgumentParser(
         prog="edge-quality",
         description="Check if the latest edge data window is usable for baseline/training.",
@@ -28,6 +34,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Esegue il controllo qualita e salva il report JSON.
+
+    La funzione carica la configurazione, sceglie il CSV da analizzare, costruisce
+    il report e lo scrive su `outputs/last-quality-report.json` o sul percorso
+    indicato dall'utente.
+    """
     args = build_parser().parse_args()
     config = load_config(args.config)
     latest_window_csv = Path(args.input) if args.input else config.paths.latest_window_csv
@@ -44,4 +56,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

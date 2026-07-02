@@ -19,6 +19,12 @@ from edge_quality.checks import evaluate_quality
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Definisce la CLI del ciclo edge unico.
+
+    Questo comando riunisce aggregazione, controllo qualita, baseline e
+    inferenza. L'obiettivo e' avere un solo punto da schedulare sul Raspberry
+    ogni 8 minuti tramite cron o systemd timer.
+    """
     parser = argparse.ArgumentParser(
         prog="edge-cycle",
         description=(
@@ -86,12 +92,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Punto di ingresso del runtime edge.
+
+    La funzione esegue un ciclo completo e stampa lo stato JSON finale, utile per
+    debug locale e per capire rapidamente se modello, qualita e baseline sono
+    stati gestiti correttamente.
+    """
     args = build_parser().parse_args()
     status = run_cycle(args)
     print(json.dumps(status, indent=2))
 
 
 def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
+    """Esegue una iterazione completa del processo IoT edge.
+
+    Il ciclo puo' raccogliere BLE, aggregare la finestra, salvare
+    `latest_window.csv`, generare il report qualita, aggiornare la baseline e
+    lanciare inferenza se il modello esiste. Questa e' la funzione centrale che
+    renderemo automatica sul Raspberry.
+    """
     config = load_config(args.config)
     patient_id = config.patient.patient_id
 
@@ -196,6 +215,12 @@ def _run_inference(
     state_path: Path,
     decision_output: Path,
 ) -> dict[str, Any]:
+    """Carica il modello, valuta l'ultima finestra e salva la decisione.
+
+    La funzione e' separata dal resto del ciclo per importare il codice AI solo
+    quando serve davvero. Il risultato viene passato al debounce e scritto come
+    JSON finale della finestra.
+    """
     from edge_ai.features import latest_record, load_feature_frame
     from edge_ai.model import EdgeAnomalyDetector
 
@@ -213,12 +238,22 @@ def _run_inference(
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Scrive un payload JSON creando prima la cartella di destinazione.
+
+    Il runtime produce vari file di stato; centralizzare la scrittura evita
+    duplicazioni e garantisce che le directory vengano create automaticamente.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
 
 
 def _count_quality_issues(payload: dict[str, Any], severity: str) -> int:
+    """Conta quante issue di una certa severita compaiono nel report qualita.
+
+    Questi contatori vengono inseriti in `last-cycle.json` per avere un riassunto
+    immediato senza aprire manualmente il report completo.
+    """
     return sum(
         1
         for issue in payload.get("issues", [])

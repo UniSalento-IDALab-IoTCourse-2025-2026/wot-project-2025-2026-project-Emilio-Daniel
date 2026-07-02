@@ -36,6 +36,12 @@ class BaselineSession:
     notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Converte lo stato della baseline in un dizionario serializzabile.
+
+        Il file di stato viene salvato in JSON, quindi la dataclass deve essere
+        trasformata in tipi base. Questo metodo mantiene centralizzata la
+        conversione e riduce duplicazioni nel codice CLI e runtime.
+        """
         return asdict(self)
 
 
@@ -46,6 +52,12 @@ def start_session(
     model_output: str | Path | None = None,
     reset: bool = False,
 ) -> BaselineSession:
+    """Avvia una nuova sessione di raccolta baseline reale.
+
+    La baseline rappresenta la routine personale del paziente e deve essere
+    raccolta prima dell'addestramento. La funzione crea il file di stato con
+    durata pianificata, percorso del CSV baseline e percorso del modello finale.
+    """
     state = Path(state_path)
     if state.exists() and not reset:
         existing = load_session(state)
@@ -75,6 +87,12 @@ def start_session(
 
 
 def load_session(state_path: str | Path = DEFAULT_BASELINE_STATE) -> BaselineSession:
+    """Legge da disco lo stato corrente della sessione baseline.
+
+    Questa funzione permette al runtime, che viene eseguito periodicamente, di
+    sapere se una raccolta baseline e' attiva e quanti cicli sono gia' stati
+    accettati o rifiutati.
+    """
     source = Path(state_path)
     with source.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -85,6 +103,12 @@ def save_session(
     session: BaselineSession,
     state_path: str | Path = DEFAULT_BASELINE_STATE,
 ) -> None:
+    """Salva su disco lo stato aggiornato della baseline.
+
+    Ogni ciclo edge puo' modificare contatori, ultimo timestamp e qualita dei
+    dati. Salvare questi dati rende la procedura robusta anche se il Raspberry
+    viene riavviato durante la raccolta.
+    """
     target = Path(state_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8") as handle:
@@ -97,6 +121,12 @@ def update_session_from_cycle(
     quality_report: dict[str, Any],
     state_path: str | Path = DEFAULT_BASELINE_STATE,
 ) -> BaselineSession | None:
+    """Aggiorna la sessione baseline dopo un ciclo edge.
+
+    Il runtime chiama questa funzione dopo aver aggregato la finestra e valutato
+    la qualita. In questo modo il sistema registra quante finestre sono state
+    accettate per il training e quante sono state scartate per problemi tecnici.
+    """
     state = Path(state_path)
     if not state.exists():
         return None
@@ -135,6 +165,12 @@ def session_status_payload(
     config: EdgeIngestConfig,
     state_path: str | Path = DEFAULT_BASELINE_STATE,
 ) -> dict[str, Any]:
+    """Costruisce un riepilogo leggibile dello stato della baseline.
+
+    Il payload contiene avanzamento temporale, numero di finestre attese,
+    percentuale di completamento e indicazione `ready_for_training`. Serve sia
+    per il comando CLI sia per capire se il modello puo' essere addestrato.
+    """
     state = Path(state_path)
     if not state.exists():
         return {
@@ -179,6 +215,12 @@ def finalize_session(
     state_path: str | Path = DEFAULT_BASELINE_STATE,
     allow_early: bool = False,
 ) -> BaselineSession:
+    """Marca la baseline come pronta per l'addestramento.
+
+    La finalizzazione controlla che la raccolta abbia durata e qualita
+    sufficienti. L'opzione `allow_early` e' prevista solo per prove tecniche, non
+    per il modello finale su dati reali.
+    """
     state = Path(state_path)
     session = load_session(state)
     payload = session_status_payload(config, state)
@@ -194,6 +236,12 @@ def finalize_session(
 
 
 def count_baseline_rows(path: str | Path) -> int:
+    """Conta quante finestre aggregate sono presenti nel CSV baseline.
+
+    Il numero di righe e' un indicatore minimo di sufficienza del dataset: senza
+    abbastanza finestre reali l'Isolation Forest non puo' costruire una baseline
+    affidabile.
+    """
     source = Path(path)
     if not source.exists():
         return 0
@@ -203,6 +251,12 @@ def count_baseline_rows(path: str | Path) -> int:
 
 
 def _count_issues(report: dict[str, Any], severity: str) -> int:
+    """Conta nel report qualita le issue con una certa severita.
+
+    La funzione e' usata per aggiornare statistiche come errori, warning e info
+    durante la raccolta baseline, mantenendo separati problemi bloccanti e
+    semplici osservazioni.
+    """
     return sum(
         1
         for issue in report.get("issues", [])
@@ -211,6 +265,11 @@ def _count_issues(report: dict[str, Any], severity: str) -> int:
 
 
 def _parse_dt(value: str) -> datetime:
+    """Converte una stringa ISO in `datetime` UTC.
+
+    Lo stato baseline salva le date come stringhe JSON. Prima di calcolare
+    durata e scadenza e' necessario riportarle a oggetti temporali confrontabili.
+    """
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
@@ -218,12 +277,23 @@ def _parse_dt(value: str) -> datetime:
 
 
 def _expected_windows(elapsed_days: float, window_minutes: int) -> int:
+    """Stima quante finestre ci si aspetta dopo un certo tempo di raccolta.
+
+    Questo valore serve per valutare se il sistema sta producendo abbastanza
+    dati rispetto alla frequenza prevista, ad esempio una finestra ogni 8 minuti.
+    """
     if elapsed_days <= 0:
         return 0
     return int((elapsed_days * 24.0 * 60.0) / max(1, window_minutes))
 
 
 def _ratio(value: int, total: int) -> float:
+    """Calcola un rapporto protetto da divisioni per zero.
+
+    Nei primi istanti della baseline il totale puo' essere nullo. Questa helper
+    restituisce 0.0 in modo controllato e arrotonda il risultato per renderlo
+    leggibile nei report JSON.
+    """
     if total <= 0:
         return 0.0
     return round(value / total, 4)

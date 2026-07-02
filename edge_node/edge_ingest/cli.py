@@ -14,6 +14,12 @@ from edge_ingest.time_windows import parse_datetime, window_from_end
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Costruisce la CLI per aggregare manualmente una finestra dati.
+
+    Questo comando e' utile nei test locali per verificare che gli adapter
+    producano `latest_window.csv` e, opzionalmente, che la baseline venga
+    popolata con righe nel formato corretto.
+    """
     parser = argparse.ArgumentParser(
         prog="edge-ingest",
         description="Collect real edge data and aggregate it into AI feature windows.",
@@ -38,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Esegue una raccolta/aggregazione manuale tramite `edge_ingest`.
+
+    La funzione calcola la finestra temporale, raccoglie eventuali campioni BLE
+    richiesti, fonde le sorgenti abilitate e stampa un riepilogo JSON. Nel
+    progetto finale sara' preferibile usare `edge_runtime`.
+    """
     args = build_parser().parse_args()
     config = load_config(args.config)
     ble_samples = []

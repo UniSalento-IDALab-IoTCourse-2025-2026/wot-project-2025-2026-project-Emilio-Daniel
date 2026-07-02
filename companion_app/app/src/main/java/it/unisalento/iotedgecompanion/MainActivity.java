@@ -43,6 +43,12 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        /*
+         * Metodo principale dell'Activity Android.
+         * Inizializza la schermata, collega i campi XML alle variabili Java e
+         * associa i pulsanti alle azioni di configurazione, invio manuale e
+         * gestione del servizio BLE in background.
+         */
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
@@ -69,11 +75,21 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        /*
+         * Chiusura controllata dell'Activity.
+         * Spegne l'executor usato per le richieste HTTP, evitando che thread di
+         * rete rimangano attivi dopo la chiusura dell'interfaccia.
+         */
         networkExecutor.shutdownNow();
         super.onDestroy();
     }
 
     private void loadConfig() {
+        /*
+         * Carica da SharedPreferences l'ultima configurazione salvata.
+         * In questo modo l'utente non deve reinserire ogni volta URL del
+         * Raspberry, identificativo telefono e mappa beacon-stanza.
+         */
         SharedPreferences preferences = getSharedPreferences("iot-edge", MODE_PRIVATE);
         receiverUrlInput.setText(preferences.getString("receiverUrl", "http://10.0.2.2:8000/ble/sample"));
         phoneIdInput.setText(preferences.getString("phoneId", "android-emulator"));
@@ -88,6 +104,11 @@ public class MainActivity extends Activity {
     }
 
     private void saveConfig() {
+        /*
+         * Salva localmente la configurazione inserita nella schermata.
+         * I valori salvati vengono riutilizzati sia dal test manuale sia dal
+         * Foreground Service BLE che lavora in background.
+         */
         getSharedPreferences("iot-edge", MODE_PRIVATE)
                 .edit()
                 .putString("receiverUrl", receiverUrlInput.getText().toString().trim())
@@ -101,6 +122,11 @@ public class MainActivity extends Activity {
     }
 
     private void sendManualSample() {
+        /*
+         * Invia un campione BLE manuale al receiver.
+         * Questa modalita serve per testare l'intera pipeline anche da
+         * emulatore, quando non abbiamo ancora beacon fisici disponibili.
+         */
         saveConfig();
         String room = manualRoomInput.getText().toString().trim();
         String beaconId = manualBeaconInput.getText().toString().trim();
@@ -109,6 +135,11 @@ public class MainActivity extends Activity {
     }
 
     private void startMonitoringService() {
+        /*
+         * Avvia il Foreground Service responsabile della scansione BLE reale.
+         * Prima controlla i permessi Android necessari; se mancano, li richiede
+         * e riparte automaticamente dopo la concessione.
+         */
         saveConfig();
         if (!hasRequiredPermissions()) {
             startServiceAfterPermissionGrant = true;
@@ -126,11 +157,21 @@ public class MainActivity extends Activity {
     }
 
     private void stopMonitoringService() {
+        /*
+         * Ferma il servizio BLE in background.
+         * Questa azione interrompe la scansione periodica e aggiorna lo stato
+         * mostrato nell'interfaccia utente.
+         */
         stopService(new Intent(this, BleMonitoringService.class));
         setStatus("Monitoraggio BLE fermato");
     }
 
     private void sendBleSample(String room, int rssi, String beaconId, String beaconName) {
+        /*
+         * Costruisce e invia via HTTP un campione BLE al Raspberry.
+         * L'invio avviene su thread separato per non bloccare la UI Android; il
+         * risultato viene poi riportato sul main thread tramite Handler.
+         */
         String receiverUrl = receiverUrlInput.getText().toString().trim();
         String phoneId = phoneIdInput.getText().toString().trim();
         if (TextUtils.isEmpty(receiverUrl)) {
@@ -173,6 +214,11 @@ public class MainActivity extends Activity {
     }
 
     private int parseRssi(String text) {
+        /*
+         * Converte il valore RSSI inserito manualmente in intero.
+         * Se il testo non e' valido, usa un valore di default realistico per un
+         * segnale BLE medio-debole, cosi' il test manuale non si blocca.
+         */
         try {
             return Integer.parseInt(text);
         } catch (NumberFormatException exception) {
@@ -181,6 +227,11 @@ public class MainActivity extends Activity {
     }
 
     private boolean hasRequiredPermissions() {
+        /*
+         * Verifica se l'app possiede i permessi necessari alla scansione BLE.
+         * Android richiede permessi diversi in base alla versione, quindi il
+         * controllo distingue localizzazione, Bluetooth e notifiche.
+         */
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return false;
         }
@@ -199,6 +250,11 @@ public class MainActivity extends Activity {
     }
 
     private void requestRequiredPermissions() {
+        /*
+         * Richiede all'utente i permessi Android necessari.
+         * La lista viene costruita dinamicamente per restare compatibile con
+         * versioni Android diverse, evitando richieste non supportate.
+         */
         List<String> permissions = new ArrayList<>();
         permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -213,6 +269,11 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        /*
+         * Gestisce la risposta dell'utente alla richiesta permessi.
+         * Se tutti i permessi sono concessi e l'utente voleva avviare il servizio,
+         * il monitoraggio BLE parte automaticamente.
+         */
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != REQUEST_PERMISSIONS) {
             return;
@@ -230,6 +291,11 @@ public class MainActivity extends Activity {
     }
 
     private void setStatus(String message) {
+        /*
+         * Aggiorna il messaggio di stato visibile nell'app.
+         * Centralizzare questa operazione rende piu' semplice modificare in
+         * futuro il modo in cui comunichiamo errori o successi all'utente.
+         */
         statusText.setText(message);
     }
 }

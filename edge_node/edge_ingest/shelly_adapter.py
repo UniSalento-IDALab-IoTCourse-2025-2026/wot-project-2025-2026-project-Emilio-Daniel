@@ -11,9 +11,21 @@ class ShellyCsvAdapter:
     """Aggregates real Shelly/NILM samples collected by a separate sampler."""
 
     def __init__(self, config: ShellyConfig):
+        """Inizializza l'adapter Shelly/NILM basato su CSV grezzo.
+
+        In questa fase il collector HTTP reale non e' ancora definitivo, quindi
+        l'adapter legge campioni gia' salvati in CSV e li converte in feature
+        energetiche compatibili con il modello.
+        """
         self.config = config
 
     def collect_window(self, window_start: datetime, window_end: datetime) -> dict[str, float]:
+        """Aggrega consumi ed eventi elettrodomestici nella finestra richiesta.
+
+        La funzione stima energia totale, eventi cucina/caffe/fornelli e minuti
+        TV quando tali colonne sono presenti. Se Shelly/NILM non verra' usato,
+        queste feature resteranno semplicemente disabilitate.
+        """
         if not self.config.raw_csv.exists():
             return {}
 

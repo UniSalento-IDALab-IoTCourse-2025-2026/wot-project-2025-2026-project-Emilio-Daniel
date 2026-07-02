@@ -17,6 +17,12 @@ from edge_ingest.config import load_config
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Definisce i comandi disponibili per gestire la baseline reale.
+
+    La CLI espone le quattro fasi operative principali: avvio, controllo stato,
+    finalizzazione e training. Questa struttura rispecchia il workflow che
+    useremo sul Raspberry quando i sensori reali saranno disponibili.
+    """
     parser = argparse.ArgumentParser(
         prog="edge-baseline",
         description="Manage the real-data baseline collection workflow.",
@@ -44,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Punto di ingresso della CLI `edge_baseline`.
+
+    La funzione carica la configurazione dell'edge node, interpreta il comando
+    richiesto e produce un JSON leggibile. Il JSON e' utile sia per debug umano
+    sia per eventuali script di automazione.
+    """
     args = build_parser().parse_args()
     config = load_config(args.config)
     state_path = Path(args.state)

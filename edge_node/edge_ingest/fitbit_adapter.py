@@ -16,9 +16,22 @@ class FitbitAdapter:
     """Collects real biometrics from Fitbit Web API using an OAuth access token."""
 
     def __init__(self, config: FitbitConfig):
+        """Inizializza l'adapter Fitbit con i percorsi token e API.
+
+        L'adapter non parla direttamente con il Pixel Watch via BLE: interroga
+        le API Fitbit usando i token OAuth salvati localmente dal modulo
+        `edge_auth`.
+        """
         self.config = config
 
     def collect_window(self, window_start: datetime, window_end: datetime) -> dict[str, float | str]:
+        """Raccoglie le metriche Fitbit disponibili per una finestra temporale.
+
+        La funzione scarica frequenza cardiaca intraday e metriche giornaliere
+        opzionali, poi restituisce solo le feature compatibili con lo schema del
+        modello. Se alcune API non forniscono dati, le colonne resteranno vuote
+        o `nan` nell'aggregatore.
+        """
         token = self._load_access_token()
         patient = quote(self.config.user_id, safe="-")
         start_date = window_start.date().isoformat()
@@ -57,6 +70,12 @@ class FitbitAdapter:
         patient: str,
         date: str,
     ) -> dict[str, float]:
+        """Recupera metriche Fitbit giornaliere non sempre disponibili.
+
+        HRV, SpO2 e sonno possono dipendere da dispositivo, consenso OAuth,
+        qualita della misura e disponibilita API. Per questo vengono interrogati
+        in modo tollerante: se mancano, l'adapter continua senza fallire.
+        """
         metrics: dict[str, float] = {}
 
         hrv = self._try_get_json(token, f"/1/user/{patient}/hrv/date/{date}.json")
@@ -91,6 +110,12 @@ class FitbitAdapter:
         return metrics
 
     def _collect_device_status(self, token: str, patient: str) -> dict[str, float | str]:
+        """Recupera informazioni tecniche sul wearable associato all'account.
+
+        Presenza e livello batteria servono soprattutto per distinguere problemi
+        tecnici da anomalie cliniche. Un watch scarico o non indossato non deve
+        essere interpretato come comportamento anomalo del paziente.
+        """
         payload = self._try_get_json(token, f"/1/user/{patient}/devices.json")
         if not isinstance(payload, list) or not payload:
             return {}
@@ -103,6 +128,12 @@ class FitbitAdapter:
         return status
 
     def _get_json(self, token: str, path: str, *, allow_refresh: bool = True) -> Any:
+        """Esegue una richiesta GET alle API Fitbit e restituisce il JSON.
+
+        Se Fitbit risponde 401, la funzione prova una sola volta a rinnovare il
+        token e ripetere la chiamata. Questo rende il polling piu' robusto senza
+        entrare in loop nel caso di credenziali errate.
+        """
         url = f"{self.config.api_base_url}{path}"
         request = Request(
             url,
@@ -132,12 +163,24 @@ class FitbitAdapter:
             raise RuntimeError(f"Fitbit API network error: {exc}") from exc
 
     def _try_get_json(self, token: str, path: str) -> Any:
+        """Esegue una richiesta opzionale alle API Fitbit.
+
+        Alcune metriche non sono sempre disponibili. Questa helper intercetta gli
+        errori runtime e restituisce `None`, cosi' il resto della finestra puo'
+        essere comunque costruito.
+        """
         try:
             return self._get_json(token, path)
         except RuntimeError:
             return None
 
     def _load_access_token(self) -> str:
+        """Ottiene un access token valido dal modulo OAuth.
+
+        Il token viene letto da `fitbit_token.json` e, se necessario, rinnovato
+        usando `fitbit_client.json`. L'adapter rimane quindi concentrato sulla
+        raccolta dati e non sulla gestione OAuth di basso livello.
+        """
         return load_valid_access_token(
             self.config.token_file,
             self.config.client_file,

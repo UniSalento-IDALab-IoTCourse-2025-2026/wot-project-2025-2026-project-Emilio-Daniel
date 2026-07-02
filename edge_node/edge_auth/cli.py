@@ -16,6 +16,12 @@ from edge_auth.fitbit_oauth import (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Costruisce la CLI per configurare le credenziali delle sorgenti reali.
+
+    Al momento il provider gestito e' Fitbit, necessario per recuperare i dati
+    biometrici sincronizzati dal Google Pixel Watch 2. I sottocomandi separano
+    setup iniziale, controllo stato e refresh manuale del token.
+    """
     parser = argparse.ArgumentParser(
         prog="edge-auth",
         description="Configure OAuth credentials for real edge data sources.",
@@ -78,12 +84,24 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Punto di ingresso del comando `edge_auth`.
+
+    Dopo il parsing degli argomenti, la funzione chiama l'handler associato al
+    sottocomando scelto. Questa impostazione rende semplice aggiungere in futuro
+    altri provider OAuth senza riscrivere la CLI.
+    """
     parser = build_parser()
     args = parser.parse_args()
     args.handler(args, parser)
 
 
 def _handle_fitbit_setup(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Gestisce il setup OAuth Fitbit e salva i file locali.
+
+    Il comando riceve client id e client secret, apre il browser per il consenso
+    utente e scrive `fitbit_client.json` e `fitbit_token.json`. Questi file
+    restano sul Raspberry/PC e non devono essere committati nel repository.
+    """
     client_id = _clean(args.client_id)
     if not client_id:
         parser.error(
@@ -128,6 +146,12 @@ def _handle_fitbit_refresh(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
 ) -> None:
+    """Forza manualmente il refresh dell'access token Fitbit.
+
+    Normalmente il refresh viene eseguito automaticamente dall'adapter durante
+    la raccolta dati. Questo comando e' utile per testare che refresh token e
+    credenziali client siano corretti prima di attivare il ciclo edge.
+    """
     del parser
     token = refresh_access_token(Path(args.token_file), Path(args.client_file))
     print(
@@ -148,6 +172,12 @@ def _handle_fitbit_status(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
 ) -> None:
+    """Mostra lo stato del setup Fitbit senza stampare segreti.
+
+    Il comando indica se i file token/client esistono, se il token e' scaduto e
+    se sono presenti access token e refresh token. Non stampa mai il valore dei
+    token, per ridurre il rischio di esporre credenziali.
+    """
     del parser
     print(
         json.dumps(
@@ -158,9 +188,13 @@ def _handle_fitbit_status(
 
 
 def _clean(value: str | None) -> str:
+    """Normalizza una stringa opzionale proveniente da CLI o variabile ambiente.
+
+    La funzione evita di trattare stringhe vuote o spazi come valori validi,
+    semplificando i controlli successivi su client id e client secret.
+    """
     return str(value or "").strip()
 
 
 if __name__ == "__main__":
     main()
-

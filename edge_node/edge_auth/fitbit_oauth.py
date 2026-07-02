@@ -60,6 +60,13 @@ def run_authorization_setup(
     timeout_seconds: int,
     open_browser: bool,
 ) -> OAuthSetupResult:
+    """Esegue il setup completo OAuth Fitbit con Authorization Code e PKCE.
+
+    La funzione genera stato e code verifier, apre la pagina di consenso Fitbit,
+    riceve il callback locale, scambia il codice con i token e salva tutto nei
+    file di configurazione locali. E' pensata per essere eseguita una volta
+    durante la preparazione del Raspberry o del PC di test.
+    """
     state = secrets.token_urlsafe(24)
     code_verifier = _generate_code_verifier()
     code_challenge = _code_challenge(code_verifier)
@@ -119,6 +126,12 @@ def build_authorization_url(
     state: str,
     code_challenge: str,
 ) -> str:
+    """Costruisce l'URL di autorizzazione da aprire nel browser.
+
+    L'URL contiene client id, scope, redirect URI, stato anti-CSRF e code
+    challenge PKCE. In questo modo l'utente puo' concedere esplicitamente al
+    progetto l'accesso ai dati Fitbit necessari.
+    """
     query = urlencode(
         {
             "client_id": client_id,
@@ -141,10 +154,22 @@ def wait_for_callback(
     port: int,
     timeout_seconds: int,
 ) -> dict[str, str]:
+    """Attende sul computer locale il redirect di ritorno da Fitbit.
+
+    Durante il setup OAuth viene avviato un piccolo server HTTP su localhost. Il
+    server riceve il parametro `code`, verifica lo `state` e restituisce una
+    pagina semplice che comunica all'utente che puo' tornare al terminale.
+    """
     result: dict[str, str] = {}
 
     class CallbackHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
+            """Gestisce la richiesta GET inviata dal browser al redirect locale.
+
+            Il metodo legge i parametri della query, distingue successo ed
+            errore OAuth e salva nel dizionario condiviso il codice temporaneo
+            da scambiare con i token.
+            """
             parsed = urlparse(self.path)
             query = parse_qs(parsed.query)
             state = _first(query.get("state"))
@@ -181,9 +206,19 @@ def wait_for_callback(
             )
 
         def log_message(self, format: str, *args: object) -> None:
+            """Disabilita il logging standard del server HTTP locale.
+
+            Il setup deve rimanere pulito nel terminale: stampiamo solo le
+            informazioni utili all'utente e non ogni richiesta HTTP del browser.
+            """
             return
 
         def _send_page(self, message: str) -> None:
+            """Invia al browser una piccola pagina HTML di esito.
+
+            La pagina non contiene dati sensibili; serve solo a confermare se il
+            consenso Fitbit e' stato completato oppure se c'e' stato un errore.
+            """
             body = (
                 "<!doctype html><html><head><title>Fitbit OAuth</title></head>"
                 f"<body><h1>{message}</h1></body></html>"
@@ -219,6 +254,12 @@ def exchange_authorization_code(
     code: str,
     code_verifier: str,
 ) -> dict[str, Any]:
+    """Scambia il codice OAuth temporaneo con access token e refresh token.
+
+    Questo passaggio avviene dopo il consenso dell'utente. Il `code_verifier`
+    completa il controllo PKCE e dimostra che chi scambia il codice e' lo stesso
+    client che ha generato l'authorization URL.
+    """
     return _post_token_form(
         client=client,
         form={
@@ -237,6 +278,13 @@ def refresh_access_token(
     *,
     save: bool = True,
 ) -> dict[str, Any]:
+    """Aggiorna l'access token Fitbit usando il refresh token salvato.
+
+    Gli access token hanno durata limitata; il refresh token permette al
+    Raspberry di continuare il polling senza chiedere login manuale ogni volta.
+    Il nuovo token viene salvato subito per non perdere eventuali refresh token
+    ruotati dal provider.
+    """
     token_payload = load_json(token_file)
     refresh_token = token_payload.get("refresh_token")
     if not refresh_token:
@@ -265,6 +313,12 @@ def load_valid_access_token(
     *,
     refresh_margin_seconds: int = 120,
 ) -> str:
+    """Restituisce un access token valido, rinfrescandolo se necessario.
+
+    L'adapter Fitbit chiama questa funzione prima delle API. Se il token e'
+    scaduto o sta per scadere, viene eseguito automaticamente il refresh usando
+    i file locali prodotti dal setup OAuth.
+    """
     token_payload = load_json(token_file)
     token = token_payload.get("access_token")
     if not token:
@@ -284,6 +338,12 @@ def token_is_expired(
     *,
     margin_seconds: int = 120,
 ) -> bool:
+    """Verifica se un token e' scaduto o troppo vicino alla scadenza.
+
+    Il margine evita di iniziare una chiamata API con un token che potrebbe
+    scadere durante la richiesta. Se manca `expires_at`, il token viene trattato
+    come scaduto per sicurezza.
+    """
     expires_at_raw = token_payload.get("expires_at")
     if not expires_at_raw:
         return True
@@ -293,6 +353,12 @@ def token_is_expired(
 
 
 def save_token(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """Salva su disco il payload token arricchito con metadati temporali.
+
+    Oltre ai campi restituiti da Fitbit, vengono aggiunti `updated_at` ed
+    eventualmente `expires_at`, cosi' il runtime puo' sapere quando rinnovare
+    l'access token.
+    """
     enriched = _with_expiry_metadata(payload)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -301,6 +367,12 @@ def save_token(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_client_credentials(path: Path) -> FitbitClientCredentials:
+    """Carica client id, client secret e redirect URI dal file locale.
+
+    Queste informazioni identificano l'app OAuth registrata sul portale Fitbit.
+    Il file e' separato dal token per distinguere credenziali applicative e
+    credenziali utente.
+    """
     payload = load_json(path)
     client_id = str(payload.get("client_id") or "").strip()
     if not client_id:
@@ -314,6 +386,11 @@ def load_client_credentials(path: Path) -> FitbitClientCredentials:
 
 
 def load_json(path: Path) -> dict[str, Any]:
+    """Legge un file JSON e verifica che contenga un oggetto.
+
+    Centralizzare la lettura permette di produrre errori chiari quando mancano i
+    file di setup o quando il contenuto non e' nel formato atteso.
+    """
     if not path.exists():
         raise FileNotFoundError(f"Missing file: {path}")
     with path.open("r", encoding="utf-8") as handle:
@@ -324,6 +401,12 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def describe_token(token_file: Path, client_file: Path) -> dict[str, Any]:
+    """Restituisce un riepilogo sicuro dello stato OAuth Fitbit.
+
+    Il dizionario indica presenza dei file, scadenza e disponibilita' dei token,
+    ma non espone mai il valore effettivo di access token, refresh token o client
+    secret. E' pensato per debug e documentazione.
+    """
     token_exists = token_file.exists()
     client_exists = client_file.exists()
     payload: dict[str, Any] = {}
@@ -351,6 +434,12 @@ def _post_token_form(
     client: FitbitClientCredentials,
     form: dict[str, str],
 ) -> dict[str, Any]:
+    """Invia una richiesta form-encoded all'endpoint token Fitbit.
+
+    La stessa funzione viene usata sia per lo scambio del codice sia per il
+    refresh. Quando e' presente il client secret, viene costruita l'intestazione
+    Basic Auth richiesta dal flusso OAuth.
+    """
     encoded_form = urlencode(form).encode("utf-8")
     headers = {
         "Accept": "application/json",
@@ -378,6 +467,11 @@ def _post_token_form(
 
 
 def _save_client_credentials(path: Path, client: FitbitClientCredentials) -> None:
+    """Scrive su disco le credenziali client dell'app OAuth Fitbit.
+
+    Il file viene creato durante il setup e riutilizzato nei refresh futuri. Non
+    deve essere versionato perche' puo' contenere il client secret.
+    """
     payload = {
         "client_id": client.client_id,
         "redirect_uri": client.redirect_uri,
@@ -392,6 +486,12 @@ def _save_client_credentials(path: Path, client: FitbitClientCredentials) -> Non
 
 
 def _with_expiry_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    """Aggiunge al payload token le informazioni di aggiornamento e scadenza.
+
+    Fitbit restituisce normalmente `expires_in` in secondi. Convertirlo in una
+    data assoluta facilita i controlli successivi e rende il file token piu'
+    leggibile anche manualmente.
+    """
     enriched = dict(payload)
     now = datetime.now(timezone.utc)
     enriched["updated_at"] = _format_datetime(now)
@@ -404,21 +504,43 @@ def _with_expiry_metadata(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _generate_code_verifier() -> str:
+    """Genera il code verifier casuale richiesto da PKCE.
+
+    Il verifier rimane solo in memoria durante il setup e viene usato per
+    dimostrare che la richiesta token appartiene alla stessa sessione OAuth.
+    """
     return secrets.token_urlsafe(64)[:128]
 
 
 def _code_challenge(code_verifier: str) -> str:
+    """Calcola il code challenge S256 a partire dal code verifier.
+
+    Il challenge viene mandato nell'authorization URL, mentre il verifier viene
+    usato successivamente nello scambio del codice. Questa coppia protegge il
+    flusso da intercettazioni del codice temporaneo.
+    """
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
 def _first(values: list[str] | None) -> str | None:
+    """Restituisce il primo valore di una lista di parametri query.
+
+    `parse_qs` produce liste anche quando un parametro compare una sola volta.
+    Questa helper rende piu' chiara la lettura di `code`, `state` ed eventuali
+    errori OAuth.
+    """
     if not values:
         return None
     return values[0]
 
 
 def _optional_str(value: Any) -> str | None:
+    """Converte un valore opzionale in stringa non vuota.
+
+    Serve per salvare o mostrare campi opzionali evitando di propagare stringhe
+    composte solo da spazi.
+    """
     if value is None:
         return None
     text = str(value).strip()
@@ -426,10 +548,20 @@ def _optional_str(value: Any) -> str | None:
 
 
 def _format_datetime(value: datetime) -> str:
+    """Formatta una data in ISO UTC con suffisso `Z`.
+
+    Usare sempre UTC nei file token evita ambiguita di fuso orario tra PC di
+    sviluppo, Raspberry e servizi cloud.
+    """
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _parse_datetime(value: str) -> datetime:
+    """Converte una stringa ISO, anche con suffisso `Z`, in `datetime` UTC.
+
+    La funzione e' usata per verificare la scadenza del token indipendentemente
+    dal formato ISO specifico salvato nel JSON.
+    """
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)

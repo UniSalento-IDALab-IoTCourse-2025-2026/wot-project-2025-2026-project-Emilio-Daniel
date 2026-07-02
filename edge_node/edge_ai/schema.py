@@ -67,6 +67,12 @@ class TriageDecision:
 
 
 def parse_timestamp(value: Any) -> datetime:
+    """Normalizza un timestamp in un oggetto `datetime` UTC.
+
+    I dati possono arrivare da CSV, JSON o pandas con formati leggermente
+    diversi. Questa funzione rende uniforme la rappresentazione temporale, cosi'
+    inferenza e debounce confrontano sempre finestre nello stesso fuso logico.
+    """
     if isinstance(value, datetime):
         parsed = value
     else:

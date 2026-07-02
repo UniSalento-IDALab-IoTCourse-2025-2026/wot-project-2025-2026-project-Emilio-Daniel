@@ -1,4 +1,6 @@
-# Progetto IoT 2026 - Edge AI ADL
+Per eliminire tutti i desktop.ini: Get-ChildItem -Path . -Filter "desktop.ini" -Recurse -Force | Remove-Item -Force
+
+# Progetto IoT 2026
 
 Questo repository contiene il nucleo reale del progetto IoT per il monitoraggio
 comportamentale e spaziale delle Attivita' della Vita Quotidiana (ADL).
@@ -11,6 +13,31 @@ in locale.
 Il progetto e' pensato per usare dati reali. Non stiamo addestrando il modello
 finale su dati simulati: la baseline verra' raccolta dal setup reale installato
 sul Raspberry Pi.
+
+## Indice
+
+- [Architettura](#architettura)
+- [Struttura](#struttura)
+- [Cosa e' stato fatto finora](#cosa-e-stato-fatto-finora)
+- [In parole povere](#in-parole-povere)
+- [Step attuale](#step-attuale)
+- [Configurazione](#configurazione)
+- [Fitbit / Pixel Watch 2](#fitbit--pixel-watch-2)
+- [BLE indoor positioning](#ble-indoor-positioning)
+  - [Hardware previsto](#hardware-previsto)
+  - [Cosa abbiamo fatto con Android](#cosa-abbiamo-fatto-con-android)
+  - [Receiver Raspberry per Android](#receiver-raspberry-per-android)
+  - [Test app Android senza beacon](#test-app-android-senza-beacon)
+  - [Rendere l'app installabile su Android](#rendere-lapp-installabile-su-android)
+- [Shelly / NILM](#shelly--nilm)
+- [Comandi principali](#comandi-principali)
+  - [Comando unico consigliato](#comando-unico-consigliato)
+  - [Fase baseline](#fase-baseline)
+  - [Procedura completa per addestrare il modello sul Raspberry Pi](#procedura-completa-per-addestrare-il-modello-sul-raspberry-pi)
+  - [Comandi separati](#comandi-separati)
+- [Flusso sul Raspberry Pi](#flusso-sul-raspberry-pi)
+- [Prossimi step](#prossimi-step)
+- [Stato attuale del progetto](#stato-attuale-del-progetto)
 
 ## Architettura
 
@@ -65,6 +92,10 @@ edge_node/
     aggregator.py       Fusione dati in una riga feature
     cli.py              Comando collect-window
 
+  edge_auth/
+    fitbit_oauth.py     Setup OAuth Fitbit, salvataggio token e refresh
+    cli.py              Comandi fitbit setup/status/refresh
+
   edge_ai/
     schema.py           Contratto delle feature in ingresso
     features.py         Lettura e validazione CSV/JSON
@@ -72,10 +103,21 @@ edge_node/
     debounce.py         Anti alarm fatigue e alert tecnici
     cli.py              Comandi train/infer
 
+  edge_baseline/
+    cli.py              Start/status/finalize/train baseline reale
+    session.py          Stato della raccolta baseline
+
   edge_receiver/
     app.py              Receiver HTTP locale sul Raspberry Pi
     ble_storage.py      Scrittura campioni BLE Android nel CSV grezzo
     cli.py              Comando per avviare il receiver
+
+  edge_runtime/
+    cli.py              Comando unico del ciclo edge
+
+  edge_quality/
+    checks.py           Controlli qualita dati prima di baseline/training
+    cli.py              Comando manuale per generare report qualita
 
   data/
     raw/                Campioni grezzi reali da app/sensori
@@ -115,6 +157,8 @@ Regola pratica: i comandi Python del Raspberry/AI vanno eseguiti entrando prima 
 - Ho creato il nuovo pacchetto `edge_ingest`, cioe' il ponte tra dati reali e modello AI.
 - Ho aggiunto una configurazione YAML di esempio in `edge_node/config/edge.example.yml`.
 - Ho implementato un primo adapter Fitbit Web API, pronto a usare un token OAuth reale.
+- Ho aggiunto `edge_auth`, che prepara OAuth Fitbit per Pixel Watch 2 con setup,
+  salvataggio token e refresh automatico.
 - Ho implementato adapter CSV per BLE e Shelly/NILM, cosi' appena il Raspberry raccoglie campioni
   grezzi possiamo aggregarli in feature.
 - Ho predisposto la parte BLE lato aggregazione: il sistema sa leggere campioni stanza/RSSI
@@ -126,6 +170,12 @@ Regola pratica: i comandi Python del Raspberry/AI vanno eseguiti entrando prima 
 - Ho aggiunto il Foreground Service BLE nell'app Android, cosi' il monitoraggio puo'
   restare attivo in background con notifica persistente.
 - Ho riordinato il repository separando `edge_node/`, `companion_app/` e `docs/`.
+- Ho aggiunto `edge_runtime`, il comando unico che aggrega la finestra e fa inferenza
+  automaticamente se trova un modello addestrato.
+- Ho aggiunto `edge_quality`, che controlla se i dati sono utilizzabili prima di salvarli
+  nella baseline o addestrare il modello.
+- Ho aggiunto `edge_baseline`, che gestisce start, raccolta 6 giorni, status e training
+  del modello paziente-specifico.
 - Ho aggiunto il comando che genera `edge_node/data/processed/latest_window.csv`.
 - Ho aggiornato la documentazione di deployment su Raspberry Pi.
 - Ho eseguito controlli di compilazione/import e test tecnici end-to-end della pipeline.
@@ -151,7 +201,7 @@ il Raspberry Pi, dovremo collegare una sorgente alla volta:
 2. BLE tramite telefono Android come scanner mobile dei beacon nelle stanze.
 3. Shelly tramite lettura HTTP dei consumi.
 
-Dopo il collegamento, il Raspberry raccogliera' dati veri per circa due settimane.
+Dopo il collegamento, il Raspberry raccogliera' dati veri per circa 5/6 giorni.
 Questi dati formeranno la baseline personale del paziente. Solo dopo quella fase
 addestreremo il modello definitivo e lo useremo per rilevare anomalie reali.
 
@@ -211,18 +261,51 @@ Quando avremo credenziali e hardware, abiliteremo anche le altre sorgenti una al
 
 ## Fitbit / Pixel Watch 2
 
-Il file token non va committato. Deve essere creato localmente cosi':
+Il Google Pixel Watch 2 verra' sincronizzato con l'account Fitbit/Google. Il Raspberry
+non legge i dati biometrici grezzi via Bluetooth: li recupera via API dopo autorizzazione
+OAuth.
+
+Abbiamo preparato la struttura OAuth locale. I file sensibili non vanno committati:
 
 ```text
 config/fitbit_token.json
+config/fitbit_client.json
 ```
 
-Formato previsto:
+`fitbit_token.json` conterra' access token, refresh token, scadenza e user id.
+`fitbit_client.json` conterra' client id/secret e redirect URI dell'app Fitbit.
 
-```json
-{
-  "access_token": "TOKEN_OAUTH_REALE"
-}
+Prima di tutto, nel portale sviluppatori Fitbit si registra l'app OAuth e si
+imposta come redirect URI:
+
+```text
+http://127.0.0.1:8765/callback
+```
+
+Poi, da dentro `edge_node/`, si avvia il setup:
+
+```powershell
+python -m edge_auth.cli fitbit setup --client-id CLIENT_ID --client-secret CLIENT_SECRET
+```
+
+Se la virtualenv non e' attiva:
+
+```powershell
+..\.venv\Scripts\python.exe -m edge_auth.cli fitbit setup --client-id CLIENT_ID --client-secret CLIENT_SECRET
+```
+
+Il comando apre il browser, fa il login/consenso Fitbit e salva i token in locale.
+
+Per controllare lo stato:
+
+```powershell
+python -m edge_auth.cli fitbit status
+```
+
+Per forzare manualmente un refresh:
+
+```powershell
+python -m edge_auth.cli fitbit refresh
 ```
 
 Poi si abilita Fitbit nel file YAML:
@@ -231,6 +314,7 @@ Poi si abilita Fitbit nel file YAML:
 fitbit:
   enabled: true
   token_file: config/fitbit_token.json
+  client_file: config/fitbit_client.json
   user_id: "-"
   api_base_url: https://api.fitbit.com
 ```
@@ -245,8 +329,14 @@ L'adapter attuale legge:
 - sleep summary se disponibile;
 - batteria e presenza wearable tramite device status se disponibile.
 
-Nota: OAuth completo con refresh token sara' uno dei prossimi step. Per ora il modulo
-si aspetta un `access_token` valido.
+Il refresh token e' gestito automaticamente: se l'access token e' scaduto, l'adapter
+Fitbit prova ad aggiornarlo prima di interrogare le API. I dati veri arriveranno solo
+quando il Pixel Watch 2 sara' configurato e sincronizzato con l'account.
+
+Nota tecnica: Fitbit Web API resta utile per il progetto, ma Google indica Google Health
+API come evoluzione/nuova generazione della Fitbit Web API. Per ora manteniamo questo
+adapter perche' il progetto e' gia' costruito su endpoint Fitbit; la migrazione potra'
+essere valutata dopo.
 
 ## BLE indoor positioning
 
@@ -492,6 +582,380 @@ Tutti questi comandi vanno eseguiti da `edge_node/`:
 cd edge_node
 ```
 
+Se nel terminale vedi gia' `(.venv)`, dopo `cd edge_node` puoi usare direttamente
+`python`. Non usare `..\.venv\Scripts\python.exe` dalla root del progetto: quel percorso
+vale solo quando sei gia' dentro `edge_node/`.
+
+### Comando unico consigliato
+
+Questo e' il comando da usare normalmente sul Raspberry:
+
+```powershell
+cd edge_node
+python -m edge_runtime.cli --config config/edge.example.yml
+```
+
+Fa un ciclo completo:
+
+```text
+legge i dati gia' ricevuti in data/raw/
+-> aggrega la finestra da 8 minuti
+-> scrive data/processed/latest_window.csv
+-> se trova models/patient-001.pkl, fa inferenza
+-> salva outputs/patient-001-decision.json
+-> salva outputs/last-quality-report.json
+-> salva outputs/last-cycle.json con lo stato del ciclo
+```
+
+Se il modello non esiste ancora, non fallisce: aggiorna la finestra e scrive nello stato
+che l'inferenza e' stata saltata.
+
+Durante la baseline:
+
+```bash
+python -m edge_runtime.cli --config config/edge.example.yml --append-baseline
+```
+
+Questo appende anche la finestra a `data/processed/baseline.csv`, ma solo se i controlli
+qualita non trovano errori. Se i dati sono rotti o incompleti, il ciclo scrive
+`baseline_skipped_reason: quality_error` e non sporca la baseline.
+
+Controllo qualita manuale sull'ultima finestra:
+
+```bash
+python -m edge_quality.cli --config config/edge.example.yml
+```
+
+Il report viene salvato in:
+
+```text
+outputs/last-quality-report.json
+```
+
+### Fase baseline
+
+Quando avremo hardware reale e dati veri, la baseline si avvia cosi':
+
+Nota: per vincoli di tempo useremo una baseline compatta da 5/6 giorni. Una baseline
+piu' lunga, ad esempio 14 giorni, sarebbe piu' rappresentativa; nel progetto va dichiarato
+che il training e' basato su una finestra ridotta ma reale.
+
+```bash
+python -m edge_baseline.cli --config config/edge.yml start --days 6
+```
+
+Durante i 6 giorni il cron/systemd deve eseguire:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml --append-baseline
+```
+
+Il runtime aggiunge una finestra a `data/processed/baseline.csv` solo se i controlli
+qualita non hanno errori. Lo stato della raccolta viene salvato in:
+
+```text
+data/state/baseline-session.json
+```
+
+Per vedere avanzamento, finestre accettate/rifiutate e prontezza al training:
+
+```bash
+python -m edge_baseline.cli --config config/edge.yml status
+```
+
+Dopo circa 6 giorni:
+
+```bash
+python -m edge_baseline.cli --config config/edge.yml finalize
+python -m edge_baseline.cli --config config/edge.yml train
+```
+
+Il modello viene salvato in `models/patient-001.pkl`.
+
+### Procedura completa per addestrare il modello sul Raspberry Pi
+
+Questa e' la procedura che seguiremo quando il sistema sara' reale:
+
+```text
+Raspberry Pi
+  -> esegue edge_receiver, edge_runtime, edge_quality, edge_baseline, edge_ai
+
+Beacon BLE nelle stanze
+  -> identificano la stanza tramite segnale BLE
+
+Braccialetto / wearable al polso
+  -> produce dati reali del paziente
+  -> nel caso Google Pixel Watch/Fitbit: dati biometrici via API Fitbit
+  -> nel caso tag BLE: dati di prossimita/localizzazione da trasformare in campioni BLE
+```
+
+Nota importante: il modello non viene addestrato direttamente sui beacon o sul braccialetto
+grezzo. Il modello viene addestrato su `data/processed/baseline.csv`, cioe' sulle feature
+aggregate ogni 8 minuti dal Raspberry.
+
+#### 1. Preparare Raspberry Pi
+
+Sul Raspberry metteremo questa repository e useremo la cartella:
+
+```bash
+cd edge_node
+```
+
+Poi installeremo le dipendenze Python:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Sul Raspberry reale creeremo anche:
+
+```text
+config/edge.yml
+```
+
+partendo da:
+
+```text
+config/edge.example.yml
+```
+
+#### 2. Configurare beacon e braccialetto
+
+Per le stanze:
+
+```text
+1 beacon BLE in cucina
+1 beacon BLE in camera
+1 beacon BLE in bagno
+1 beacon BLE in soggiorno
+```
+
+Per ogni beacon dobbiamo annotare:
+
+```text
+MAC address o UUID
+nome beacon
+stanza associata
+posizione fisica nella stanza
+```
+
+Esempio mappa:
+
+```text
+AA:BB:CC:DD:EE:01=kitchen
+AA:BB:CC:DD:EE:02=bedroom
+AA:BB:CC:DD:EE:03=bathroom
+AA:BB:CC:DD:EE:04=living_room
+```
+
+Il braccialetto sul polso serve a rappresentare il paziente. Nel nostro progetto puo'
+avere due ruoli:
+
+```text
+Google Pixel Watch / Fitbit
+  -> dati biometrici: frequenza cardiaca, HRV, SpO2, sonno, batteria
+
+Tag BLE / dispositivo indossabile BLE
+  -> dati di posizione indoor rispetto ai beacon
+```
+
+Se useremo l'app Android `companion_app`, sara' il telefono Android a scansionare i beacon
+e inviare al Raspberry la stanza stimata. Se invece useremo un vero braccialetto BLE/tag,
+dovremo assicurarci che il Raspberry riceva comunque righe nel formato:
+
+```csv
+timestamp,room,scanner_id,address,name,rssi,tx_power,distance_m,service_uuids,manufacturer_data
+2026-06-26T10:00:00Z,kitchen,bracelet-001,AA:BB:CC:DD:EE:01,KitchenBeacon,-61,-59,1.2,[],{}
+```
+
+Queste righe devono finire in:
+
+```text
+data/raw/ble_samples.csv
+```
+
+#### 3. Avviare il receiver sul Raspberry
+
+Il receiver deve rimanere acceso per ricevere campioni dall'app Android o dal sistema BLE:
+
+```bash
+python -m edge_receiver.cli --config config/edge.yml --host 0.0.0.0 --port 8000
+```
+
+L'endpoint sara':
+
+```text
+http://IP_DEL_RASPBERRY:8000/ble/sample
+```
+
+#### 4. Verificare che arrivino dati reali
+
+Prima della baseline controlliamo che i campioni BLE arrivino davvero:
+
+```powershell
+type data\raw\ble_samples.csv
+```
+
+Su Raspberry/Linux:
+
+```bash
+cat data/raw/ble_samples.csv
+```
+
+Poi generiamo una finestra di prova:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml
+```
+
+File da controllare:
+
+```text
+data/processed/latest_window.csv
+outputs/last-quality-report.json
+outputs/last-cycle.json
+```
+
+Il report qualita deve idealmente essere:
+
+```text
+quality_status: ok
+```
+
+oppure al massimo:
+
+```text
+quality_status: warning
+```
+
+Non dobbiamo iniziare la baseline se i dati sono in `error`, per esempio se mancano
+campioni BLE o se Fitbit e' abilitato ma non sta inviando dati.
+
+#### 5. Avviare baseline reale di 6 giorni
+
+Quando beacon, braccialetto/wearable e Raspberry sono stabili:
+
+Per il progetto useremo 6 giorni perche' non abbiamo 14 giorni disponibili. Questo e'
+accettabile come baseline dimostrativa reale, pur essendo meno robusta di una baseline
+clinica piu' lunga.
+
+```bash
+python -m edge_baseline.cli --config config/edge.yml start --days 6
+```
+
+Questo crea lo stato:
+
+```text
+data/state/baseline-session.json
+```
+
+Durante i 6 giorni il Raspberry deve eseguire ogni 8 minuti:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml --append-baseline
+```
+
+Esempio cron sul Raspberry:
+
+```cron
+*/8 * * * * cd /home/pi/progetto-iot/edge_node && . ../.venv/bin/activate && python -m edge_runtime.cli --config config/edge.yml --append-baseline
+```
+
+Questo comando:
+
+```text
+legge i dati grezzi
+-> crea latest_window.csv
+-> controlla la qualita
+-> se la qualita e' valida, appende a baseline.csv
+-> se la qualita e' error, rifiuta la finestra
+```
+
+La baseline viene raccolta qui:
+
+```text
+data/processed/baseline.csv
+```
+
+#### 6. Controllare ogni giorno la baseline
+
+Durante i 6 giorni controlleremo:
+
+```bash
+python -m edge_baseline.cli --config config/edge.yml status
+```
+
+e:
+
+```bash
+python -m edge_quality.cli --config config/edge.yml
+```
+
+Dobbiamo guardare:
+
+```text
+accepted_windows
+rejected_windows
+quality_error_cycles
+baseline_row_count
+ready_for_training
+```
+
+Se `rejected_windows` o `quality_error_cycles` crescono troppo, non addestriamo ancora:
+prima correggiamo il problema dei dati.
+
+#### 7. Chiudere baseline e addestrare
+
+Dopo circa 6 giorni, quando lo status indica che la baseline e' pronta:
+
+```bash
+python -m edge_baseline.cli --config config/edge.yml finalize
+python -m edge_baseline.cli --config config/edge.yml train
+```
+
+Il training usa:
+
+```text
+data/processed/baseline.csv
+```
+
+e salva il modello in:
+
+```text
+models/patient-001.pkl
+```
+
+Questo modello e' personale: rappresenta la routine del paziente osservato durante la
+baseline, non una normalita generica valida per tutti.
+
+#### 8. Usare il modello addestrato
+
+Dopo il training, il ciclo normale diventa:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml
+```
+
+A questo punto il runtime:
+
+```text
+crea latest_window.csv
+-> carica models/patient-001.pkl
+-> calcola anomaly_score
+-> applica debounce
+-> salva outputs/patient-001-decision.json
+```
+
+Output finale:
+
+```text
+outputs/patient-001-decision.json
+```
+
+Questo file sara' poi collegabile al backend/dashboard.
+
+### Comandi separati
+
 Raccogliere ultima finestra reale:
 
 ```bash
@@ -528,33 +992,28 @@ python -m edge_ai.cli infer \
 Durante la raccolta baseline:
 
 ```bash
-python -m edge_ingest.cli --config config/edge.yml --append-baseline
+python -m edge_baseline.cli --config config/edge.yml start --days 6
+python -m edge_runtime.cli --config config/edge.yml --append-baseline
 ```
 
-Dopo circa due settimane:
+Dopo circa 5/6 giorni:
 
 ```bash
-python -m edge_ai.cli train \
-  --input data/processed/baseline.csv \
-  --patient-id patient-001 \
-  --output models/patient-001.pkl
+python -m edge_baseline.cli --config config/edge.yml status
+python -m edge_baseline.cli --config config/edge.yml finalize
+python -m edge_baseline.cli --config config/edge.yml train
 ```
 
 Durante il funzionamento normale:
 
 ```bash
-python -m edge_ingest.cli --config config/edge.yml
-python -m edge_ai.cli infer \
-  --model models/patient-001.pkl \
-  --input data/processed/latest_window.csv \
-  --state data/state/patient-001-debounce.json \
-  --output outputs/patient-001-decision.json
+python -m edge_runtime.cli --config config/edge.yml
 ```
 
 ## Prossimi step
 
 1. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
-2. Implementare OAuth Fitbit completo con refresh token.
+2. Creare l'app OAuth Fitbit reale e lanciare `edge_auth` con le credenziali vere.
 3. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
 4. Preparare `edge_node/config/edge.yml` reale per il vostro paziente/test.
 5. Avviare raccolta baseline reale.
@@ -602,11 +1061,14 @@ Questi file sono quelli che il modello AI sa leggere.
 
 ### 3. Fitbit / Pixel Watch
 
-Abbiamo preparato un primo adapter per Fitbit Web API.
+Abbiamo preparato un adapter per Fitbit Web API e il modulo OAuth locale.
 
-La struttura e' pronta per leggere dati biometrici dal Pixel Watch tramite API, ma manca
-ancora la parte completa di OAuth con refresh token. Questa verra' fatta quando avremo
-account, permessi e dispositivo configurati.
+Il setup OAuth salva `config/fitbit_client.json` e `config/fitbit_token.json`, gestisce
+access token, refresh token e scadenza. L'adapter Fitbit usa questi file e prova a fare
+refresh automatico quando il token scade.
+
+I dati reali arriveranno solo quando il Pixel Watch 2 sara' collegato all'account
+Fitbit/Google e il Raspberry avra' credenziali OAuth vere.
 
 ### 4. BLE indoor positioning
 
@@ -661,7 +1123,61 @@ data/raw/ble_samples.csv
 
 Poi `edge_ingest` li aggrega e li passa al modello AI.
 
-### 6. App Android
+### 6. Runtime Edge
+
+Abbiamo creato il modulo `edge_runtime`.
+
+Questo modulo e' il comando unico del Raspberry. Invece di lanciare manualmente prima
+`edge_ingest` e poi `edge_ai`, ora possiamo usare:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml
+```
+
+Il comando produce `latest_window.csv`, controlla se esiste il modello addestrato e,
+se il modello c'e', salva anche la decisione JSON. Se il modello non c'e' ancora, non
+fallisce: aggiorna solo la finestra dati e registra che l'inferenza e' stata saltata.
+
+### 7. Qualita Dati
+
+Abbiamo creato il modulo `edge_quality`.
+
+Questo modulo controlla se i dati raccolti sono utilizzabili prima di inserirli nella
+baseline. Per esempio segnala errori o warning tecnici come:
+
+- BLE abilitato ma senza campioni;
+- timestamp BLE invalidi o nel futuro;
+- Fitbit abilitato ma senza dati biometrici;
+- wearable dichiarato non presente;
+- Shelly abilitato ma senza campioni.
+
+La permanenza nella stessa stanza per molte ore viene invece registrata come osservazione
+`info`: non e' un errore del dato, ma un possibile segnale comportamentale che il modello
+o la dashboard potranno usare.
+
+Il report viene scritto in `outputs/last-quality-report.json`. Se il report ha stato
+`error`, il runtime non appende quella finestra alla baseline, cosi' evitiamo di
+addestrare il modello con dati sporchi.
+
+### 8. Fase Baseline
+
+Abbiamo creato il modulo `edge_baseline`.
+
+Questo modulo serve a gestire la raccolta reale della routine del paziente:
+
+```text
+start baseline
+-> raccolta per 6 giorni
+-> controllo qualita a ogni finestra
+-> conteggio finestre accettate/rifiutate
+-> finalize
+-> training modello
+```
+
+Lo stato viene salvato in `data/state/baseline-session.json`. Il modello finale viene
+salvato in `models/patient-001.pkl`, ma solo quando avremo dati reali sufficienti.
+
+### 9. App Android
 
 Abbiamo creato l'app `IoT Edge Companion` dentro `companion_app/`.
 
@@ -681,7 +1197,7 @@ BLE`, Android mantiene l'app attiva in background con una notifica persistente. 
 fa cicli periodici di scansione, sceglie il beacon/stanza piu' forte e invia il campione
 al receiver locale.
 
-### 7. Shelly / NILM
+### 10. Shelly / NILM
 
 Abbiamo predisposto un adapter per dati Shelly/NILM.
 
@@ -692,20 +1208,19 @@ misurazione consumi. Il codice e' pronto a leggere dati da:
 data/raw/shelly_samples.csv
 ```
 
-### 8. Documentazione
+### 11. Documentazione
 
 Abbiamo documentato architettura, comandi, deployment Raspberry, schema feature e vincoli
 reali delle API.
 
 Il README deve rimanere il punto principale da leggere per capire lo stato del progetto.
 
-### 9. Cosa manca ancora
+### 12. Cosa manca ancora
 
 Mancano ancora i collegamenti reali con hardware:
 
-- test app Android su telefono fisico;
 - beacon BLE fisici nelle stanze;
 - Raspberry Pi reale;
-- Fitbit OAuth completo;
+- creazione app OAuth Fitbit reale e consenso account;
 - eventuale Shelly o alternativa per consumi;
 - backend/dashboard finale.

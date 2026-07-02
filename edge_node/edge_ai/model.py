@@ -28,6 +28,12 @@ class ModelMetadata:
 
 class EdgeAnomalyDetector:
     def __init__(self, pipeline: Pipeline, metadata: ModelMetadata):
+        """Memorizza pipeline scikit-learn e metadati del modello edge.
+
+        La pipeline contiene preprocessing e Isolation Forest, mentre i metadati
+        descrivono paziente, feature e soglie di normalizzazione dello score. La
+        separazione e' utile per salvare un artefatto leggibile e riutilizzabile.
+        """
         self.pipeline = pipeline
         self.metadata = metadata
 
@@ -39,6 +45,13 @@ class EdgeAnomalyDetector:
         contamination: float = 0.05,
         random_state: int = 42,
     ) -> "EdgeAnomalyDetector":
+        """Addestra un modello di anomaly detection sulla baseline del paziente.
+
+        Il training usa solo le righe del paziente indicato, perche' l'obiettivo
+        e' imparare la routine individuale e non una normalita generica. La
+        pipeline imputa valori mancanti, standardizza le feature e addestra una
+        Isolation Forest adatta a dati non etichettati.
+        """
         if len(frame) < 50:
             raise ValueError(
                 "At least 50 baseline records are required. "
@@ -85,6 +98,13 @@ class EdgeAnomalyDetector:
         return cls(pipeline=pipeline, metadata=metadata)
 
     def predict_record(self, record: Union[pd.Series, dict[str, Any]]) -> InferenceResult:
+        """Calcola lo score di anomalia per una singola finestra aggregata.
+
+        La funzione applica la stessa pipeline usata in training e converte il
+        valore decisionale dell'Isolation Forest in uno score 0-100 piu'
+        comprensibile per la parte di triage. Restituisce anche contesto tecnico
+        come presenza e batteria del wearable.
+        """
         row = pd.DataFrame([dict(record)])
         features = row[self.metadata.feature_columns]
         decision_value = float(self.pipeline.decision_function(features)[0])
@@ -110,6 +130,12 @@ class EdgeAnomalyDetector:
         )
 
     def save(self, path: Union[str, Path]) -> None:
+        """Salva modello e metadati in un file `.pkl`.
+
+        L'artefatto prodotto e' quello che verra' copiato o mantenuto sul
+        Raspberry Pi per l'inferenza continua. Si usa `pickle` standard per
+        evitare dipendenze aggiuntive come joblib.
+        """
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -121,6 +147,12 @@ class EdgeAnomalyDetector:
 
     @classmethod
     def load(cls, path: Union[str, Path]) -> "EdgeAnomalyDetector":
+        """Carica da disco un modello precedentemente addestrato.
+
+        Questa funzione viene usata dal runtime ogni volta che esiste il file
+        `models/<patient_id>.pkl`. Se il file non c'e', il ciclo edge puo'
+        comunque produrre la finestra ma salta l'inferenza.
+        """
         source = Path(path)
         with source.open("rb") as handle:
             payload = pickle.load(handle)
@@ -130,6 +162,12 @@ class EdgeAnomalyDetector:
         )
 
     def _decision_to_score(self, decision_value: float) -> float:
+        """Converte il valore interno del modello in uno score di anomalia 0-100.
+
+        Isolation Forest restituisce valori meno intuitivi: piu' il valore e'
+        distante dalla routine, piu' la finestra e' sospetta. Questa conversione
+        usa ancore calcolate sulla baseline per ottenere uno score leggibile.
+        """
         span = self.metadata.normal_anchor - self.metadata.severe_anchor
         if span <= 0:
             return 0.0

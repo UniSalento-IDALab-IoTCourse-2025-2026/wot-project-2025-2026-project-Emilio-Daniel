@@ -7,6 +7,8 @@ venv/
 desktop.ini
 edge_node/config/edge.yml
 edge_node/config/fitbit_token.json
+edge_node/config/fitbit_client.json
+edge_node/config/fitbit_oauth_state.json
 companion_app/.gradle/
 companion_app/.idea/
 companion_app/local.properties

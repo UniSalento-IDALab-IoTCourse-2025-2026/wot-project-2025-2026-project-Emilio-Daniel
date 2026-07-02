@@ -19,6 +19,13 @@ def build_feature_window(
     window_start: datetime,
     window_end: datetime,
 ) -> dict[str, Any]:
+    """Costruisce una singola riga feature fondendo tutte le sorgenti attive.
+
+    La finestra temporale e' l'unita minima che il modello AI analizza. La
+    funzione inizializza tutte le colonne previste dallo schema e poi aggiorna i
+    valori con i dati disponibili da Fitbit, BLE e Shelly, lasciando `nan` dove
+    una sorgente non e' abilitata o non ha prodotto dati.
+    """
     row: dict[str, Any] = {
         "patient_id": config.patient.patient_id,
         "window_start": window_start.isoformat(),
@@ -50,6 +57,12 @@ def build_feature_window(
 
 
 def write_latest_window(path: str | Path, row: dict[str, Any]) -> None:
+    """Scrive su CSV l'ultima finestra aggregata.
+
+    Questo file rappresenta l'input diretto dell'inferenza edge. Viene riscritto
+    a ogni ciclo per contenere sempre la finestra piu' recente, evitando di far
+    crescere inutilmente il file usato dal modello in tempo reale.
+    """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", newline="", encoding="utf-8") as handle:
@@ -59,6 +72,12 @@ def write_latest_window(path: str | Path, row: dict[str, Any]) -> None:
 
 
 def append_baseline_row(path: str | Path, row: dict[str, Any]) -> None:
+    """Aggiunge una finestra valida al dataset baseline.
+
+    Durante la fase di calibrazione le finestre accettate vengono accumulate in
+    `baseline.csv`. Quel file diventera' il dataset di training personale del
+    paziente.
+    """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     file_exists = target.exists() and target.stat().st_size > 0
@@ -70,4 +89,10 @@ def append_baseline_row(path: str | Path, row: dict[str, Any]) -> None:
 
 
 def _ordered_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Riordina la riga secondo lo schema ufficiale del dataset.
+
+    Usare sempre `DATASET_COLUMNS` garantisce che CSV di baseline e latest
+    window abbiano colonne stabili, requisito importante per training,
+    inferenza e documentazione del progetto.
+    """
     return {column: row.get(column, "") for column in DATASET_COLUMNS}

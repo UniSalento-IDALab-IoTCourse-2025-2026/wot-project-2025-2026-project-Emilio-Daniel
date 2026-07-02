@@ -25,10 +25,22 @@ class BleCsvAdapter:
     """Aggregates real BLE positioning samples previously collected on the Raspberry Pi."""
 
     def __init__(self, config: BleConfig, timezone_name: str):
+        """Inizializza l'adapter BLE CSV con configurazione e fuso orario.
+
+        L'adapter non scansiona direttamente i dispositivi: legge campioni gia'
+        salvati in `data/raw/ble_samples.csv` e li trasforma in feature spaziali
+        compatibili con il modello AI.
+        """
         self.config = config
         self.timezone_name = timezone_name
 
     def collect_window(self, window_start: datetime, window_end: datetime) -> dict[str, float]:
+        """Aggrega i campioni BLE appartenenti alla finestra richiesta.
+
+        La funzione calcola minuti per stanza, cambi stanza, cambi notturni e
+        permanenza massima continua. Queste feature permettono di descrivere il
+        comportamento spaziale del paziente senza usare telecamere o microfoni.
+        """
         if not self.config.raw_csv.exists():
             return {}
 
@@ -88,6 +100,12 @@ class BleCsvAdapter:
 
 
 def _resolve_room_sequence(window: pd.DataFrame) -> pd.DataFrame:
+    """Ricostruisce la sequenza stanza-tempo dai campioni BLE grezzi.
+
+    Se sono presenti valori RSSI, per ogni bucket temporale viene scelta la
+    stanza con segnale piu' forte, assumendo che corrisponda al beacon/scanner
+    piu' vicino. Questo riduce rumore e duplicati prima di calcolare le durate.
+    """
     prepared = window.copy()
     prepared["room_key"] = prepared["room"].astype(str).str.strip().str.lower()
 

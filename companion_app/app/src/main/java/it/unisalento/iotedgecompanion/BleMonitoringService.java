@@ -53,12 +53,23 @@ public class BleMonitoringService extends Service {
     private final ScanCallback scanCallback = new ScanCallback() {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
+            /*
+             * Callback invocata dal sistema Android quando viene rilevato un
+             * advertising BLE. Il risultato viene delegato a un metodo dedicato
+             * per mantenere pulita la logica del servizio.
+             */
             handleScanResult(result);
         }
     };
 
     @Override
     public void onCreate() {
+        /*
+         * Inizializza il servizio BLE.
+         * Crea il canale notifiche e avvia il servizio in foreground, requisito
+         * necessario affinche' Android permetta il lavoro continuativo in
+         * background.
+         */
         super.onCreate();
         createNotificationChannel();
         startAsForeground("Monitoraggio indoor in corso");
@@ -66,6 +77,11 @@ public class BleMonitoringService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        /*
+         * Avvia o mantiene attivo il ciclo di monitoraggio.
+         * START_STICKY indica ad Android che il servizio deve essere ricreato se
+         * possibile dopo una chiusura del processo.
+         */
         startAsForeground("Monitoraggio indoor in corso");
         if (!running) {
             running = true;
@@ -76,6 +92,11 @@ public class BleMonitoringService extends Service {
 
     @Override
     public void onDestroy() {
+        /*
+         * Ferma il servizio in modo ordinato.
+         * Interrompe eventuale scansione BLE, rimuove callback pianificate e
+         * chiude l'executor di rete per evitare lavori residui.
+         */
         running = false;
         stopCurrentScan();
         handler.removeCallbacksAndMessages(null);
@@ -85,11 +106,21 @@ public class BleMonitoringService extends Service {
 
     @Override
     public IBinder onBind(Intent intent) {
+        /*
+         * Il servizio non espone binding ad altre componenti.
+         * Viene usato solo come Foreground Service avviato e fermato
+         * esplicitamente dall'Activity.
+         */
         return null;
     }
 
     @SuppressLint("MissingPermission")
     private void startScanCycle() {
+        /*
+         * Avvia una singola finestra di scansione BLE.
+         * Prima verifica permessi, Bluetooth e disponibilita dello scanner; poi
+         * pulisce le osservazioni precedenti e ascolta beacon per alcuni secondi.
+         */
         if (!running) {
             return;
         }
@@ -121,6 +152,11 @@ public class BleMonitoringService extends Service {
     }
 
     private void finishScanCycle() {
+        /*
+         * Conclude la finestra di scansione e decide cosa inviare.
+         * Tra tutti i beacon mappati rilevati sceglie quello con RSSI piu' forte,
+         * assumendo che rappresenti la stanza piu' vicina al telefono.
+         */
         stopCurrentScan();
         BeaconObservation strongest = strongestObservation();
         if (strongest != null) {
@@ -135,6 +171,11 @@ public class BleMonitoringService extends Service {
 
     @SuppressLint("MissingPermission")
     private void stopCurrentScan() {
+        /*
+         * Interrompe la scansione BLE corrente se e' attiva.
+         * Il controllo dei permessi evita eccezioni su versioni Android che
+         * richiedono autorizzazioni Bluetooth runtime.
+         */
         if (bleScanner != null && scanning && hasRequiredPermissions()) {
             bleScanner.stopScan(scanCallback);
         }
@@ -143,6 +184,11 @@ public class BleMonitoringService extends Service {
 
     @SuppressLint("MissingPermission")
     private void handleScanResult(ScanResult result) {
+        /*
+         * Elabora un singolo risultato BLE rilevato dallo scanner.
+         * Il metodo risolve la stanza tramite mappa beacon-stanza e conserva
+         * l'ultima osservazione valida per indirizzo beacon.
+         */
         Map<String, String> beaconMap = parseBeaconMap();
         String address = result.getDevice().getAddress();
         String name = result.getDevice().getName();
@@ -157,6 +203,11 @@ public class BleMonitoringService extends Service {
     }
 
     private void sendBleSample(BeaconObservation observation) {
+        /*
+         * Invia al Raspberry la stanza stimata dal ciclo BLE.
+         * La richiesta HTTP viene eseguita in background e aggiorna la notifica
+         * del Foreground Service con l'esito dell'invio.
+         */
         SharedPreferences preferences = getSharedPreferences("iot-edge", MODE_PRIVATE);
         String receiverUrl = preferences.getString("receiverUrl", "");
         String phoneId = preferences.getString("phoneId", "android-phone");
@@ -201,6 +252,11 @@ public class BleMonitoringService extends Service {
     }
 
     private Map<String, String> parseBeaconMap() {
+        /*
+         * Legge dalle preferenze la mappa beacon-stanza inserita nell'app.
+         * Ogni riga ha formato chiave=stanza; la chiave puo' essere indirizzo o
+         * parte del nome BLE, cosi' la configurazione resta flessibile.
+         */
         SharedPreferences preferences = getSharedPreferences("iot-edge", MODE_PRIVATE);
         String beaconMapText = preferences.getString("beaconMap", "");
         Map<String, String> mapping = new HashMap<>();
@@ -217,6 +273,11 @@ public class BleMonitoringService extends Service {
     }
 
     private String resolveRoom(Map<String, String> beaconMap, String address, String name) {
+        /*
+         * Determina la stanza associata a un beacon rilevato.
+         * Prima prova il match sull'indirizzo, poi sul nome pubblicizzato. Se non
+         * trova corrispondenze, il beacon viene ignorato.
+         */
         String normalizedAddress = address == null ? "" : address.toLowerCase(Locale.ROOT);
         if (beaconMap.containsKey(normalizedAddress)) {
             return beaconMap.get(normalizedAddress);
@@ -232,6 +293,11 @@ public class BleMonitoringService extends Service {
     }
 
     private BeaconObservation strongestObservation() {
+        /*
+         * Seleziona l'osservazione BLE con segnale RSSI maggiore.
+         * Nel nostro scenario questa scelta approssima il beacon piu' vicino e
+         * quindi la stanza piu' probabile in cui si trova il telefono/paziente.
+         */
         BeaconObservation strongest = null;
         for (BeaconObservation observation : observations.values()) {
             if (strongest == null || observation.rssi > strongest.rssi) {
@@ -242,10 +308,20 @@ public class BleMonitoringService extends Service {
     }
 
     private void scheduleNextScan(long delayMs) {
+        /*
+         * Pianifica il prossimo ciclo di scansione.
+         * Alternare scansione e pausa riduce consumo batteria e mantiene il
+         * monitoraggio sufficientemente continuo per il progetto.
+         */
         handler.postDelayed(this::startScanCycle, delayMs);
     }
 
     private boolean hasRequiredPermissions() {
+        /*
+         * Controlla i permessi minimi richiesti per usare BLE in background.
+         * Android 12+ separa i permessi Bluetooth dalla localizzazione, quindi
+         * il metodo gestisce esplicitamente le diverse versioni.
+         */
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return false;
         }
@@ -259,6 +335,11 @@ public class BleMonitoringService extends Service {
     }
 
     private void createNotificationChannel() {
+        /*
+         * Crea il canale notifiche richiesto da Android 8+.
+         * Il canale a bassa importanza permette di mostrare una notifica
+         * persistente senza disturbare eccessivamente l'utente.
+         */
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
@@ -275,6 +356,11 @@ public class BleMonitoringService extends Service {
     }
 
     private void startAsForeground(String contentText) {
+        /*
+         * Porta il servizio in foreground con una notifica persistente.
+         * Questo e' necessario per rendere legittimo il monitoraggio BLE in
+         * background e ridurre il rischio che Android fermi il servizio.
+         */
         Notification notification = buildNotification(contentText);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -288,6 +374,11 @@ public class BleMonitoringService extends Service {
     }
 
     private Notification buildNotification(String contentText) {
+        /*
+         * Costruisce la notifica visualizzata durante il monitoraggio BLE.
+         * Toccando la notifica si riapre l'Activity, cosi' l'utente puo'
+         * controllare configurazione e stato del servizio.
+         */
         Intent intent = new Intent(this, MainActivity.class);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -317,6 +408,11 @@ public class BleMonitoringService extends Service {
         final int rssi;
 
         BeaconObservation(String address, String name, String room, int rssi) {
+            /*
+             * Rappresenta una singola osservazione di beacon durante una scansione.
+             * La classe conserva solo i dati necessari per scegliere il segnale
+             * piu' forte e inviare il campione al receiver.
+             */
             this.address = address == null ? "" : address;
             this.name = name == null ? "" : name;
             this.room = room;

@@ -121,6 +121,23 @@ http://10.0.2.2:8000/ble/sample
 data/raw/ble_samples.csv
 ```
 
+8. Generare la finestra edge con il comando unico:
+
+```bash
+cd edge_node
+python -m edge_runtime.cli --config config/edge.example.yml
+```
+
+9. Controllare il report qualita:
+
+```text
+edge_node/outputs/last-quality-report.json
+```
+
+Senza beacon reali e' normale vedere errori come `ble_raw_missing` o
+`ble_no_samples_in_window`: significa che il sistema non userebbe quei dati per
+addestrare la baseline.
+
 ## Test con telefono fisico
 
 1. Avviare il receiver sul Raspberry:
@@ -247,9 +264,25 @@ Se il sistema sbaglia stanza, verificare:
 
 Quando il rilevamento e' stabile:
 
+Per i tempi del progetto useremo una baseline compatta da 5/6 giorni.
+
 ```bash
 cd edge_node
-python -m edge_ingest.cli --config config/edge.yml --append-baseline
+python -m edge_baseline.cli --config config/edge.yml start --days 6
+python -m edge_runtime.cli --config config/edge.yml --append-baseline
+```
+
+Durante i 6 giorni si controlla l'avanzamento con:
+
+```bash
+python -m edge_baseline.cli --config config/edge.yml status
+```
+
+Alla fine della baseline:
+
+```bash
+python -m edge_baseline.cli --config config/edge.yml finalize
+python -m edge_baseline.cli --config config/edge.yml train
 ```
 
 Il flusso finale sara':
@@ -259,8 +292,10 @@ Beacon veri
     -> app Android BLE reale
     -> Raspberry receiver
     -> data/raw/ble_samples.csv
-    -> edge_ingest
+    -> edge_runtime
     -> data/processed/latest_window.csv
+    -> outputs/last-quality-report.json
+    -> outputs/patient-001-decision.json, dopo training modello
 ```
 
 ## Creare APK installabile
