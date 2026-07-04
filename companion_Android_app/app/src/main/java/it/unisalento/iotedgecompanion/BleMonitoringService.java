@@ -187,19 +187,22 @@ public class BleMonitoringService extends Service {
         /*
          * Elabora un singolo risultato BLE rilevato dallo scanner.
          * Il metodo risolve la stanza tramite mappa beacon-stanza e conserva
-         * l'ultima osservazione valida per indirizzo beacon.
+         * l'ultima osservazione valida. Per i beacon iBeacon prova a usare
+         * l'identificativo stabile uuid-major-minor, piu' adatto di nome/MAC.
          */
         Map<String, String> beaconMap = parseBeaconMap();
         String address = result.getDevice().getAddress();
         String name = result.getDevice().getName();
+        String iBeaconId = parseIBeaconIdentifier(result);
         int rssi = result.getRssi();
 
-        String room = resolveRoom(beaconMap, address, name);
+        String room = resolveRoom(beaconMap, address, name, iBeaconId);
         if (room == null) {
             return;
         }
 
-        observations.put(address, new BeaconObservation(address, name, room, rssi));
+        String beaconId = TextUtils.isEmpty(iBeaconId) ? address : iBeaconId;
+        observations.put(beaconId, new BeaconObservation(beaconId, name, room, rssi));
     }
 
     private void sendBleSample(BeaconObservation observation) {
@@ -272,12 +275,17 @@ public class BleMonitoringService extends Service {
         return mapping;
     }
 
-    private String resolveRoom(Map<String, String> beaconMap, String address, String name) {
+    private String resolveRoom(Map<String, String> beaconMap, String address, String name, String iBeaconId) {
         /*
          * Determina la stanza associata a un beacon rilevato.
-         * Prima prova il match sull'indirizzo, poi sul nome pubblicizzato. Se non
-         * trova corrispondenze, il beacon viene ignorato.
+         * Prima prova l'identificativo iBeacon uuid-major-minor, poi indirizzo e
+         * nome pubblicizzato. Se non trova corrispondenze, il beacon viene ignorato.
          */
+        String normalizedIBeaconId = iBeaconId == null ? "" : iBeaconId.toLowerCase(Locale.ROOT);
+        if (beaconMap.containsKey(normalizedIBeaconId)) {
+            return beaconMap.get(normalizedIBeaconId);
+        }
+
         String normalizedAddress = address == null ? "" : address.toLowerCase(Locale.ROOT);
         if (beaconMap.containsKey(normalizedAddress)) {
             return beaconMap.get(normalizedAddress);
@@ -290,6 +298,52 @@ public class BleMonitoringService extends Service {
             }
         }
         return null;
+    }
+
+    private String parseIBeaconIdentifier(ScanResult result) {
+        /*
+         * Estrae dai manufacturer data Apple l'identificativo iBeacon.
+         * Il formato iBeacon contiene UUID, major e minor: insieme identificano
+         * il beacon in modo piu' stabile e leggibile della sola potenza RSSI.
+         */
+        if (result.getScanRecord() == null) {
+            return "";
+        }
+        byte[] data = result.getScanRecord().getManufacturerSpecificData(0x004C);
+        if (data == null || data.length < 23) {
+            return "";
+        }
+        int frameType = data[0] & 0xFF;
+        int frameLength = data[1] & 0xFF;
+        if (frameType != 0x02 || frameLength != 0x15) {
+            return "";
+        }
+
+        StringBuilder compactUuid = new StringBuilder();
+        for (int index = 2; index < 18; index++) {
+            compactUuid.append(String.format(Locale.ROOT, "%02x", data[index] & 0xFF));
+        }
+        String uuid = compactUuid.substring(0, 8)
+                + "-"
+                + compactUuid.substring(8, 12)
+                + "-"
+                + compactUuid.substring(12, 16)
+                + "-"
+                + compactUuid.substring(16, 20)
+                + "-"
+                + compactUuid.substring(20);
+
+        int major = unsignedShort(data[18], data[19]);
+        int minor = unsignedShort(data[20], data[21]);
+        return uuid + "-" + major + "-" + minor;
+    }
+
+    private int unsignedShort(byte high, byte low) {
+        /*
+         * Converte due byte big-endian in un intero positivo.
+         * Major e minor iBeacon sono valori unsigned a 16 bit.
+         */
+        return ((high & 0xFF) << 8) | (low & 0xFF);
     }
 
     private BeaconObservation strongestObservation() {

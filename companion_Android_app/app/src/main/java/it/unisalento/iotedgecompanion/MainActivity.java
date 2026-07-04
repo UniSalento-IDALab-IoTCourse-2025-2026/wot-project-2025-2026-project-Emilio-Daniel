@@ -2,6 +2,7 @@ package it.unisalento.iotedgecompanion;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -9,9 +10,12 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.text.TextUtils;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.json.JSONObject;
@@ -28,6 +32,12 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 1001;
+    private static final String ADMIN_USERNAME = "admin";
+    private static final String ADMIN_PASSWORD = "admin";
+    private static final String DEFAULT_BEACON_MAP =
+            "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14592=kitchen\n" +
+            "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14582=bedroom\n" +
+            "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14599=bathroom";
     private boolean startServiceAfterPermissionGrant = false;
 
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -39,6 +49,8 @@ public class MainActivity extends Activity {
     private EditText manualRoomInput;
     private EditText manualRssiInput;
     private EditText manualBeaconInput;
+    private LinearLayout beaconConfigPanel;
+    private TextView beaconSummaryText;
     private TextView statusText;
 
     @Override
@@ -58,9 +70,14 @@ public class MainActivity extends Activity {
         manualRoomInput = findViewById(R.id.manualRoomInput);
         manualRssiInput = findViewById(R.id.manualRssiInput);
         manualBeaconInput = findViewById(R.id.manualBeaconInput);
+        beaconConfigPanel = findViewById(R.id.beaconConfigPanel);
+        beaconSummaryText = findViewById(R.id.beaconSummaryText);
         statusText = findViewById(R.id.statusText);
 
         Button saveConfigButton = findViewById(R.id.saveConfigButton);
+        Button unlockBeaconConfigButton = findViewById(R.id.unlockBeaconConfigButton);
+        Button saveBeaconMapButton = findViewById(R.id.saveBeaconMapButton);
+        Button lockBeaconConfigButton = findViewById(R.id.lockBeaconConfigButton);
         Button sendManualButton = findViewById(R.id.sendManualButton);
         Button startScanButton = findViewById(R.id.startScanButton);
         Button stopScanButton = findViewById(R.id.stopScanButton);
@@ -68,6 +85,9 @@ public class MainActivity extends Activity {
         loadConfig();
 
         saveConfigButton.setOnClickListener(view -> saveConfig());
+        unlockBeaconConfigButton.setOnClickListener(view -> showAdminLoginDialog());
+        saveBeaconMapButton.setOnClickListener(view -> saveBeaconMap());
+        lockBeaconConfigButton.setOnClickListener(view -> lockBeaconMapEditor());
         sendManualButton.setOnClickListener(view -> sendManualSample());
         startScanButton.setOnClickListener(view -> startMonitoringService());
         stopScanButton.setOnClickListener(view -> stopMonitoringService());
@@ -93,14 +113,12 @@ public class MainActivity extends Activity {
         SharedPreferences preferences = getSharedPreferences("iot-edge", MODE_PRIVATE);
         receiverUrlInput.setText(preferences.getString("receiverUrl", "http://10.0.2.2:8000/ble/sample"));
         phoneIdInput.setText(preferences.getString("phoneId", "android-emulator"));
-        beaconMapInput.setText(preferences.getString("beaconMap",
-                "AA:BB:CC:DD:EE:01=kitchen\n" +
-                "AA:BB:CC:DD:EE:02=bedroom\n" +
-                "AA:BB:CC:DD:EE:03=bathroom\n" +
-                "AA:BB:CC:DD:EE:04=living_room"));
+        beaconMapInput.setText(preferences.getString("beaconMap", DEFAULT_BEACON_MAP));
         manualRoomInput.setText(preferences.getString("manualRoom", "kitchen"));
         manualRssiInput.setText(preferences.getString("manualRssi", "-61"));
-        manualBeaconInput.setText(preferences.getString("manualBeacon", "AA:BB:CC:DD:EE:01"));
+        manualBeaconInput.setText(preferences.getString("manualBeacon", "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14592"));
+        renderBeaconSummary();
+        lockBeaconMapEditor();
     }
 
     private void saveConfig() {
@@ -113,12 +131,146 @@ public class MainActivity extends Activity {
                 .edit()
                 .putString("receiverUrl", receiverUrlInput.getText().toString().trim())
                 .putString("phoneId", phoneIdInput.getText().toString().trim())
-                .putString("beaconMap", beaconMapInput.getText().toString())
                 .putString("manualRoom", manualRoomInput.getText().toString().trim())
                 .putString("manualRssi", manualRssiInput.getText().toString().trim())
                 .putString("manualBeacon", manualBeaconInput.getText().toString().trim())
                 .apply();
-        setStatus("Configurazione salvata");
+        setStatus("Gateway salvato");
+    }
+
+    private void saveBeaconMap() {
+        /*
+         * Salva la mappa beacon dopo l'accesso amministratore.
+         * Separare questo salvataggio dalla configurazione base impedisce che la
+         * mappa venga modificata accidentalmente durante l'uso normale dell'app.
+         */
+        getSharedPreferences("iot-edge", MODE_PRIVATE)
+                .edit()
+                .putString("beaconMap", beaconMapInput.getText().toString().trim())
+                .apply();
+        renderBeaconSummary();
+        lockBeaconMapEditor();
+        setStatus("Mappa beacon salvata");
+    }
+
+    private void showAdminLoginDialog() {
+        /*
+         * Mostra una finestra di login prima di permettere la modifica dei beacon.
+         * Per ora le credenziali sono fisse admin/admin, come richiesto per il
+         * prototipo. In futuro potranno essere sostituite da credenziali reali.
+         */
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int padding = dp(18);
+        container.setPadding(padding, padding / 2, padding, 0);
+
+        EditText usernameInput = new EditText(this);
+        usernameInput.setHint("Username");
+        usernameInput.setSingleLine(true);
+        usernameInput.setInputType(InputType.TYPE_CLASS_TEXT);
+        container.addView(usernameInput);
+
+        EditText passwordInput = new EditText(this);
+        passwordInput.setHint("Password");
+        passwordInput.setSingleLine(true);
+        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        container.addView(passwordInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Accesso amministratore")
+                .setView(container)
+                .setNegativeButton("Annulla", null)
+                .setPositiveButton("Sblocca", (dialog, which) -> {
+                    String username = usernameInput.getText().toString().trim();
+                    String password = passwordInput.getText().toString().trim();
+                    if (ADMIN_USERNAME.equals(username) && ADMIN_PASSWORD.equals(password)) {
+                        unlockBeaconMapEditor();
+                    } else {
+                        setStatus("Credenziali non valide");
+                    }
+                })
+                .show();
+    }
+
+    private void unlockBeaconMapEditor() {
+        /*
+         * Mostra il pannello di modifica della mappa beacon.
+         * L'utente normale vede solo il riepilogo; l'amministratore puo'
+         * correggere UUID/Major/Minor e stanze.
+         */
+        beaconConfigPanel.setVisibility(View.VISIBLE);
+        setStatus("Modifica mappa sbloccata");
+    }
+
+    private void lockBeaconMapEditor() {
+        /*
+         * Nasconde il pannello di modifica della mappa beacon.
+         * Questo mantiene la schermata pulita e riduce il rischio di modifiche
+         * accidentali durante i test reali in casa.
+         */
+        beaconConfigPanel.setVisibility(View.GONE);
+    }
+
+    private void renderBeaconSummary() {
+        /*
+         * Mostra la mappa beacon in forma leggibile.
+         * Le chiavi tecniche restano disponibili nell'editor, ma nel riepilogo
+         * l'attenzione va alle stanze configurate.
+         */
+        String[] lines = beaconMapInput.getText().toString().split("\\n");
+        StringBuilder summary = new StringBuilder();
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || !trimmed.contains("=")) {
+                continue;
+            }
+            String[] parts = trimmed.split("=", 2);
+            String key = parts[0].trim();
+            String room = parts[1].trim();
+            summary.append(prettyRoomName(room))
+                    .append("  ->  ")
+                    .append(shortenBeaconKey(key))
+                    .append("\n");
+        }
+        beaconSummaryText.setText(summary.length() == 0 ? "Mappa beacon non configurata" : summary.toString().trim());
+    }
+
+    private String prettyRoomName(String room) {
+        /*
+         * Traduce i nomi interni del modello in etichette piu' leggibili.
+         * Nel CSV e nel modello rimangono `kitchen`, `bedroom`, `bathroom`.
+         */
+        String normalized = room.toLowerCase();
+        if ("kitchen".equals(normalized)) {
+            return "Cucina";
+        }
+        if ("bedroom".equals(normalized)) {
+            return "Camera";
+        }
+        if ("bathroom".equals(normalized)) {
+            return "Bagno";
+        }
+        return room;
+    }
+
+    private String shortenBeaconKey(String key) {
+        /*
+         * Accorcia la chiave tecnica del beacon per non sporcare il riepilogo.
+         * L'identificativo completo resta modificabile nel pannello admin.
+         */
+        if (key.length() <= 18) {
+            return key;
+        }
+        return key.substring(0, 8) + "..." + key.substring(key.length() - 8);
+    }
+
+    private int dp(int value) {
+        /*
+         * Converte un valore in density-independent pixels in pixel reali.
+         * Serve per dare al dialog di login una spaziatura coerente sui diversi
+         * schermi Android.
+         */
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void sendManualSample() {

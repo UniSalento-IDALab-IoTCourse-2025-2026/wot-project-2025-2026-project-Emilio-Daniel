@@ -30,6 +30,40 @@ L'app Android deve:
 
 ## Modalita disponibili
 
+### Configurazione protetta beacon
+
+La configurazione base del gateway resta libera:
+
+```text
+Receiver URL
+Phone ID
+```
+
+La mappa dei beacon invece e' protetta da login amministratore.
+
+Credenziali provvisorie:
+
+```text
+username: admin
+password: admin
+```
+
+Per modificare la mappa:
+
+1. premere `Sblocca modifica`;
+2. inserire `admin` / `admin`;
+3. modificare la mappa beacon;
+4. premere `Salva mappa beacon`;
+5. la sezione torna bloccata automaticamente.
+
+La mappa attuale dei 3 BlueBeacon 01 e':
+
+```text
+acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14592=kitchen
+acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14582=bedroom
+acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14599=bathroom
+```
+
 ### Manuale / Emulatore
 
 Serve per testare subito senza beacon fisici.
@@ -62,10 +96,23 @@ Serve quando avremo beacon fisici e un telefono Android reale.
 La mappa beacon va scritta cosi':
 
 ```text
-AA:BB:CC:DD:EE:01=kitchen
-AA:BB:CC:DD:EE:02=bedroom
-AA:BB:CC:DD:EE:03=bathroom
-AA:BB:CC:DD:EE:04=living_room
+IDENTIFICATIVO_BEACON_1=kitchen
+IDENTIFICATIVO_BEACON_2=bedroom
+IDENTIFICATIVO_BEACON_3=bathroom
+```
+
+Per i BlueBeacon 01 conviene usare l'identificativo iBeacon nel formato:
+
+```text
+uuid-major-minor
+```
+
+Mappa reale attuale:
+
+```text
+acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14592=kitchen
+acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14582=bedroom
+acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14599=bathroom
 ```
 
 L'app scansiona i beacon, sceglie quello con RSSI piu' alto e invia la stanza al receiver.
@@ -103,7 +150,7 @@ batteria per questa app, altrimenti Android puo' limitarla dopo molto tempo.
 
 1. Aprire Android Studio.
 2. `File -> Open`.
-3. Selezionare la cartella `companion_app`.
+3. Selezionare la cartella `companion_Android_app`.
 4. Attendere il sync Gradle.
 5. Avviare un emulatore oppure collegare un telefono Android.
 6. Premere `Run`.
@@ -117,6 +164,12 @@ Da Android Studio:
 1. `Build -> Build Bundle(s) / APK(s) -> Build APK(s)`.
 2. Al termine cliccare `locate`.
 3. Installare l'APK sul telefono Android.
+
+Il file debug viene generato qui:
+
+```text
+companion_Android_app/app/build/outputs/apk/debug/app-debug.apk
+```
 
 Per una versione firmata:
 
@@ -170,14 +223,19 @@ di addestrare la baseline con dati incompleti.
 Useremo questa procedura:
 
 1. configurare un beacon per stanza;
-2. annotare MAC address/UUID, nome e stanza associata;
+2. annotare UUID, major, minor, nome e stanza associata;
 3. inserire nell'app la mappa:
 
 ```text
-AA:BB:CC:DD:EE:01=kitchen
-AA:BB:CC:DD:EE:02=bedroom
-AA:BB:CC:DD:EE:03=bathroom
-AA:BB:CC:DD:EE:04=living_room
+CHIAVE_BEACON_CUCINA=kitchen
+CHIAVE_BEACON_CAMERA=bedroom
+CHIAVE_BEACON_BAGNO=bathroom
+```
+
+La chiave consigliata e':
+
+```text
+uuid-major-minor
 ```
 
 4. avviare il receiver sul Raspberry:

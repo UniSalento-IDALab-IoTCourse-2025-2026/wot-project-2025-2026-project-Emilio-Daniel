@@ -43,7 +43,7 @@
 
             <TextView
                 style="@style/SectionTitle"
-                android:text="Configurazione" />
+                android:text="Gateway" />
 
             <TextView
                 style="@style/InputLabel"
@@ -65,22 +65,65 @@
                 style="@style/InputField"
                 android:singleLine="true" />
 
-            <TextView
-                style="@style/InputLabel"
-                android:text="Mappa beacon" />
-
-            <EditText
-                android:id="@+id/beaconMapInput"
-                style="@style/InputField"
-                android:layout_height="132dp"
-                android:gravity="top"
-                android:inputType="textMultiLine" />
-
             <Button
                 android:id="@+id/saveConfigButton"
                 style="@style/ButtonSecondary"
                 android:layout_marginTop="10dp"
-                android:text="Salva configurazione" />
+                android:text="Salva gateway" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Panel"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                style="@style/SectionTitle"
+                android:text="Mappa beacon" />
+
+            <TextView
+                android:id="@+id/beaconSummaryText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_beacon_summary"
+                android:fontFamily="monospace"
+                android:letterSpacing="0"
+                android:minHeight="78dp"
+                android:padding="12dp"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/unlockBeaconConfigButton"
+                style="@style/ButtonSecondary"
+                android:text="Sblocca modifica" />
+
+            <LinearLayout
+                android:id="@+id/beaconConfigPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <EditText
+                    android:id="@+id/beaconMapInput"
+                    style="@style/InputField"
+                    android:layout_height="132dp"
+                    android:fontFamily="monospace"
+                    android:gravity="top"
+                    android:inputType="textMultiLine" />
+
+                <Button
+                    android:id="@+id/saveBeaconMapButton"
+                    style="@style/ButtonPrimary"
+                    android:text="Salva mappa beacon" />
+
+                <Button
+                    android:id="@+id/lockBeaconConfigButton"
+                    style="@style/ButtonDanger"
+                    android:text="Blocca modifica" />
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout

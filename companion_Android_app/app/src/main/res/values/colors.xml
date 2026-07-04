@@ -13,4 +13,8 @@
     <color name="on_primary_muted">#D5F3EF</color>
     <color name="status_bg">#EAF4F2</color>
     <color name="status_text">#17443F</color>
+    <color name="beacon_summary_bg">#F7FCFA</color>
+    <color name="beacon_summary_border">#B8D8D2</color>
+    <color name="danger">#B91C1C</color>
+    <color name="danger_pressed">#991B1B</color>
 </resources>
