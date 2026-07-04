@@ -64,34 +64,9 @@ acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14582=bedroom
 acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14599=bathroom
 ```
 
-### Manuale / Emulatore
-
-Serve per testare subito senza beacon fisici.
-
-Si inseriscono:
-
-- stanza;
-- RSSI;
-- beacon id;
-- URL del receiver Raspberry.
-
-Poi si preme `Invia campione manuale`.
-
-Sull'emulatore Android, l'URL verso il receiver sul PC e':
-
-```text
-http://10.0.2.2:8000/ble/sample
-```
-
-Su telefono fisico, l'URL sara':
-
-```text
-http://IP_DEL_RASPBERRY:8000/ble/sample
-```
-
 ### BLE reale
 
-Serve quando avremo beacon fisici e un telefono Android reale.
+Serve con i BlueBeacon fisici e un telefono Android reale.
 
 La mappa beacon va scritta cosi':
 
@@ -152,7 +127,7 @@ batteria per questa app, altrimenti Android puo' limitarla dopo molto tempo.
 2. `File -> Open`.
 3. Selezionare la cartella `companion_Android_app`.
 4. Attendere il sync Gradle.
-5. Avviare un emulatore oppure collegare un telefono Android.
+5. Collegare un telefono Android fisico.
 6. Premere `Run`.
 
 Se Android Studio propone di aggiornare Android Gradle Plugin o Gradle, si puo' accettare.
@@ -179,7 +154,7 @@ Per una versione firmata:
 4. Selezionare build type `release`.
 5. Generare l'APK firmato.
 
-## Test end-to-end senza beacon
+## Test end-to-end con beacon reali
 
 1. Avviare il receiver:
 
@@ -188,37 +163,36 @@ cd ../edge_node
 python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --port 8000
 ```
 
-2. Avviare l'app in emulatore.
-3. Usare URL:
+2. Installare/aprire l'app su telefono Android reale.
+3. Usare URL del PC/Raspberry nella stessa rete Wi-Fi:
 
 ```text
-http://10.0.2.2:8000/ble/sample
+http://IP_DEL_PC_O_RASPBERRY:8000/ble/sample
 ```
 
-4. Premere `Invia campione manuale`.
-5. Controllare:
+4. Premere `Salva gateway`.
+5. Verificare la mappa beacon, sbloccandola con `admin` / `admin` solo se serve.
+6. Premere `Avvia monitoraggio BLE`.
+7. Controllare:
 
 ```text
 data/raw/ble_samples.csv
 ```
 
-6. Generare le feature:
+8. Generare le feature:
 
 ```bash
 cd ../edge_node
 python -m edge_runtime.cli --config config/edge.example.yml
 ```
 
-7. Controllare il report qualita:
+9. Controllare il report qualita:
 
 ```text
 ../edge_node/outputs/last-quality-report.json
 ```
 
-Senza beacon reali, eventuali errori BLE nel report sono attesi: servono proprio a evitare
-di addestrare la baseline con dati incompleti.
-
-## Quando avremo i beacon reali
+## Procedura con i beacon reali
 
 Useremo questa procedura:
 
@@ -252,7 +226,7 @@ http://IP_DEL_RASPBERRY:8000/ble/sample
 ```
 
 6. avviare monitoraggio BLE reale;
-7. testare cucina, camera, bagno e soggiorno;
+7. testare cucina, camera e bagno;
 8. controllare `data/raw/ble_samples.csv`;
 9. calibrare posizione beacon, RSSI e filtro anti-rimbalzo;
 10. iniziare raccolta baseline quando la stima stanza e' stabile.

@@ -8,8 +8,6 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.View;
@@ -18,17 +16,8 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import org.json.JSONObject;
-
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 1001;
@@ -40,15 +29,9 @@ public class MainActivity extends Activity {
             "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14599=bathroom";
     private boolean startServiceAfterPermissionGrant = false;
 
-    private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
-
     private EditText receiverUrlInput;
     private EditText phoneIdInput;
     private EditText beaconMapInput;
-    private EditText manualRoomInput;
-    private EditText manualRssiInput;
-    private EditText manualBeaconInput;
     private LinearLayout beaconConfigPanel;
     private TextView beaconSummaryText;
     private TextView statusText;
@@ -58,8 +41,7 @@ public class MainActivity extends Activity {
         /*
          * Metodo principale dell'Activity Android.
          * Inizializza la schermata, collega i campi XML alle variabili Java e
-         * associa i pulsanti alle azioni di configurazione, invio manuale e
-         * gestione del servizio BLE in background.
+         * associa i pulsanti alle azioni di configurazione e monitoraggio BLE.
          */
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
@@ -67,9 +49,6 @@ public class MainActivity extends Activity {
         receiverUrlInput = findViewById(R.id.receiverUrlInput);
         phoneIdInput = findViewById(R.id.phoneIdInput);
         beaconMapInput = findViewById(R.id.beaconMapInput);
-        manualRoomInput = findViewById(R.id.manualRoomInput);
-        manualRssiInput = findViewById(R.id.manualRssiInput);
-        manualBeaconInput = findViewById(R.id.manualBeaconInput);
         beaconConfigPanel = findViewById(R.id.beaconConfigPanel);
         beaconSummaryText = findViewById(R.id.beaconSummaryText);
         statusText = findViewById(R.id.statusText);
@@ -78,7 +57,6 @@ public class MainActivity extends Activity {
         Button unlockBeaconConfigButton = findViewById(R.id.unlockBeaconConfigButton);
         Button saveBeaconMapButton = findViewById(R.id.saveBeaconMapButton);
         Button lockBeaconConfigButton = findViewById(R.id.lockBeaconConfigButton);
-        Button sendManualButton = findViewById(R.id.sendManualButton);
         Button startScanButton = findViewById(R.id.startScanButton);
         Button stopScanButton = findViewById(R.id.stopScanButton);
 
@@ -88,7 +66,6 @@ public class MainActivity extends Activity {
         unlockBeaconConfigButton.setOnClickListener(view -> showAdminLoginDialog());
         saveBeaconMapButton.setOnClickListener(view -> saveBeaconMap());
         lockBeaconConfigButton.setOnClickListener(view -> lockBeaconMapEditor());
-        sendManualButton.setOnClickListener(view -> sendManualSample());
         startScanButton.setOnClickListener(view -> startMonitoringService());
         stopScanButton.setOnClickListener(view -> stopMonitoringService());
     }
@@ -97,10 +74,9 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         /*
          * Chiusura controllata dell'Activity.
-         * Spegne l'executor usato per le richieste HTTP, evitando che thread di
-         * rete rimangano attivi dopo la chiusura dell'interfaccia.
+         * L'Activity non mantiene risorse pesanti: il monitoraggio reale viene
+         * gestito dal Foreground Service separato.
          */
-        networkExecutor.shutdownNow();
         super.onDestroy();
     }
 
@@ -113,27 +89,40 @@ public class MainActivity extends Activity {
         SharedPreferences preferences = getSharedPreferences("iot-edge", MODE_PRIVATE);
         receiverUrlInput.setText(preferences.getString("receiverUrl", "http://10.0.2.2:8000/ble/sample"));
         phoneIdInput.setText(preferences.getString("phoneId", "android-emulator"));
-        beaconMapInput.setText(preferences.getString("beaconMap", DEFAULT_BEACON_MAP));
-        manualRoomInput.setText(preferences.getString("manualRoom", "kitchen"));
-        manualRssiInput.setText(preferences.getString("manualRssi", "-61"));
-        manualBeaconInput.setText(preferences.getString("manualBeacon", "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14592"));
+        String savedBeaconMap = preferences.getString("beaconMap", DEFAULT_BEACON_MAP);
+        if (shouldUseDefaultBeaconMap(savedBeaconMap)) {
+            savedBeaconMap = DEFAULT_BEACON_MAP;
+            preferences.edit().putString("beaconMap", DEFAULT_BEACON_MAP).apply();
+        }
+        beaconMapInput.setText(savedBeaconMap);
         renderBeaconSummary();
         lockBeaconMapEditor();
+    }
+
+    private boolean shouldUseDefaultBeaconMap(String savedBeaconMap) {
+        /*
+         * Se sul telefono era installata una vecchia versione dell'app, possono
+         * essere rimasti placeholder o MAC fittizi. In quel caso ripristiniamo
+         * automaticamente la mappa reale dei tre BlueBeacon del progetto.
+         */
+        if (savedBeaconMap == null || savedBeaconMap.trim().isEmpty()) {
+            return true;
+        }
+        String normalized = savedBeaconMap.toLowerCase();
+        return normalized.contains("identificativo_beacon")
+                || normalized.contains("aa:bb:cc:dd:ee");
     }
 
     private void saveConfig() {
         /*
          * Salva localmente la configurazione inserita nella schermata.
-         * I valori salvati vengono riutilizzati sia dal test manuale sia dal
-         * Foreground Service BLE che lavora in background.
+         * I valori salvati vengono riutilizzati dal Foreground Service BLE che
+         * lavora in background.
          */
         getSharedPreferences("iot-edge", MODE_PRIVATE)
                 .edit()
                 .putString("receiverUrl", receiverUrlInput.getText().toString().trim())
                 .putString("phoneId", phoneIdInput.getText().toString().trim())
-                .putString("manualRoom", manualRoomInput.getText().toString().trim())
-                .putString("manualRssi", manualRssiInput.getText().toString().trim())
-                .putString("manualBeacon", manualBeaconInput.getText().toString().trim())
                 .apply();
         setStatus("Gateway salvato");
     }
@@ -273,19 +262,6 @@ public class MainActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private void sendManualSample() {
-        /*
-         * Invia un campione BLE manuale al receiver.
-         * Questa modalita serve per testare l'intera pipeline anche da
-         * emulatore, quando non abbiamo ancora beacon fisici disponibili.
-         */
-        saveConfig();
-        String room = manualRoomInput.getText().toString().trim();
-        String beaconId = manualBeaconInput.getText().toString().trim();
-        int rssi = parseRssi(manualRssiInput.getText().toString().trim());
-        sendBleSample(room, rssi, beaconId, "ManualBeacon");
-    }
-
     private void startMonitoringService() {
         /*
          * Avvia il Foreground Service responsabile della scansione BLE reale.
@@ -316,66 +292,6 @@ public class MainActivity extends Activity {
          */
         stopService(new Intent(this, BleMonitoringService.class));
         setStatus("Monitoraggio BLE fermato");
-    }
-
-    private void sendBleSample(String room, int rssi, String beaconId, String beaconName) {
-        /*
-         * Costruisce e invia via HTTP un campione BLE al Raspberry.
-         * L'invio avviene su thread separato per non bloccare la UI Android; il
-         * risultato viene poi riportato sul main thread tramite Handler.
-         */
-        String receiverUrl = receiverUrlInput.getText().toString().trim();
-        String phoneId = phoneIdInput.getText().toString().trim();
-        if (TextUtils.isEmpty(receiverUrl)) {
-            setStatus("URL receiver mancante");
-            return;
-        }
-
-        networkExecutor.execute(() -> {
-            HttpURLConnection connection = null;
-            try {
-                JSONObject payload = new JSONObject();
-                payload.put("timestamp", Instant.now().toString());
-                payload.put("room", room);
-                payload.put("rssi", rssi);
-                payload.put("beacon_id", beaconId);
-                payload.put("beacon_name", beaconName == null ? "" : beaconName);
-                payload.put("phone_id", TextUtils.isEmpty(phoneId) ? "android-phone" : phoneId);
-
-                byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
-                connection = (HttpURLConnection) new URL(receiverUrl).openConnection();
-                connection.setRequestMethod("POST");
-                connection.setConnectTimeout(5000);
-                connection.setReadTimeout(5000);
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setDoOutput(true);
-                try (OutputStream outputStream = connection.getOutputStream()) {
-                    outputStream.write(body);
-                }
-
-                int responseCode = connection.getResponseCode();
-                mainHandler.post(() -> setStatus("Inviato " + room + " (" + responseCode + ")"));
-            } catch (Exception exception) {
-                mainHandler.post(() -> setStatus("Errore invio: " + exception.getMessage()));
-            } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
-            }
-        });
-    }
-
-    private int parseRssi(String text) {
-        /*
-         * Converte il valore RSSI inserito manualmente in intero.
-         * Se il testo non e' valido, usa un valore di default realistico per un
-         * segnale BLE medio-debole, cosi' il test manuale non si blocca.
-         */
-        try {
-            return Integer.parseInt(text);
-        } catch (NumberFormatException exception) {
-            return -70;
-        }
     }
 
     private boolean hasRequiredPermissions() {

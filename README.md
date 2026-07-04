@@ -29,7 +29,7 @@ sul Raspberry Pi.
   - [Cosa abbiamo fatto con Android](#cosa-abbiamo-fatto-con-android)
   - [Cosa abbiamo fatto con iOS](#cosa-abbiamo-fatto-con-ios)
   - [Receiver Raspberry per app mobile](#receiver-raspberry-per-app-mobile)
-  - [Test app Android senza beacon](#test-app-android-senza-beacon)
+  - [Test app Android con beacon reali](#test-app-android-con-beacon-reali)
   - [Rendere l'app installabile su Android](#rendere-lapp-installabile-su-android)
 - [Shelly / NILM](#shelly--nilm)
 - [Comandi principali](#comandi-principali)
@@ -172,8 +172,8 @@ L'app iOS si crea su Mac con Xcode usando i file in `companion_iOS_app/`.
   da `edge_node/data/raw/ble_samples.csv` e trasformarli in feature per il modello.
 - Ho aggiunto il receiver HTTP locale per Android: il telefono potra' inviare campioni BLE
   al Raspberry con `POST /ble/sample`.
-- Ho creato l'app Android `IoT Edge Companion` in `companion_Android_app/`, con modalita manuale
-  per emulatore e modalita BLE reale per telefono fisico.
+- Ho creato l'app Android `IoT Edge Companion` in `companion_Android_app/`, ora orientata
+  al test BLE reale con telefono fisico e BlueBeacon.
 - Ho aggiunto il Foreground Service BLE nell'app Android, cosi' il monitoraggio puo'
   restare attivo in background con notifica persistente.
 - Ho riordinato il repository separando `edge_node/`, `companion_Android_app/` e `docs/`.
@@ -387,7 +387,7 @@ La guida operativa e' in `docs/BEACON_SETUP.md`.
 
 Abbiamo preparato:
 
-1. app Android minimale per invio manuale e scansione beacon BLE;
+1. app Android per scansione beacon BLE reale;
 2. mappa `beacon_id -> stanza`;
 3. scelta della stanza tramite RSSI piu' forte;
 4. invio HTTP al Raspberry Pi;
@@ -402,11 +402,8 @@ L'app Android e' gia' stata creata in:
 companion_Android_app/
 ```
 
-Ha due modalita:
-
-- manuale/emulatore: inseriamo stanza, RSSI e beacon id a mano e testiamo l'invio HTTP;
-- BLE reale: su telefono Android fisico scansionera' i beacon e inviera' automaticamente
-  la stanza stimata.
+La modalita principale e' BLE reale: su telefono Android fisico scansionera' i beacon e
+inviera' automaticamente la stanza stimata.
 
 La modalita BLE reale viene gestita da un Foreground Service Android: dopo aver premuto
 `Avvia monitoraggio BLE`, l'app continua a lavorare in background e mostra una notifica
@@ -480,16 +477,18 @@ Il receiver appende il campione a:
 data/raw/ble_samples.csv
 ```
 
-### Test app Android senza beacon
+### Test app Android con beacon reali
 
-Senza telefono Android fisico e senza beacon non possiamo testare il BLE reale, ma possiamo
-testare tutta la parte applicativa e di rete:
+Per testare la localizzazione reale servono telefono Android fisico e i 3 BlueBeacon accesi:
 
 ```text
-App Android in emulatore
+App Android su telefono fisico
         |
         v
-POST /ble/sample
+BlueBeacon cucina/camera/bagno
+        |
+        v
+POST /ble/sample con stanza stimata
         |
         v
 Receiver Raspberry/PC
@@ -510,15 +509,17 @@ python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --po
 ```
 
 2. aprire `companion_Android_app/` in Android Studio;
-3. avviare l'app su emulatore;
-4. usare come URL:
+3. installare l'app su telefono Android fisico;
+4. usare come URL del receiver:
 
 ```text
-http://10.0.2.2:8000/ble/sample
+http://IP_DEL_PC_O_RASPBERRY:8000/ble/sample
 ```
 
-5. premere `Invia campione manuale`;
-6. controllare che il campione arrivi in:
+5. verificare la mappa beacon protetta con `admin` / `admin`;
+6. premere `Avvia monitoraggio BLE`;
+7. spostarsi vicino a cucina, camera e bagno;
+8. controllare che i campioni arrivino in:
 
 ```text
 data/raw/ble_samples.csv
@@ -1218,11 +1219,8 @@ Abbiamo creato l'app `IoT Edge Companion` dentro `companion_Android_app/`.
 
 L'app serve per due cose:
 
-- test manuale da emulatore, senza beacon fisici;
-- scansione BLE reale quando avremo telefono Android e beacon.
-
-In modalita manuale possiamo gia' inviare campioni finti al receiver Raspberry e vedere
-come vengono salvati nel CSV.
+- configurazione protetta della mappa beacon;
+- scansione BLE reale con telefono Android e BlueBeacon.
 
 In modalita reale l'app scansionera' i beacon nelle stanze, scegliera' quello con RSSI
 piu' forte e inviera' la stanza stimata al Raspberry.
