@@ -26,7 +26,8 @@ sul Raspberry Pi.
 - [BLE indoor positioning](#ble-indoor-positioning)
   - [Hardware previsto](#hardware-previsto)
   - [Cosa abbiamo fatto con Android](#cosa-abbiamo-fatto-con-android)
-  - [Receiver Raspberry per Android](#receiver-raspberry-per-android)
+  - [Cosa abbiamo fatto con iOS](#cosa-abbiamo-fatto-con-ios)
+  - [Receiver Raspberry per app mobile](#receiver-raspberry-per-app-mobile)
   - [Test app Android senza beacon](#test-app-android-senza-beacon)
   - [Rendere l'app installabile su Android](#rendere-lapp-installabile-su-android)
 - [Shelly / NILM](#shelly--nilm)
@@ -130,6 +131,9 @@ edge_node/
 companion_app/
   app Android per scansione BLE/manual test e invio dati al Raspberry
 
+companion_iOS_app/
+  sorgenti Swift/SwiftUI per creare su Mac l'app iPhone companion
+
 docs/
   ANDROID_APP.md        Guida app Android, emulatore e APK
   API_CONSTRAINTS.md    Vincoli reali Google/Fitbit e BLE
@@ -139,7 +143,8 @@ docs/
 ```
 
 Regola pratica: i comandi Python del Raspberry/AI vanno eseguiti entrando prima in
-`edge_node/`. L'app Android invece si apre da Android Studio selezionando `companion_app/`.
+`edge_node/`. L'app Android si apre da Android Studio selezionando `companion_app/`.
+L'app iOS si crea su Mac con Xcode usando i file in `companion_iOS_app/`.
 
 ## Cosa e' stato fatto finora
 
@@ -352,14 +357,19 @@ Questa parte e' gia' predisposta lato software: abbiamo creato sia il receiver l
 sul Raspberry/PC sia l'app Android che puo' inviare campioni manuali e avviare un
 Foreground Service BLE per il monitoraggio in background.
 
+Dato che useremo anche iPhone, abbiamo preparato una companion app iOS. Su iOS il MAC
+address BLE reale non viene esposto come su Android: la mappa beacon-stanza deve quindi
+usare il nome pubblicizzato dal beacon oppure l'identificativo CoreBluetooth mostrato
+dall'app durante la scansione.
+
 ### Hardware previsto
 
 Per la prima versione reale servono:
 
 - beacon BLE configurabili, uno per stanza;
-- un telefono Android che resta vicino/addosso al paziente;
+- un telefono Android o iPhone che resta vicino/addosso al paziente;
 - un Raspberry Pi locale fisso, usato come gateway e receiver dati;
-- rete locale condivisa tra telefono Android e Raspberry Pi.
+- rete locale condivisa tra telefono e Raspberry Pi.
 
 Ogni beacon avra' una stanza associata, ad esempio:
 
@@ -404,7 +414,33 @@ La modalita BLE reale viene gestita da un Foreground Service Android: dopo aver 
 persistente. Questo e' importante per il progetto reale, perche' il telefono deve restare
 attivo anche quando lo schermo e' spento o l'app non e' in primo piano.
 
-### Receiver Raspberry per Android
+### Cosa abbiamo fatto con iOS
+
+Abbiamo creato la cartella:
+
+```text
+companion_iOS_app/
+```
+
+Dentro ci sono sorgenti Swift/SwiftUI da copiare in un progetto Xcode sul Mac.
+
+L'app iOS contiene:
+
+1. schermata di configurazione del receiver Raspberry;
+2. `phone_id` per identificare l'iPhone;
+3. mappa `beacon/nome/UUID -> stanza`;
+4. invio manuale di campioni BLE per test senza beacon;
+5. scansione BLE reale tramite CoreBluetooth;
+6. scelta del beacon con RSSI piu' forte;
+7. invio HTTP al receiver Raspberry;
+8. guida per firma, installazione su iPhone e test.
+
+Nota: il simulatore iOS non e' adatto a testare il BLE reale. Per la scansione serve un
+iPhone fisico. Inoltre iOS gestisce il background BLE in modo piu' restrittivo rispetto
+ad Android; per beacon iBeacon reali potremo eventualmente evolvere l'app usando
+CoreLocation con UUID/major/minor.
+
+### Receiver Raspberry per app mobile
 
 Avvio del receiver locale:
 
@@ -418,7 +454,7 @@ Endpoint disponibile:
 POST /ble/sample
 ```
 
-Payload che l'app Android dovra' inviare:
+Payload che l'app Android/iOS dovra' inviare:
 
 ```json
 {
@@ -1095,7 +1131,7 @@ Il sistema sa gia' leggere campioni BLE da CSV e trasformarli in feature come:
 - cambi stanza notturni;
 - permanenza piu' lunga in una singola stanza.
 
-### 5. Receiver Raspberry per Android
+### 5. Receiver Raspberry per app mobile
 
 Abbiamo creato il modulo `edge_receiver`.
 
@@ -1105,7 +1141,7 @@ Questo sara' il server locale sul Raspberry Pi. Espone l'endpoint:
 POST /ble/sample
 ```
 
-L'app Android inviera' dati di questo tipo:
+L'app Android o iOS inviera' dati di questo tipo:
 
 ```json
 {
@@ -1197,7 +1233,30 @@ BLE`, Android mantiene l'app attiva in background con una notifica persistente. 
 fa cicli periodici di scansione, sceglie il beacon/stanza piu' forte e invia il campione
 al receiver locale.
 
-### 10. Shelly / NILM
+### 10. App iOS
+
+Abbiamo creato la base dell'app iPhone dentro:
+
+```text
+companion_iOS_app/
+```
+
+Questa cartella contiene i sorgenti Swift/SwiftUI e una guida per creare il progetto su
+Mac con Xcode, firmarlo e installarlo su iPhone.
+
+L'app iOS permette:
+
+- test manuale senza beacon fisici;
+- scansione BLE reale tramite CoreBluetooth;
+- visualizzazione dei beacon rilevati;
+- mappatura nome/UUID beacon verso stanza;
+- invio campioni al receiver Raspberry.
+
+Nota: su iOS non possiamo fare affidamento sul MAC address BLE. Useremo nome beacon o
+identificativo CoreBluetooth, e quando avremo i beacon veri valuteremo se passare a
+CoreLocation per iBeacon.
+
+### 11. Shelly / NILM
 
 Abbiamo predisposto un adapter per dati Shelly/NILM.
 
@@ -1208,14 +1267,14 @@ misurazione consumi. Il codice e' pronto a leggere dati da:
 data/raw/shelly_samples.csv
 ```
 
-### 11. Documentazione
+### 12. Documentazione
 
 Abbiamo documentato architettura, comandi, deployment Raspberry, schema feature e vincoli
 reali delle API.
 
 Il README deve rimanere il punto principale da leggere per capire lo stato del progetto.
 
-### 12. Cosa manca ancora
+### 13. Cosa manca ancora
 
 Mancano ancora i collegamenti reali con hardware:
 

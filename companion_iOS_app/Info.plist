@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>L'app usa il Bluetooth per rilevare i beacon BLE nelle stanze e stimare la posizione indoor del paziente.</string>
+  <key>NSBluetoothPeripheralUsageDescription</key>
+  <string>L'app usa il Bluetooth per rilevare i beacon BLE configurati nel progetto IoT.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>L'app invia i campioni BLE al Raspberry Pi presente nella rete locale.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>La localizzazione puo' essere richiesta in futuro per il supporto iBeacon basato su CoreLocation.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+  </dict>
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>bluetooth-central</string>
+  </array>
+</dict>
+</plist>
+
