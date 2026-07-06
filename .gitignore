@@ -47,3 +47,12 @@ edge_node/outputs/*
 !edge_node/data/external/.gitkeep
 !edge_node/models/.gitkeep
 !edge_node/outputs/.gitkeep
+
+# Artefatti piccoli/necessari per portare il progetto su Raspberry Pi.
+# Il CASAS completo resta ignorato perche' supera il limite GitHub da 100 MB.
+!edge_node/models/generic_spatial.pkl
+!edge_node/models/generic_wearable.pkl
+!edge_node/data/processed/generic_spatial_dataset_train.csv
+!edge_node/data/processed/generic_wearable_dataset.csv
+!edge_node/data/processed/generic_wearable_dataset_pamap2.csv
+!edge_node/data/processed/generic_wearable_dataset_wesad.csv
