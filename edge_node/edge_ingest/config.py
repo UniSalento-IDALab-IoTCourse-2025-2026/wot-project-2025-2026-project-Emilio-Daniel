@@ -25,6 +25,16 @@ class PathsConfig:
 
 
 @dataclass(frozen=True)
+class AIConfig:
+    generic_model: Path
+    generic_spatial_model: Path
+    generic_wearable_model: Path
+    personal_model: Path | None = None
+    baseline_gate_enabled: bool = True
+    baseline_gate_block_score: float = 60.0
+
+
+@dataclass(frozen=True)
 class FitbitConfig:
     enabled: bool = False
     token_file: Path = Path("config/fitbit_token.json")
@@ -59,6 +69,7 @@ class EdgeIngestConfig:
     patient: PatientConfig
     window: WindowConfig
     paths: PathsConfig
+    ai: AIConfig
     fitbit: FitbitConfig
     ble: BleConfig
     shelly: ShellyConfig
@@ -95,6 +106,38 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
                     "baseline_csv",
                     "data/processed/baseline.csv",
                 )
+            ),
+        ),
+        ai=AIConfig(
+            generic_model=Path(
+                _section(payload, "ai").get(
+                    "generic_model",
+                    "models/generic.pkl",
+                )
+            ),
+            generic_spatial_model=Path(
+                _section(payload, "ai").get(
+                    "generic_spatial_model",
+                    _section(payload, "ai").get(
+                        "generic_model",
+                        "models/generic_spatial.pkl",
+                    ),
+                )
+            ),
+            generic_wearable_model=Path(
+                _section(payload, "ai").get(
+                    "generic_wearable_model",
+                    "models/generic_wearable.pkl",
+                )
+            ),
+            personal_model=_optional_path(
+                _section(payload, "ai").get("personal_model")
+            ),
+            baseline_gate_enabled=bool(
+                _section(payload, "ai").get("baseline_gate_enabled", True)
+            ),
+            baseline_gate_block_score=float(
+                _section(payload, "ai").get("baseline_gate_block_score", 60.0)
             ),
         ),
         fitbit=FitbitConfig(
@@ -183,3 +226,18 @@ def _tuple_of_strings(value: Any) -> tuple[str, ...]:
     if isinstance(value, list):
         return tuple(str(item) for item in value if str(item).strip())
     return ()
+
+
+def _optional_path(value: Any) -> Path | None:
+    """Converte un valore YAML opzionale in `Path` solo quando e' presente.
+
+    Il modello personale puo' essere lasciato vuoto nel file di configurazione:
+    in quel caso il runtime usera' automaticamente `models/<patient_id>.pkl`.
+    Questa helper evita di confondere una stringa vuota con un percorso reale.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return Path(text)

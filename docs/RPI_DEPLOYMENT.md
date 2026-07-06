@@ -1,6 +1,6 @@
 # Raspberry Pi Deployment Notes
 
-Questa repo e' pensata per essere copiata sul Raspberry Pi 4 senza cambiare codice del modello.
+Questa repo e' pensata per essere copiata sul Raspberry Pi 5 senza cambiare codice del modello.
 Sul Pi collegheremo gli adapter reali che produrranno il CSV/JSON conforme a `docs/FEATURE_SCHEMA.md`.
 
 ## Setup base
@@ -64,6 +64,51 @@ test manuale:
 python -m edge_auth.cli fitbit refresh
 ```
 
+## Modelli AI sul Raspberry
+
+Il Raspberry puo' usare tre artefatti:
+
+```text
+models/generic_spatial.pkl    modello generico spaziale/domestico
+models/generic_wearable.pkl   modello generico wearable/fisiologico
+models/patient-001.pkl        modello personale addestrato dopo baseline
+```
+
+Nel file `config/edge.yml` indicare i percorsi:
+
+```yaml
+ai:
+  generic_model: models/generic_spatial.pkl
+  generic_spatial_model: models/generic_spatial.pkl
+  generic_wearable_model: models/generic_wearable.pkl
+  personal_model: models/patient-001.pkl
+  baseline_gate_enabled: true
+  baseline_gate_block_score: 60.0
+```
+
+Il modello generico spaziale si crea da CASAS gia' convertito nello schema feature:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input data/processed/generic_spatial_dataset.csv \
+  --output models/generic_spatial.pkl \
+  --model-id generic-spatial \
+  --model-kind generic_spatial
+```
+
+Il modello generico wearable si crea da WESAD/PAMAP2 o dataset wearable equivalente:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input data/processed/generic_wearable_dataset.csv \
+  --output models/generic_wearable.pkl \
+  --model-id generic-wearable \
+  --model-kind generic_wearable
+```
+
+Se uno dei due dataset generici manca, il relativo file puo' mancare: il runtime non
+si blocca e fonde solo i modelli disponibili.
+
 ## Baseline reale
 
 Quando hardware e sorgenti reali sono pronti, avviare la sessione baseline:
@@ -79,6 +124,11 @@ Questo crea `data/state/baseline-session.json`.
 
 Durante la baseline il ciclo periodico deve usare `--append-baseline`. Le finestre con
 qualita `error` vengono rifiutate e non finiscono in `data/processed/baseline.csv`.
+Se uno o entrambi i modelli generici sono presenti, il runtime produce comunque una
+decisione mentre raccoglie i dati personali.
+In piu', i modelli generici funzionano da safety gate: se uno score supera
+`baseline_gate_block_score`, la finestra viene usata per triage ma non entra nella
+baseline personale.
 
 Controllare avanzamento:
 
@@ -94,6 +144,8 @@ python -m edge_baseline.cli --config config/edge.yml train
 ```
 
 Il modello viene salvato in `models/patient-001.pkl`.
+Da questo momento il runtime usa i due modelli generici e quello personale, poi fonde
+gli score disponibili nel JSON finale.
 
 ## Ciclo edge periodico
 
@@ -107,18 +159,23 @@ Questo comando:
 
 - legge i dati gia' ricevuti in `data/raw/`;
 - produce `data/processed/latest_window.csv`;
-- se trova `models/patient-001.pkl`, esegue inferenza;
+- se trova `models/generic_spatial.pkl`, esegue il modello generico spaziale;
+- se trova `models/generic_wearable.pkl`, esegue il modello generico wearable;
+- se trova `models/patient-001.pkl`, esegue il modello personale;
+- fonde `generic_spatial_score`, `generic_wearable_score` e `personal_score`;
 - aggiorna `data/state/patient-001-debounce.json`;
 - salva `outputs/patient-001-decision.json`;
 - salva `outputs/last-quality-report.json`;
 - salva `outputs/last-cycle.json` con lo stato del ciclo.
 
-Se il modello non esiste ancora, il ciclo non fallisce: aggrega la finestra e salta
-l'inferenza.
+Se nessun modello esiste ancora, il ciclo non fallisce: aggrega la finestra e salta
+l'inferenza con stato `skipped_all_models_missing`.
 
 Il ciclo esegue anche controlli qualita sui dati. Se `--append-baseline` e' attivo ma il
 report qualita ha stato `error`, la finestra non viene aggiunta a
 `data/processed/baseline.csv`.
+Se la qualita e' buona ma il safety gate generico blocca la finestra, in
+`outputs/last-cycle.json` troverai `baseline_skipped_reason: generic_safety_gate`.
 
 ## Cron provvisorio
 

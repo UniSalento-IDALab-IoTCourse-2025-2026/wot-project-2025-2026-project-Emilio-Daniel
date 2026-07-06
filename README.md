@@ -7,7 +7,7 @@ Questo repository contiene il nucleo reale del progetto IoT per il monitoraggio
 comportamentale e spaziale delle Attivita' della Vita Quotidiana (ADL).
 
 L'obiettivo non e' sostituire una diagnosi medica, ma costruire un sistema di
-triage predittivo basato su Raspberry Pi 4, Google Pixel Watch 2, BLE indoor
+triage predittivo basato su Raspberry Pi 5, Google Pixel Watch 2, BLE indoor
 positioning, misurazione elettrica/NILM e modello di Anomaly Detection eseguito
 in locale.
 
@@ -15,12 +15,18 @@ Il progetto e' pensato per usare dati reali. Non stiamo addestrando il modello
 finale su dati simulati: la baseline verra' raccolta dal setup reale installato
 sul Raspberry Pi.
 
+La parte AI ora segue un approccio ibrido a tre modelli: un modello generico
+spaziale/domestico, un modello generico wearable/fisiologico e un modello personale
+addestrato progressivamente sulla baseline reale del paziente. Il sistema confronta
+tutti gli score disponibili e produce una decisione fusa.
+
 ## Indice
 
 - [Architettura](#architettura)
 - [Struttura](#struttura)
 - [Cosa e' stato fatto finora](#cosa-e-stato-fatto-finora)
 - [In parole povere](#in-parole-povere)
+- [Modello AI ibrido](#modello-ai-ibrido)
 - [Step attuale](#step-attuale)
 - [Configurazione](#configurazione)
 - [Fitbit / Pixel Watch 2](#fitbit--pixel-watch-2)
@@ -68,7 +74,7 @@ edge_ingest aggrega una finestra da 8 minuti
 edge_node/data/processed/latest_window.csv
               |
               v
-edge_ai esegue Isolation Forest + debounce
+edge_ai esegue generico spaziale + generico wearable + personale + fusione + debounce
               |
               v
 edge_node/outputs/patient-001-decision.json
@@ -101,7 +107,8 @@ edge_node/
   edge_ai/
     schema.py           Contratto delle feature in ingresso
     features.py         Lettura e validazione CSV/JSON
-    model.py            Isolation Forest paziente-specifica
+    model.py            Isolation Forest generica e paziente-specifica
+    fusion.py           Fusione tra score spaziale, wearable e personale
     debounce.py         Anti alarm fatigue e alert tecnici
     cli.py              Comandi train/infer
 
@@ -126,7 +133,7 @@ edge_node/
     processed/          Finestre aggregate per AI
     state/              Stato debounce/allarmi
 
-  models/               Modelli addestrati paziente-specifici
+  models/               Modelli generici e modelli paziente-specifici
   outputs/              Decisioni JSON prodotte dall'AI
 
 companion_Android_app/
@@ -151,12 +158,15 @@ L'app iOS si crea su Mac con Xcode usando i file in `companion_iOS_app/`.
 ## Cosa e' stato fatto finora
 
 - Ho letto il PDF/proposta del progetto e ho ricostruito l'architettura reale:
-  Pixel Watch 2, Raspberry Pi 4, BLE indoor positioning, Shelly/NILM, Edge AI e dashboard.
+  Pixel Watch 2, Raspberry Pi 5, BLE indoor positioning, Shelly/NILM, Edge AI e dashboard.
 - Ho verificato i vincoli pratici delle API: i dati biometrici del Pixel Watch non vanno
   letti come stream BLE grezzo, ma tramite Google Health/Fitbit API con OAuth.
 - Ho creato il nucleo `edge_ai`, pensato per girare sia su questo PC sia sul Raspberry Pi.
 - Ho definito lo schema delle feature reali che gli adapter hardware devono produrre.
 - Ho implementato un modello paziente-specifico con `IsolationForest` per anomaly detection ADL.
+- Ho esteso l'AI a tre modelli: `models/generic_spatial.pkl`,
+  `models/generic_wearable.pkl` e `models/patient-001.pkl`.
+- Ho aggiunto `edge_ai/fusion.py`, che confronta score spaziale, wearable e personale.
 - Ho aggiunto una logica di debounce per ridurre falsi allarmi e alarm fatigue.
 - Ho distinto gli alert clinici dagli alert tecnici, ad esempio wearable scarico o non indossato.
 - Ho creato la CLI AI con due comandi: training della baseline reale e inferenza sull'ultima finestra.
@@ -209,8 +219,55 @@ il Raspberry Pi, dovremo collegare una sorgente alla volta:
 3. Shelly tramite lettura HTTP dei consumi.
 
 Dopo il collegamento, il Raspberry raccogliera' dati veri per circa 5/6 giorni.
-Questi dati formeranno la baseline personale del paziente. Solo dopo quella fase
-addestreremo il modello definitivo e lo useremo per rilevare anomalie reali.
+Durante questi giorni, se avremo gia' `models/generic_spatial.pkl` e/o
+`models/generic_wearable.pkl`, il sistema potra' usare i modelli generici come
+riferimento iniziale. I dati raccolti formeranno poi la baseline personale del
+paziente; dopo il training, ogni finestra verra' valutata dai generici disponibili e
+dal modello personale.
+
+## Modello AI ibrido
+
+La nuova architettura AI usa tre livelli:
+
+```text
+models/generic_spatial.pkl
+  modello generico spaziale/domestico addestrato da CASAS
+
+models/generic_wearable.pkl
+  modello generico wearable/fisiologico addestrato da WESAD/PAMAP2 o simili
+
+models/patient-001.pkl
+  modello personale addestrato dalla baseline reale raccolta in casa
+```
+
+Durante i primi 5/6 giorni:
+
+```text
+dati reali ogni 8 minuti
+-> controllo qualita
+-> modelli generici, se disponibili
+-> raccolta baseline personale
+```
+
+I modelli generici non si modificano automaticamente con i dati dei primi giorni. Invece
+fanno da filtro di sicurezza: se uno score generico supera la soglia configurata, la
+finestra puo' essere usata per triage ma non viene aggiunta alla baseline personale.
+
+Dopo la baseline:
+
+```text
+dati reali ogni 8 minuti
+-> controllo qualita
+-> modello generico spaziale   -> generic_spatial_score
+-> modello generico wearable   -> generic_wearable_score
+-> modello personale           -> personal_score
+-> fusione                     -> anomaly_score finale
+-> debounce                    -> green / yellow / red / technical
+```
+
+Il JSON finale conserva anche `evidence.fusion`, cioe' il riepilogo dei tre modelli.
+In questo modo possiamo capire se una segnalazione nasce dalla parte spaziale, dalla
+parte wearable, dalla routine personale oppure da una concordanza tra piu' modelli.
 
 ## Step attuale
 
@@ -637,14 +694,17 @@ Fa un ciclo completo:
 legge i dati gia' ricevuti in data/raw/
 -> aggrega la finestra da 8 minuti
 -> scrive data/processed/latest_window.csv
--> se trova models/patient-001.pkl, fa inferenza
+-> se trova models/generic_spatial.pkl, fa inferenza generica spaziale
+-> se trova models/generic_wearable.pkl, fa inferenza generica wearable
+-> se trova models/patient-001.pkl, fa inferenza personale
+-> fonde tutti i risultati disponibili
 -> salva outputs/patient-001-decision.json
 -> salva outputs/last-quality-report.json
 -> salva outputs/last-cycle.json con lo stato del ciclo
 ```
 
-Se il modello non esiste ancora, non fallisce: aggiorna la finestra e scrive nello stato
-che l'inferenza e' stata saltata.
+Se nessun modello esiste ancora, non fallisce: aggiorna la finestra e scrive nello stato
+`skipped_all_models_missing`.
 
 Durante la baseline:
 
@@ -655,6 +715,11 @@ python -m edge_runtime.cli --config config/edge.example.yml --append-baseline
 Questo appende anche la finestra a `data/processed/baseline.csv`, ma solo se i controlli
 qualita non trovano errori. Se i dati sono rotti o incompleti, il ciclo scrive
 `baseline_skipped_reason: quality_error` e non sporca la baseline.
+Se almeno un modello generico e' gia' presente, durante questi giorni il sistema puo'
+produrre comunque una decisione basata sui modelli disponibili.
+Se un modello generico segnala una finestra sospetta, il ciclo scrive
+`baseline_skipped_reason: generic_safety_gate` e non usa quella finestra per addestrare
+la normalita personale.
 
 Controllo qualita manuale sull'ultima finestra:
 
@@ -729,6 +794,10 @@ Nota importante: il modello non viene addestrato direttamente sui beacon o sul b
 grezzo. Il modello viene addestrato su `data/processed/baseline.csv`, cioe' sulle feature
 aggregate ogni 8 minuti dal Raspberry.
 
+I modelli generici, invece, si addestrano prima su dataset esterni gia' trasformati nello
+stesso schema feature. Gli artefatti saranno `models/generic_spatial.pkl` e
+`models/generic_wearable.pkl`, installabili sul Raspberry prima della baseline del paziente.
+
 #### 1. Preparare Raspberry Pi
 
 Sul Raspberry metteremo questa repository e useremo la cartella:
@@ -753,6 +822,18 @@ partendo da:
 
 ```text
 config/edge.example.yml
+```
+
+Nel file reale imposteremo anche i percorsi AI:
+
+```yaml
+ai:
+  generic_model: models/generic_spatial.pkl
+  generic_spatial_model: models/generic_spatial.pkl
+  generic_wearable_model: models/generic_wearable.pkl
+  personal_model: models/patient-001.pkl
+  baseline_gate_enabled: true
+  baseline_gate_block_score: 60.0
 ```
 
 #### 2. Configurare beacon e braccialetto
@@ -867,7 +948,32 @@ quality_status: warning
 Non dobbiamo iniziare la baseline se i dati sono in `error`, per esempio se mancano
 campioni BLE o se Fitbit e' abilitato ma non sta inviando dati.
 
-#### 5. Avviare baseline reale di 6 giorni
+#### 5. Preparare i modelli generici, se abbiamo dataset validi
+
+Da CASAS creeremo il modello spaziale:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input data/processed/generic_spatial_dataset.csv \
+  --output models/generic_spatial.pkl \
+  --model-id generic-spatial \
+  --model-kind generic_spatial
+```
+
+Da WESAD/PAMAP2 o dataset wearable equivalente creeremo il modello wearable:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input data/processed/generic_wearable_dataset.csv \
+  --output models/generic_wearable.pkl \
+  --model-id generic-wearable \
+  --model-kind generic_wearable
+```
+
+Questi modelli non rappresentano il singolo paziente: servono come base iniziale mentre
+il Raspberry raccoglie la baseline personale.
+
+#### 6. Avviare baseline reale di 6 giorni
 
 Quando beacon, braccialetto/wearable e Raspberry sono stabili:
 
@@ -903,6 +1009,9 @@ Questo comando:
 legge i dati grezzi
 -> crea latest_window.csv
 -> controlla la qualita
+-> se models/generic_spatial.pkl esiste, produce triage spaziale
+-> se models/generic_wearable.pkl esiste, produce triage wearable
+-> se uno score generico e' troppo alto, blocca inserimento in baseline
 -> se la qualita e' valida, appende a baseline.csv
 -> se la qualita e' error, rifiuta la finestra
 ```
@@ -913,7 +1022,7 @@ La baseline viene raccolta qui:
 data/processed/baseline.csv
 ```
 
-#### 6. Controllare ogni giorno la baseline
+#### 7. Controllare ogni giorno la baseline
 
 Durante i 6 giorni controlleremo:
 
@@ -940,7 +1049,7 @@ ready_for_training
 Se `rejected_windows` o `quality_error_cycles` crescono troppo, non addestriamo ancora:
 prima correggiamo il problema dei dati.
 
-#### 7. Chiudere baseline e addestrare
+#### 8. Chiudere baseline e addestrare
 
 Dopo circa 6 giorni, quando lo status indica che la baseline e' pronta:
 
@@ -962,9 +1071,10 @@ models/patient-001.pkl
 ```
 
 Questo modello e' personale: rappresenta la routine del paziente osservato durante la
-baseline, non una normalita generica valida per tutti.
+baseline. Non sostituisce i modelli generici: dopo questa fase i tre modelli lavorano
+insieme, quando disponibili.
 
-#### 8. Usare il modello addestrato
+#### 9. Usare i modelli addestrati
 
 Dopo il training, il ciclo normale diventa:
 
@@ -976,8 +1086,11 @@ A questo punto il runtime:
 
 ```text
 crea latest_window.csv
--> carica models/patient-001.pkl
--> calcola anomaly_score
+-> carica models/generic_spatial.pkl, se presente
+-> carica models/generic_wearable.pkl, se presente
+-> carica models/patient-001.pkl, se presente
+-> calcola generic_spatial_score, generic_wearable_score e personal_score
+-> fonde i risultati in anomaly_score finale
 -> applica debounce
 -> salva outputs/patient-001-decision.json
 ```
@@ -1011,6 +1124,26 @@ python -m edge_ai.cli train \
   --input data/processed/baseline.csv \
   --patient-id patient-001 \
   --output models/patient-001.pkl
+```
+
+Training modello generico spaziale:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input data/processed/generic_spatial_dataset.csv \
+  --output models/generic_spatial.pkl \
+  --model-id generic-spatial \
+  --model-kind generic_spatial
+```
+
+Training modello generico wearable:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input data/processed/generic_wearable_dataset.csv \
+  --output models/generic_wearable.pkl \
+  --model-id generic-wearable \
+  --model-kind generic_wearable
 ```
 
 Inferenza su ultima finestra reale:
@@ -1049,12 +1182,16 @@ python -m edge_runtime.cli --config config/edge.yml
 ## Prossimi step
 
 1. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
-2. Creare l'app OAuth Fitbit reale e lanciare `edge_auth` con le credenziali vere.
-3. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
-4. Preparare `edge_node/config/edge.yml` reale per il vostro paziente/test.
-5. Avviare raccolta baseline reale.
-6. Addestrare il modello.
-7. Collegare output JSON al backend/dashboard.
+2. Convertire CASAS in `generic_spatial_dataset.csv`.
+3. Convertire WESAD/PAMAP2 in `generic_wearable_dataset.csv`.
+4. Addestrare `models/generic_spatial.pkl` e `models/generic_wearable.pkl`.
+5. Creare l'app OAuth Fitbit reale e lanciare `edge_auth` con le credenziali vere.
+6. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
+7. Preparare `edge_node/config/edge.yml` reale per il vostro paziente/test.
+8. Avviare raccolta baseline reale.
+9. Addestrare `models/patient-001.pkl`.
+10. Usare runtime con generici + personale + fusione.
+11. Collegare output JSON al backend/dashboard.
 
 ## Stato attuale del progetto
 
@@ -1065,8 +1202,13 @@ ogni volta che aggiungiamo un nuovo pezzo al sistema.
 
 Abbiamo creato il modulo `edge_ai`.
 
-Questo e' il cervello del sistema. Legge dati aggregati ogni 8 minuti, usa un modello
-`IsolationForest` e produce un livello di rischio:
+Questo e' il cervello del sistema. Legge dati aggregati ogni 8 minuti, usa
+`IsolationForest` in due modalita' e produce un livello di rischio:
+
+- modello generico spaziale: `models/generic_spatial.pkl`;
+- modello generico wearable: `models/generic_wearable.pkl`;
+- modello personale: `models/patient-001.pkl`;
+- fusione: confronto tra score spaziale, wearable e personale.
 
 - verde: routine normale;
 - giallo: sospetto lieve;

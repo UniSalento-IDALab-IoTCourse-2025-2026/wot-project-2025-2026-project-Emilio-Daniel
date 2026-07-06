@@ -64,6 +64,7 @@ class TriageDecision:
     anomaly_score: float
     reasons: list[str]
     model_label: str
+    evidence: dict[str, Any] = field(default_factory=dict)
 
 
 def parse_timestamp(value: Any) -> datetime:

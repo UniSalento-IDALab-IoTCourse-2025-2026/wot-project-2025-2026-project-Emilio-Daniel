@@ -6,7 +6,7 @@ locali.
 ## Contenuto
 
 ```text
-edge_ai/        modello Isolation Forest, debounce e CLI train/infer
+edge_ai/        modelli generici/personale, fusione, debounce e CLI train/infer
 edge_auth/      setup OAuth Fitbit, token e refresh per Pixel Watch 2
 edge_baseline/  gestione fase baseline: start, status, finalize, train
 edge_ingest/    aggregazione dati Fitbit, BLE e Shelly in finestre da 8 minuti
@@ -15,7 +15,7 @@ edge_runtime/   comando unico del ciclo edge
 edge_quality/   controlli qualita dati per baseline/training
 config/         configurazioni YAML dell'edge node
 data/           dati grezzi, feature aggregate e stato locale
-models/         modelli addestrati
+models/         modelli generici e modelli paziente-specifici
 outputs/        decisioni JSON prodotte dall'AI
 ```
 
@@ -96,6 +96,39 @@ Il receiver salva i campioni in:
 data/raw/ble_samples.csv
 ```
 
+## Modello AI ibrido
+
+Il sistema ora supporta tre modelli:
+
+```text
+models/generic_spatial.pkl    modello generico spaziale/domestico, da CASAS
+models/generic_wearable.pkl   modello generico fisiologico/wearable, da WESAD/PAMAP2
+models/patient-001.pkl        modello personale creato dalla baseline reale
+```
+
+I due modelli generici servono nei primi giorni, quando non abbiamo ancora abbastanza
+dati del paziente. Il modello personale viene creato dopo la baseline da 5/6 giorni.
+Quando piu' modelli sono presenti, `edge_runtime` li esegue e produce una decisione
+fusa:
+
+```text
+latest_window.csv
+-> modello generico spaziale   -> generic_spatial_score
+-> modello generico wearable   -> generic_wearable_score
+-> modello personale           -> personal_score
+-> fusion.py                   -> anomaly_score finale
+-> debounce.py                 -> livello green/yellow/red/technical
+```
+
+Nel JSON finale la sezione `evidence.fusion` conserva i punteggi separati, cosi'
+possiamo capire se l'allarme nasce dalla routine spaziale, dai dati wearable, dalla
+baseline personale o da una concordanza tra piu' modelli.
+
+Durante la baseline i modelli generici vengono usati anche come filtro di sicurezza:
+se uno dei loro score supera `ai.baseline_gate_block_score`, la finestra puo' generare
+triage ma non viene aggiunta a `baseline.csv`. Cosi' evitiamo che un comportamento
+gia' sospetto venga imparato come normalita personale.
+
 ## Ciclo edge unico
 
 Questo e' il comando principale da usare sul Raspberry:
@@ -123,20 +156,24 @@ Fa questo flusso:
 ```text
 legge i dati ricevuti in data/raw/
 -> crea data/processed/latest_window.csv
--> se esiste models/patient-001.pkl, esegue inferenza
+-> se esiste models/generic_spatial.pkl, esegue il modello generico spaziale
+-> se esiste models/generic_wearable.pkl, esegue il modello generico wearable
+-> se esiste models/patient-001.pkl, esegue il modello personale
+-> fonde tutti i risultati disponibili
 -> aggiorna data/state/patient-001-debounce.json
 -> salva outputs/patient-001-decision.json
 -> salva outputs/last-quality-report.json
 -> salva outputs/last-cycle.json
 ```
 
-Se il modello non esiste ancora, il ciclo non fallisce: produce comunque
-`latest_window.csv` e segna `skipped_model_missing` in `outputs/last-cycle.json`.
+Se nessun modello esiste ancora, il ciclo non fallisce: produce comunque
+`latest_window.csv` e segna `skipped_all_models_missing` in `outputs/last-cycle.json`.
 
 Ogni ciclo controlla anche la qualita dei dati. Se il report ha stato `error`, la finestra
 non viene considerata adatta alla baseline.
 
-Durante la baseline:
+Durante la baseline, se almeno un modello generico e' disponibile, il runtime continua a
+produrre triage mentre raccoglie i dati personali:
 
 ```bash
 python -m edge_runtime.cli --config config/edge.example.yml --append-baseline
@@ -144,6 +181,8 @@ python -m edge_runtime.cli --config config/edge.example.yml --append-baseline
 
 Se i dati non superano i controlli qualita, il runtime non appende la riga a
 `data/processed/baseline.csv` e scrive `baseline_skipped_reason: quality_error`.
+Se invece la qualita e' buona ma un modello generico segnala rischio alto, scrive
+`baseline_skipped_reason: generic_safety_gate`.
 
 Sul Raspberry, quando useremo `config/edge.yml` reale:
 
@@ -228,6 +267,9 @@ Il modello viene salvato in:
 models/patient-001.pkl
 ```
 
+Da questo momento il runtime usera' i due generici e `models/patient-001.pkl`, se
+gli artefatti sono presenti.
+
 ## Aggregazione dati
 
 ```bash
@@ -254,6 +296,28 @@ data/processed/baseline.csv
 
 ## Addestramento modello
 
+Modello generico spaziale, da CASAS gia' convertito nello schema feature del progetto:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input data/processed/generic_spatial_dataset.csv \
+  --output models/generic_spatial.pkl \
+  --model-id generic-spatial \
+  --model-kind generic_spatial
+```
+
+Modello generico wearable, da WESAD/PAMAP2 o dataset wearable equivalente:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input data/processed/generic_wearable_dataset.csv \
+  --output models/generic_wearable.pkl \
+  --model-id generic-wearable \
+  --model-kind generic_wearable
+```
+
+Modello personale, dalla baseline reale del paziente:
+
 ```bash
 python -m edge_ai.cli train \
   --input data/processed/baseline.csv \
@@ -262,6 +326,15 @@ python -m edge_ai.cli train \
 ```
 
 ## Inferenza
+
+Il comando consigliato resta il runtime unico, perche' gestisce automaticamente i due
+generici, il modello personale, la fusione e il debounce:
+
+```bash
+python -m edge_runtime.cli --config config/edge.example.yml
+```
+
+La CLI `edge_ai infer` resta utile per testare un singolo modello isolato:
 
 ```bash
 python -m edge_ai.cli infer \

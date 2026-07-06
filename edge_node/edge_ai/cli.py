@@ -28,6 +28,21 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--output", required=True, help="Model artifact path")
     train.add_argument("--contamination", type=float, default=0.05)
 
+    train_generic = subparsers.add_parser(
+        "train-generic",
+        help="Train a generic model from an external or multi-patient dataset",
+    )
+    train_generic.add_argument("--input", required=True, help="CSV/JSON with generic ADL windows")
+    train_generic.add_argument("--output", required=True, help="Generic model artifact path")
+    train_generic.add_argument("--model-id", default="generic")
+    train_generic.add_argument(
+        "--model-kind",
+        choices=["generic", "generic_spatial", "generic_wearable"],
+        default="generic",
+        help="Semantic role of the generic model artifact.",
+    )
+    train_generic.add_argument("--contamination", type=float, default=0.05)
+
     infer = subparsers.add_parser("infer", help="Run inference on the latest real window")
     infer.add_argument("--model", required=True, help="Model artifact path")
     infer.add_argument("--input", required=True, help="CSV/JSON with one or more windows")
@@ -58,6 +73,38 @@ def train_model(args: argparse.Namespace) -> None:
                 "status": "trained",
                 "patient_id": detector.metadata.patient_id,
                 "training_rows": detector.metadata.training_rows,
+                "model": args.output,
+            },
+            indent=2,
+        )
+    )
+
+
+def train_generic_model(args: argparse.Namespace) -> None:
+    """Addestra il modello generico da un dataset esterno o multi-paziente.
+
+    Questo comando serve a creare l'artefatto installabile sul Raspberry prima
+    della baseline personale. Il dataset deve gia' essere convertito nello
+    stesso schema feature del progetto, per evitare mismatch tra training e
+    inferenza reale.
+    """
+    frame = load_feature_frame(args.input)
+    detector = EdgeAnomalyDetector.train_generic(
+        frame=frame,
+        model_id=args.model_id,
+        model_scope=args.model_kind,
+        training_source=f"{args.model_kind}_dataset",
+        contamination=args.contamination,
+    )
+    detector.save(args.output)
+    print(
+        json.dumps(
+            {
+                "status": "generic_trained",
+                "model_id": detector.metadata.patient_id,
+                "training_rows": detector.metadata.training_rows,
+                "model_scope": detector.metadata.model_scope,
+                "training_source": detector.metadata.training_source,
                 "model": args.output,
             },
             indent=2,
@@ -101,6 +148,8 @@ def main() -> None:
 
     if args.command == "train":
         train_model(args)
+    elif args.command == "train-generic":
+        train_generic_model(args)
     elif args.command == "infer":
         run_inference(args)
     else:

@@ -24,6 +24,8 @@ class ModelMetadata:
     normal_anchor: float
     severe_anchor: float
     training_rows: int
+    model_scope: str = "personal"
+    training_source: str = "patient_baseline"
 
 
 class EdgeAnomalyDetector:
@@ -44,24 +46,30 @@ class EdgeAnomalyDetector:
         patient_id: str,
         contamination: float = 0.05,
         random_state: int = 42,
+        include_all_patients: bool = False,
+        model_scope: str = "personal",
+        training_source: str = "patient_baseline",
     ) -> "EdgeAnomalyDetector":
         """Addestra un modello di anomaly detection sulla baseline del paziente.
 
-        Il training usa solo le righe del paziente indicato, perche' l'obiettivo
-        e' imparare la routine individuale e non una normalita generica. La
-        pipeline imputa valori mancanti, standardizza le feature e addestra una
-        Isolation Forest adatta a dati non etichettati.
+        Di default il training usa solo le righe del paziente indicato, perche'
+        l'obiettivo del modello personale e' imparare la routine individuale.
+        Quando `include_all_patients` e' attivo, invece, la stessa pipeline viene
+        usata per costruire un modello generico da dataset esterni o multiutente.
         """
-        if len(frame) < 50:
+        if include_all_patients:
+            training_frame = frame.copy()
+        else:
+            training_frame = frame[frame["patient_id"].astype(str) == str(patient_id)]
+
+        if training_frame.empty:
+            raise ValueError(f"No rows found for patient_id={patient_id}")
+        if len(training_frame) < 50:
             raise ValueError(
-                "At least 50 baseline records are required. "
+                "At least 50 training records are required for the selected model. "
                 "For this project, collect about 5-6 days of real windows; "
                 "longer baselines are better for production."
             )
-
-        patient_frame = frame[frame["patient_id"].astype(str) == str(patient_id)]
-        if patient_frame.empty:
-            raise ValueError(f"No rows found for patient_id={patient_id}")
 
         pipeline = Pipeline(
             steps=[
@@ -79,7 +87,7 @@ class EdgeAnomalyDetector:
             ]
         )
 
-        features = select_features(patient_frame)
+        features = select_features(training_frame)
         pipeline.fit(features)
         decision_values = pipeline.decision_function(features)
         normal_anchor = float(np.percentile(decision_values, 50))
@@ -93,9 +101,38 @@ class EdgeAnomalyDetector:
             contamination=contamination,
             normal_anchor=normal_anchor,
             severe_anchor=severe_anchor,
-            training_rows=len(patient_frame),
+            training_rows=len(training_frame),
+            model_scope=model_scope,
+            training_source=training_source,
         )
         return cls(pipeline=pipeline, metadata=metadata)
+
+    @classmethod
+    def train_generic(
+        cls,
+        frame: pd.DataFrame,
+        model_id: str = "generic",
+        model_scope: str = "generic",
+        training_source: str = "external_or_multi_patient_dataset",
+        contamination: float = 0.05,
+        random_state: int = 42,
+    ) -> "EdgeAnomalyDetector":
+        """Addestra il modello generico su un dataset multiutente o clinico.
+
+        Questo modello non rappresenta un singolo paziente: serve come base
+        iniziale installabile sul Raspberry prima della baseline personale.
+        Per questo motivo usa tutte le righe disponibili e salva nei metadati
+        uno scope diverso dal modello paziente-specifico.
+        """
+        return cls.train(
+            frame=frame,
+            patient_id=model_id,
+            contamination=contamination,
+            random_state=random_state,
+            include_all_patients=True,
+            model_scope=model_scope,
+            training_source=training_source,
+        )
 
     def predict_record(self, record: Union[pd.Series, dict[str, Any]]) -> InferenceResult:
         """Calcola lo score di anomalia per una singola finestra aggregata.

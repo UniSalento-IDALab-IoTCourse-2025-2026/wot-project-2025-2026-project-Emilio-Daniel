@@ -88,6 +88,7 @@ class AlertDebouncer:
                 anomaly_score=result.anomaly_score,
                 reasons=technical_reasons,
                 model_label=result.model_label,
+                evidence=self._decision_evidence(result),
             )
 
         if result.anomaly_score >= self.config.red_score:
@@ -100,6 +101,7 @@ class AlertDebouncer:
                 anomaly_score=result.anomaly_score,
                 reasons=["Current anomaly score exceeds severe threshold"],
                 model_label=result.model_label,
+                evidence=self._decision_evidence(result),
             )
 
         yellow_records = [
@@ -124,6 +126,7 @@ class AlertDebouncer:
                     f"Average anomalous score {avg_score:.1f}",
                 ],
                 model_label=result.model_label,
+                evidence=self._decision_evidence(result),
             )
 
         return TriageDecision(
@@ -135,6 +138,7 @@ class AlertDebouncer:
             anomaly_score=result.anomaly_score,
             reasons=["Routine inside learned baseline"],
             model_label=result.model_label,
+            evidence=self._decision_evidence(result),
         )
 
     def _append(self, result: InferenceResult) -> None:
@@ -150,8 +154,22 @@ class AlertDebouncer:
                 "window_end": result.window_end.isoformat(),
                 "anomaly_score": result.anomaly_score,
                 "model_label": result.model_label,
+                "fusion_mode": result.context.get("fusion", {}).get("mode"),
             }
         )
+
+    def _decision_evidence(self, result: InferenceResult) -> dict[str, Any]:
+        """Estrae dal risultato AI le prove sintetiche da salvare nel JSON.
+
+        Quando il runtime usa modello generico e modello personale, la decisione
+        finale non deve essere una scatola nera. Questa funzione copia nel
+        triage solo il riepilogo della fusione, lasciando fuori le feature
+        complete per non appesantire lo stato clinico-operativo.
+        """
+        fusion = result.context.get("fusion")
+        if isinstance(fusion, dict):
+            return {"fusion": fusion}
+        return {}
 
     def _prune(self, now: datetime) -> None:
         """Elimina dalla memoria le finestre ormai fuori dalla finestra debounce.

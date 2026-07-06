@@ -56,7 +56,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         default=None,
-        help="Model path. Defaults to models/<patient_id>.pkl.",
+        help=(
+            "Backward-compatible alias for --personal-model. "
+            "Defaults to models/<patient_id>.pkl."
+        ),
+    )
+    parser.add_argument(
+        "--generic-model",
+        default=None,
+        help=(
+            "Backward-compatible alias for --generic-spatial-model. "
+            "Defaults to config ai.generic_spatial_model."
+        ),
+    )
+    parser.add_argument(
+        "--generic-spatial-model",
+        default=None,
+        help="Generic spatial model path. Defaults to config ai.generic_spatial_model.",
+    )
+    parser.add_argument(
+        "--generic-wearable-model",
+        default=None,
+        help="Generic wearable model path. Defaults to config ai.generic_wearable_model.",
+    )
+    parser.add_argument(
+        "--personal-model",
+        default=None,
+        help="Personal model path. Defaults to config ai.personal_model or models/<patient_id>.pkl.",
     )
     parser.add_argument(
         "--state",
@@ -129,11 +155,34 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     if args.quality_output:
         _write_json(Path(args.quality_output), quality_payload)
 
+    generic_spatial_model_path = _generic_spatial_model_path(args, config)
+    generic_wearable_model_path = (
+        Path(args.generic_wearable_model)
+        if args.generic_wearable_model
+        else Path(config.ai.generic_wearable_model)
+    )
+    personal_model_path = _personal_model_path(args, config, patient_id)
+
     baseline_appended = False
     baseline_skipped_reason = None
+    baseline_gate_payload: dict[str, Any] | None = None
     if args.append_baseline and quality_report.usable_for_training:
-        append_baseline_row(config.paths.baseline_csv, row)
-        baseline_appended = True
+        baseline_gate_payload = _run_baseline_safety_gate(
+            config=config,
+            generic_model_paths={
+                "generic_spatial": generic_spatial_model_path,
+                "generic_wearable": generic_wearable_model_path,
+            },
+            row=row,
+        )
+        baseline_gate_blocked = bool(baseline_gate_payload.get("blocked"))
+        if baseline_gate_blocked and not args.force_baseline_append:
+            baseline_skipped_reason = "generic_safety_gate"
+        else:
+            append_baseline_row(config.paths.baseline_csv, row)
+            baseline_appended = True
+            if baseline_gate_blocked:
+                baseline_skipped_reason = "forced_despite_generic_safety_gate"
     elif args.append_baseline and args.force_baseline_append:
         append_baseline_row(config.paths.baseline_csv, row)
         baseline_appended = True
@@ -141,7 +190,6 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     elif args.append_baseline:
         baseline_skipped_reason = "quality_error"
 
-    model_path = Path(args.model) if args.model else Path("models") / f"{patient_id}.pkl"
     state_path = (
         Path(args.state)
         if args.state
@@ -153,18 +201,28 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         else Path("outputs") / f"{patient_id}-decision.json"
     )
 
-    inference_status = "skipped_model_missing"
+    inference_status = "skipped_all_models_missing"
     decision_payload: dict[str, Any] | None = None
-    if model_path.exists():
+    if (
+        generic_spatial_model_path.exists()
+        or generic_wearable_model_path.exists()
+        or personal_model_path.exists()
+    ):
         decision_payload = _run_inference(
-            model_path=model_path,
+            generic_spatial_model_path=generic_spatial_model_path,
+            generic_wearable_model_path=generic_wearable_model_path,
+            personal_model_path=personal_model_path,
             latest_window_csv=config.paths.latest_window_csv,
             state_path=state_path,
             decision_output=decision_output,
         )
-        inference_status = "completed"
+        inference_status = str(decision_payload.get("inference_status", "completed"))
     elif args.require_model:
-        raise FileNotFoundError(f"Model not found: {model_path}")
+        raise FileNotFoundError(
+            "No AI model found. Expected at least one of: "
+            f"{generic_spatial_model_path}, {generic_wearable_model_path}, "
+            f"{personal_model_path}"
+        )
 
     status: dict[str, Any] = {
         "status": "cycle_completed",
@@ -176,6 +234,10 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "baseline_appended": baseline_appended,
         "baseline_csv": str(config.paths.baseline_csv) if baseline_appended else None,
         "baseline_skipped_reason": baseline_skipped_reason,
+        "baseline_gate": baseline_gate_payload,
+        "baseline_gate_blocked": (
+            baseline_gate_payload.get("blocked") if baseline_gate_payload else None
+        ),
         "ble_samples_collected": len(ble_samples),
         "received_ble_csv": str(config.ble.raw_csv),
         "quality_status": quality_report.status,
@@ -185,11 +247,20 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "quality_warning_count": _count_quality_issues(quality_payload, "warning"),
         "quality_info_count": _count_quality_issues(quality_payload, "info"),
         "quality_report": str(args.quality_output) if args.quality_output else None,
-        "model": str(model_path),
+        "generic_model": str(generic_spatial_model_path),
+        "generic_model_exists": generic_spatial_model_path.exists(),
+        "generic_spatial_model": str(generic_spatial_model_path),
+        "generic_spatial_model_exists": generic_spatial_model_path.exists(),
+        "generic_wearable_model": str(generic_wearable_model_path),
+        "generic_wearable_model_exists": generic_wearable_model_path.exists(),
+        "personal_model": str(personal_model_path),
+        "personal_model_exists": personal_model_path.exists(),
+        "model": str(personal_model_path),
         "inference": inference_status,
         "decision_output": str(decision_output) if decision_payload else None,
         "decision_level": decision_payload.get("level") if decision_payload else None,
         "should_publish": decision_payload.get("should_publish") if decision_payload else None,
+        "fusion_mode": _fusion_mode(decision_payload),
     }
 
     baseline_session = update_session_from_cycle(
@@ -210,31 +281,181 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _run_inference(
-    model_path: Path,
+    generic_spatial_model_path: Path,
+    generic_wearable_model_path: Path,
+    personal_model_path: Path,
     latest_window_csv: Path,
     state_path: Path,
     decision_output: Path,
 ) -> dict[str, Any]:
-    """Carica il modello, valuta l'ultima finestra e salva la decisione.
+    """Carica i modelli disponibili, fonde i risultati e salva la decisione.
 
-    La funzione e' separata dal resto del ciclo per importare il codice AI solo
-    quando serve davvero. Il risultato viene passato al debounce e scritto come
-    JSON finale della finestra.
+    La funzione supporta modelli mancanti: durante la baseline possono esserci
+    solo i due generici; dopo la baseline si aggiunge quello personale. La
+    fusione normalizza automaticamente i pesi sui modelli presenti.
     """
+    from edge_ai.fusion import fuse_model_results
     from edge_ai.features import latest_record, load_feature_frame
     from edge_ai.model import EdgeAnomalyDetector
 
-    detector = EdgeAnomalyDetector.load(model_path)
     frame = load_feature_frame(latest_window_csv)
-    result = detector.predict_record(latest_record(frame))
+    record = latest_record(frame)
+
+    generic_spatial_result = None
+    generic_wearable_result = None
+    personal_result = None
+    if generic_spatial_model_path.exists():
+        generic_spatial_detector = EdgeAnomalyDetector.load(generic_spatial_model_path)
+        generic_spatial_result = generic_spatial_detector.predict_record(record)
+    if generic_wearable_model_path.exists():
+        generic_wearable_detector = EdgeAnomalyDetector.load(generic_wearable_model_path)
+        generic_wearable_result = generic_wearable_detector.predict_record(record)
+    if personal_model_path.exists():
+        personal_detector = EdgeAnomalyDetector.load(personal_model_path)
+        personal_result = personal_detector.predict_record(record)
+
+    fused_result = fuse_model_results(
+        generic_spatial_result=generic_spatial_result,
+        generic_wearable_result=generic_wearable_result,
+        personal_result=personal_result,
+    )
 
     debouncer = AlertDebouncer.load(state_path)
-    decision = debouncer.update(result)
+    decision = debouncer.update(fused_result)
     debouncer.save(state_path)
 
     payload = decision_to_json(decision)
+    payload["inference_status"] = _inference_status(
+        {
+            "generic_spatial": generic_spatial_result,
+            "generic_wearable": generic_wearable_result,
+            "personal": personal_result,
+        }
+    )
     _write_json(decision_output, payload)
     return payload
+
+
+def _run_baseline_safety_gate(
+    config: Any,
+    generic_model_paths: dict[str, Path],
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    """Valuta se una finestra puo' entrare nella baseline personale.
+
+    Durante i primi giorni il modello generico interpreta comunque i dati del
+    paziente. Se lo score e' alto, la finestra resta utile per il triage ma non
+    viene usata per insegnare al modello personale che quel comportamento e'
+    normale.
+    """
+    payload: dict[str, Any] = {
+        "enabled": bool(config.ai.baseline_gate_enabled),
+        "models": {
+            name: {
+                "path": str(path),
+                "exists": path.exists(),
+            }
+            for name, path in generic_model_paths.items()
+        },
+        "block_score": float(config.ai.baseline_gate_block_score),
+        "blocked": False,
+    }
+    if not config.ai.baseline_gate_enabled:
+        payload["reason"] = "baseline_gate_disabled"
+        return payload
+    existing_model_paths = {
+        name: path for name, path in generic_model_paths.items() if path.exists()
+    }
+    if not existing_model_paths:
+        payload["reason"] = "generic_models_missing"
+        return payload
+
+    from edge_ai.model import EdgeAnomalyDetector
+
+    model_results: dict[str, dict[str, Any]] = {}
+    for name, path in existing_model_paths.items():
+        detector = EdgeAnomalyDetector.load(path)
+        result = detector.predict_record(row)
+        model_results[name] = {
+            "score": float(result.anomaly_score),
+            "model_label": result.model_label,
+        }
+
+    max_score = max(item["score"] for item in model_results.values())
+    blocking_models = [
+        name
+        for name, item in model_results.items()
+        if item["score"] >= float(config.ai.baseline_gate_block_score)
+    ]
+    payload.update(
+        {
+            "score": max_score,
+            "model_results": model_results,
+            "blocked": bool(blocking_models),
+            "blocking_models": blocking_models,
+            "reason": (
+                "generic_score_above_baseline_gate"
+                if blocking_models
+                else "generic_score_allowed"
+            ),
+        }
+    )
+    return payload
+
+
+def _generic_spatial_model_path(args: argparse.Namespace, config: Any) -> Path:
+    """Determina il percorso del modello generico spaziale.
+
+    `--generic-model` resta come alias del vecchio schema a un solo modello
+    generico, ma la configurazione nuova usa `generic_spatial_model`.
+    """
+    if args.generic_spatial_model:
+        return Path(args.generic_spatial_model)
+    if args.generic_model:
+        return Path(args.generic_model)
+    return Path(config.ai.generic_spatial_model)
+
+
+def _personal_model_path(
+    args: argparse.Namespace,
+    config: Any,
+    patient_id: str,
+) -> Path:
+    """Determina il percorso del modello personale mantenendo compatibilita CLI.
+
+    `--model` era il vecchio argomento unico; da ora equivale al modello
+    personale. Se nel file YAML e' presente `ai.personal_model`, viene usato
+    quello. Altrimenti il default resta `models/<patient_id>.pkl`.
+    """
+    if args.personal_model:
+        return Path(args.personal_model)
+    if args.model:
+        return Path(args.model)
+    if config.ai.personal_model is not None:
+        return Path(config.ai.personal_model)
+    return Path("models") / f"{patient_id}.pkl"
+
+
+def _inference_status(results: dict[str, Any]) -> str:
+    """Restituisce una stringa breve sul tipo di inferenza eseguita."""
+    available = [name for name, result in results.items() if result is not None]
+    if available:
+        return "completed_" + "_plus_".join(available)
+    return "skipped_all_models_missing"
+
+
+def _fusion_mode(payload: dict[str, Any] | None) -> str | None:
+    """Legge dal JSON decisionale la modalita di fusione usata."""
+    if not payload:
+        return None
+    evidence = payload.get("evidence")
+    if not isinstance(evidence, dict):
+        return None
+    fusion = evidence.get("fusion")
+    if not isinstance(fusion, dict):
+        return None
+    mode = fusion.get("mode")
+    return str(mode) if mode is not None else None
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
