@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     Questo comando riunisce aggregazione, controllo qualita, baseline e
     inferenza. L'obiettivo e' avere un solo punto da schedulare sul Raspberry
-    ogni 8 minuti tramite cron o systemd timer.
+    ogni 4 minuti tramite cron o systemd timer.
     """
     parser = argparse.ArgumentParser(
         prog="edge-cycle",

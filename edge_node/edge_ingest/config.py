@@ -14,7 +14,7 @@ class PatientConfig:
 
 @dataclass(frozen=True)
 class WindowConfig:
-    minutes: int = 8
+    minutes: int = 4
     timezone: str = "Europe/Rome"
 
 
@@ -91,7 +91,7 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
             patient_id=str(_section(payload, "patient").get("id", "patient-001")),
         ),
         window=WindowConfig(
-            minutes=int(_section(payload, "window").get("minutes", 8)),
+            minutes=int(_section(payload, "window").get("minutes", 4)),
             timezone=str(_section(payload, "window").get("timezone", "Europe/Rome")),
         ),
         paths=PathsConfig(

@@ -58,7 +58,7 @@ class AlertDebouncer:
         """Salva su disco la storia del debounce.
 
         La persistenza e' necessaria perche' il ciclo edge puo' essere eseguito
-        ogni 8 minuti da cron/systemd: senza salvataggio ogni esecuzione
+        ogni 4 minuti da cron/systemd: senza salvataggio ogni esecuzione
         perderebbe memoria delle anomalie precedenti.
         """
         target = Path(path)

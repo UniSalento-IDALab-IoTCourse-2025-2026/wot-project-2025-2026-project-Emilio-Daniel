@@ -26,7 +26,7 @@ def parse_datetime(value: str, timezone_name: str) -> datetime:
 def floor_window_end(value: datetime, window_minutes: int) -> datetime:
     """Arrotonda verso il basso la fine finestra al multiplo configurato.
 
-    Per esempio, con finestre da 8 minuti, un orario qualsiasi viene riportato
+    Per esempio, con finestre da 4 minuti, un orario qualsiasi viene riportato
     all'ultimo confine valido. Questo rende confrontabili i cicli periodici e
     impedisce finestre sovrapposte irregolari.
     """

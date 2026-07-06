@@ -280,7 +280,7 @@ def _expected_windows(elapsed_days: float, window_minutes: int) -> int:
     """Stima quante finestre ci si aspetta dopo un certo tempo di raccolta.
 
     Questo valore serve per valutare se il sistema sta producendo abbastanza
-    dati rispetto alla frequenza prevista, ad esempio una finestra ogni 8 minuti.
+    dati rispetto alla frequenza prevista, ad esempio una finestra ogni 4 minuti.
     """
     if elapsed_days <= 0:
         return 0

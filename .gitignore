@@ -38,10 +38,12 @@ companion_iOS_app/**/*.xcuserstate
 edge_node/data/raw/*
 edge_node/data/processed/*
 edge_node/data/state/*
+edge_node/data/external/*
 edge_node/models/*
 edge_node/outputs/*
 !edge_node/data/raw/.gitkeep
 !edge_node/data/processed/.gitkeep
 !edge_node/data/state/.gitkeep
+!edge_node/data/external/.gitkeep
 !edge_node/models/.gitkeep
 !edge_node/outputs/.gitkeep

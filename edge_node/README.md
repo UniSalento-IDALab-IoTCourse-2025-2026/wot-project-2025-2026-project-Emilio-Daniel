@@ -9,7 +9,8 @@ locali.
 edge_ai/        modelli generici/personale, fusione, debounce e CLI train/infer
 edge_auth/      setup OAuth Fitbit, token e refresh per Pixel Watch 2
 edge_baseline/  gestione fase baseline: start, status, finalize, train
-edge_ingest/    aggregazione dati Fitbit, BLE e Shelly in finestre da 8 minuti
+edge_datasets/  convertitori dataset pubblici CASAS/PAMAP2/WESAD
+edge_ingest/    aggregazione dati Fitbit, BLE e Shelly in finestre da 4 minuti
 edge_receiver/  receiver FastAPI per campioni BLE inviati dall'app Android
 edge_runtime/   comando unico del ciclo edge
 edge_quality/   controlli qualita dati per baseline/training
@@ -294,6 +295,101 @@ Output baseline:
 data/processed/baseline.csv
 ```
 
+## Conversione Dataset Pubblici
+
+I dataset pubblici non vengono dati direttamente al modello: prima devono essere
+convertiti nello stesso schema di `latest_window.csv` e `baseline.csv`.
+
+Il converter CASAS e' gia' disponibile:
+
+```bash
+python -m edge_datasets.cli casas \
+  --input-dir data/external/casas \
+  --output data/processed/generic_spatial_dataset.csv \
+  --window-minutes 4
+```
+
+Per un test veloce su pochi file:
+
+```bash
+python -m edge_datasets.cli casas \
+  --input-dir data/external/casas \
+  --include aruba.csv,milan.csv \
+  --limit-rows-per-file 50000 \
+  --output data/processed/generic_spatial_dataset.sample.csv
+```
+
+Il risultato e' un CSV compatibile con:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input data/processed/generic_spatial_dataset.csv \
+  --output models/generic_spatial.pkl \
+  --model-id generic-spatial \
+  --model-kind generic_spatial
+```
+
+Nota: CASAS contiene dati ambientali/spaziali, quindi le colonne wearable e NILM restano
+vuote. Questo e' previsto per il modello `generic_spatial.pkl`.
+
+Il converter PAMAP2 e' disponibile per costruire il dataset wearable generico:
+
+```bash
+python -m edge_datasets.cli pamap2 \
+  --input-dir data/external/pamap2/Protocol \
+  --output data/processed/generic_wearable_dataset_pamap2.csv \
+  --window-minutes 4
+```
+
+Per un test veloce prima della conversione completa:
+
+```bash
+python -m edge_datasets.cli pamap2 \
+  --input-dir data/external/pamap2/Protocol \
+  --limit-rows-per-file 200000 \
+  --output data/processed/generic_wearable_dataset_pamap2.sample.csv \
+  --window-minutes 4
+```
+
+PAMAP2 contiene heart rate e activity id ad alta frequenza. Il converter produce:
+
+- media e deviazione standard della frequenza cardiaca;
+- passi stimati dagli activity id;
+- minuti sedentari stimati dagli activity id;
+- `wearable_present = 1`;
+- colonne spaziali, sonno, SpO2 e NILM vuote.
+
+Questo e' previsto per `generic_wearable.pkl`: WESAD/PAMAP2 completano la parte
+fisiologica/wearable, mentre CASAS resta dedicato alla parte spaziale/domestica.
+
+Il converter WESAD crea invece finestre wearable da BVP/HRV del polso:
+
+```bash
+python -m edge_datasets.cli wesad \
+  --input-dir data/external/wesad \
+  --output data/processed/generic_wearable_dataset_wesad.csv \
+  --window-minutes 4
+```
+
+Di default vengono usate solo label WESAD normali:
+
+```text
+1 = baseline
+3 = amusement
+4 = meditation
+```
+
+La label `2 = stress` e i transitori vengono scartati perche' il modello
+`IsolationForest` deve imparare la normalita, non considerare lo stress come routine.
+
+Dopo PAMAP2 e WESAD, i due CSV wearable si uniscono cosi':
+
+```bash
+python -m edge_datasets.cli merge \
+  --inputs data/processed/generic_wearable_dataset_pamap2.csv,data/processed/generic_wearable_dataset_wesad.csv \
+  --output data/processed/generic_wearable_dataset.csv
+```
+
 ## Addestramento modello
 
 Modello generico spaziale, da CASAS gia' convertito nello schema feature del progetto:
@@ -307,6 +403,18 @@ python -m edge_ai.cli train-generic \
 ```
 
 Modello generico wearable, da WESAD/PAMAP2 o dataset wearable equivalente:
+
+Prima si converte PAMAP2:
+
+```bash
+python -m edge_datasets.cli pamap2 \
+  --input-dir data/external/pamap2/Protocol \
+  --output data/processed/generic_wearable_dataset_pamap2.csv \
+  --window-minutes 4
+```
+
+Poi uniamo PAMAP2 e WESAD in `data/processed/generic_wearable_dataset.csv`
+e addestriamo:
 
 ```bash
 python -m edge_ai.cli train-generic \

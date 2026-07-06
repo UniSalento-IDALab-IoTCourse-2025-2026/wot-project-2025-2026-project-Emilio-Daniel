@@ -2,7 +2,7 @@ patient:
   id: patient-001
 
 window:
-  minutes: 8
+  minutes: 4
   timezone: Europe/Rome
 
 paths:

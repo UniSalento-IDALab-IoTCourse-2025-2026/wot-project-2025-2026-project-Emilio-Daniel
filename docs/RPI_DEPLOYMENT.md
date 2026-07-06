@@ -180,13 +180,13 @@ Se la qualita e' buona ma il safety gate generico blocca la finestra, in
 ## Cron provvisorio
 
 ```cron
-*/8 * * * * cd /home/pi/progetto-iot/edge_node && . ../.venv/bin/activate && python -m edge_runtime.cli --config config/edge.yml
+*/4 * * * * cd /home/pi/progetto-iot/edge_node && . ../.venv/bin/activate && python -m edge_runtime.cli --config config/edge.yml
 ```
 
 Durante i primi 5/6 giorni di baseline, usare invece:
 
 ```cron
-*/8 * * * * cd /home/pi/progetto-iot/edge_node && . ../.venv/bin/activate && python -m edge_runtime.cli --config config/edge.yml --append-baseline
+*/4 * * * * cd /home/pi/progetto-iot/edge_node && . ../.venv/bin/activate && python -m edge_runtime.cli --config config/edge.yml --append-baseline
 ```
 
 In produzione i collector reali scriveranno i campioni grezzi in `data/raw/`, poi
@@ -224,7 +224,7 @@ python -m edge_receiver.cli --config config/edge.yml --host 0.0.0.0 --port 8000
 ```
 
 Questo processo resta sempre acceso e riceve i campioni dall'app Android. Il ciclo
-`edge_runtime` invece puo' essere eseguito ogni 8 minuti da cron/systemd.
+`edge_runtime` invece puo' essere eseguito ogni 4 minuti da cron/systemd.
 
 L'app Android inviera' campioni BLE a:
 

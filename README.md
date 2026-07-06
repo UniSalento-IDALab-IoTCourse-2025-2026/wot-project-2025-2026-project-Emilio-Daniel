@@ -68,7 +68,7 @@ Shelly adapter
         tutti gli adapter
               |
               v
-edge_ingest aggrega una finestra da 8 minuti
+edge_ingest aggrega una finestra da 4 minuti
               |
               v
 edge_node/data/processed/latest_window.csv
@@ -115,6 +115,13 @@ edge_node/
   edge_baseline/
     cli.py              Start/status/finalize/train baseline reale
     session.py          Stato della raccolta baseline
+
+  edge_datasets/
+    cli.py              Conversione dataset pubblici nello schema edge
+    casas_converter.py  Conversione CASAS in generic_spatial_dataset.csv
+    pamap2_converter.py Conversione PAMAP2 in generic_wearable_dataset_pamap2.csv
+    wesad_converter.py  Conversione WESAD in generic_wearable_dataset_wesad.csv
+    merge.py            Unione CSV convertiti nello schema feature ufficiale
 
   edge_receiver/
     app.py              Receiver HTTP locale sul Raspberry Pi
@@ -194,6 +201,14 @@ L'app iOS si crea su Mac con Xcode usando i file in `companion_iOS_app/`.
 - Ho aggiunto `edge_baseline`, che gestisce start, raccolta 6 giorni, status e training
   del modello paziente-specifico.
 - Ho aggiunto il comando che genera `edge_node/data/processed/latest_window.csv`.
+- Ho aggiunto `edge_datasets`, partendo dal converter CASAS per creare
+  `generic_spatial_dataset.csv`.
+- Ho aggiunto il converter PAMAP2 per creare finestre wearable da heart rate,
+  activity id, passi stimati e minuti sedentari.
+- Ho aggiunto il converter WESAD per creare finestre wearable da BVP/HRV,
+  usando solo label normali e scartando stress/transitori.
+- Ho unito PAMAP2 e WESAD in `generic_wearable_dataset.csv`.
+- Ho addestrato `models/generic_wearable.pkl`, il modello generico wearable.
 - Ho aggiornato la documentazione di deployment su Raspberry Pi.
 - Ho eseguito controlli di compilazione/import e test tecnici end-to-end della pipeline.
 
@@ -243,7 +258,7 @@ models/patient-001.pkl
 Durante i primi 5/6 giorni:
 
 ```text
-dati reali ogni 8 minuti
+dati reali ogni 4 minuti
 -> controllo qualita
 -> modelli generici, se disponibili
 -> raccolta baseline personale
@@ -256,7 +271,7 @@ finestra puo' essere usata per triage ma non viene aggiunta alla baseline person
 Dopo la baseline:
 
 ```text
-dati reali ogni 8 minuti
+dati reali ogni 4 minuti
 -> controllo qualita
 -> modello generico spaziale   -> generic_spatial_score
 -> modello generico wearable   -> generic_wearable_score
@@ -281,7 +296,7 @@ python -m edge_ingest.cli --config config/edge.example.yml
 Questo comando:
 
 1. legge la configurazione;
-2. calcola l'ultima finestra temporale da 8 minuti;
+2. calcola l'ultima finestra temporale da 4 minuti;
 3. interroga gli adapter abilitati;
 4. fonde le feature in una singola riga;
 5. scrive `data/processed/latest_window.csv`.
@@ -692,7 +707,7 @@ Fa un ciclo completo:
 
 ```text
 legge i dati gia' ricevuti in data/raw/
--> aggrega la finestra da 8 minuti
+-> aggrega la finestra da 4 minuti
 -> scrive data/processed/latest_window.csv
 -> se trova models/generic_spatial.pkl, fa inferenza generica spaziale
 -> se trova models/generic_wearable.pkl, fa inferenza generica wearable
@@ -792,7 +807,7 @@ Braccialetto / wearable al polso
 
 Nota importante: il modello non viene addestrato direttamente sui beacon o sul braccialetto
 grezzo. Il modello viene addestrato su `data/processed/baseline.csv`, cioe' sulle feature
-aggregate ogni 8 minuti dal Raspberry.
+aggregate ogni 4 minuti dal Raspberry.
 
 I modelli generici, invece, si addestrano prima su dataset esterni gia' trasformati nello
 stesso schema feature. Gli artefatti saranno `models/generic_spatial.pkl` e
@@ -960,7 +975,7 @@ python -m edge_ai.cli train-generic \
   --model-kind generic_spatial
 ```
 
-Da WESAD/PAMAP2 o dataset wearable equivalente creeremo il modello wearable:
+Da WESAD/PAMAP2 o dataset wearable equivalente creiamo il modello wearable:
 
 ```bash
 python -m edge_ai.cli train-generic \
@@ -991,7 +1006,7 @@ Questo crea lo stato:
 data/state/baseline-session.json
 ```
 
-Durante i 6 giorni il Raspberry deve eseguire ogni 8 minuti:
+Durante i 6 giorni il Raspberry deve eseguire ogni 4 minuti:
 
 ```bash
 python -m edge_runtime.cli --config config/edge.yml --append-baseline
@@ -1000,7 +1015,7 @@ python -m edge_runtime.cli --config config/edge.yml --append-baseline
 Esempio cron sul Raspberry:
 
 ```cron
-*/8 * * * * cd /home/pi/progetto-iot/edge_node && . ../.venv/bin/activate && python -m edge_runtime.cli --config config/edge.yml --append-baseline
+*/4 * * * * cd /home/pi/progetto-iot/edge_node && . ../.venv/bin/activate && python -m edge_runtime.cli --config config/edge.yml --append-baseline
 ```
 
 Questo comando:
@@ -1128,6 +1143,17 @@ python -m edge_ai.cli train \
 
 Training modello generico spaziale:
 
+Prima si converte CASAS:
+
+```bash
+python -m edge_datasets.cli casas \
+  --input-dir data/external/casas \
+  --output data/processed/generic_spatial_dataset.csv \
+  --window-minutes 4
+```
+
+Poi si addestra:
+
 ```bash
 python -m edge_ai.cli train-generic \
   --input data/processed/generic_spatial_dataset.csv \
@@ -1137,6 +1163,60 @@ python -m edge_ai.cli train-generic \
 ```
 
 Training modello generico wearable:
+
+Prima si converte PAMAP2 nello schema del progetto:
+
+```bash
+python -m edge_datasets.cli pamap2 \
+  --input-dir data/external/pamap2/Protocol \
+  --output data/processed/generic_wearable_dataset_pamap2.csv \
+  --window-minutes 4
+```
+
+Questo CSV contiene soprattutto feature fisiologiche/motorie:
+
+- `heart_rate_mean`;
+- `heart_rate_std`;
+- `steps`, stimati dagli activity id PAMAP2;
+- `sedentary_minutes`, stimati dagli activity id PAMAP2;
+- `wearable_present`.
+
+Poi si converte WESAD:
+
+```bash
+python -m edge_datasets.cli wesad \
+  --input-dir data/external/wesad \
+  --output data/processed/generic_wearable_dataset_wesad.csv \
+  --window-minutes 4
+```
+
+WESAD viene usato per estrarre feature da BVP/HRV. Di default il converter usa
+solo label normali:
+
+```text
+1 = baseline
+3 = amusement
+4 = meditation
+```
+
+La label `2 = stress` e i transitori vengono scartati perche' il modello
+`IsolationForest` deve imparare la normalita.
+
+Poi uniamo PAMAP2 e WESAD in:
+
+```text
+data/processed/generic_wearable_dataset.csv
+```
+
+con:
+
+```bash
+python -m edge_datasets.cli merge \
+  --inputs data/processed/generic_wearable_dataset_pamap2.csv,data/processed/generic_wearable_dataset_wesad.csv \
+  --output data/processed/generic_wearable_dataset.csv
+```
+
+Poi addestriamo il modello wearable:
 
 ```bash
 python -m edge_ai.cli train-generic \
@@ -1182,16 +1262,15 @@ python -m edge_runtime.cli --config config/edge.yml
 ## Prossimi step
 
 1. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
-2. Convertire CASAS in `generic_spatial_dataset.csv`.
-3. Convertire WESAD/PAMAP2 in `generic_wearable_dataset.csv`.
-4. Addestrare `models/generic_spatial.pkl` e `models/generic_wearable.pkl`.
-5. Creare l'app OAuth Fitbit reale e lanciare `edge_auth` con le credenziali vere.
-6. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
-7. Preparare `edge_node/config/edge.yml` reale per il vostro paziente/test.
-8. Avviare raccolta baseline reale.
-9. Addestrare `models/patient-001.pkl`.
-10. Usare runtime con generici + personale + fusione.
-11. Collegare output JSON al backend/dashboard.
+2. Configurare la mappa reale dei 3 BlueBeacon nell'app Android.
+3. Creare l'app OAuth Fitbit reale e lanciare `edge_auth` con le credenziali vere.
+4. Preparare `edge_node/config/edge.yml` reale per Raspberry Pi 5.
+5. Spostare repository, modelli generici e configurazione sul Raspberry.
+6. Avviare raccolta baseline reale.
+7. Addestrare `models/patient-001.pkl`.
+8. Usare runtime con generici + personale + fusione.
+9. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
+10. Collegare output JSON al backend/dashboard.
 
 ## Stato attuale del progetto
 
@@ -1202,7 +1281,7 @@ ogni volta che aggiungiamo un nuovo pezzo al sistema.
 
 Abbiamo creato il modulo `edge_ai`.
 
-Questo e' il cervello del sistema. Legge dati aggregati ogni 8 minuti, usa
+Questo e' il cervello del sistema. Legge dati aggregati ogni 4 minuti, usa
 `IsolationForest` in due modalita' e produce un livello di rischio:
 
 - modello generico spaziale: `models/generic_spatial.pkl`;
