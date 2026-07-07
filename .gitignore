@@ -10,6 +10,8 @@ edge_node/config/edge.yml
 edge_node/config/fitbit_token.json
 edge_node/config/fitbit_client.json
 edge_node/config/fitbit_oauth_state.json
+edge_node/config/google_health_token.json
+edge_node/config/google_health_client.json
 companion_app/.gradle/
 companion_app/.idea/
 companion_app/local.properties

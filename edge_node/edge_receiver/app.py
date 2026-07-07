@@ -30,7 +30,7 @@ def create_app(config_path: str | Path | None = None) -> FastAPI:
 
     Il receiver e' pensato per restare sempre attivo sul Raspberry. Ogni campione
     ricevuto viene normalizzato e salvato nel CSV grezzo, che poi sara' letto dal
-    ciclo edge ogni 8 minuti.
+    ciclo edge ogni 4 minuti.
     """
     app = FastAPI(title="IoT Edge Receiver", version="0.1.0")
     resolved_config_path = Path(

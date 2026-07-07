@@ -60,6 +60,19 @@ class FitbitAdapter:
             if resting is not None:
                 features["resting_heart_rate"] = float(resting)
 
+        steps_payload = self._try_get_json(
+            token,
+            f"/1/user/{patient}/activities/steps/date/{start_date}/{end_date}/1min/time/{start_time}/{end_time}.json",
+        )
+        if steps_payload:
+            step_values = [
+                float(item["value"])
+                for item in steps_payload.get("activities-steps-intraday", {}).get("dataset", [])
+                if "value" in item
+            ]
+            if step_values:
+                features["steps"] = sum(step_values)
+
         features.update(self._collect_optional_daily_metrics(token, patient, start_date))
         features.update(self._collect_device_status(token, patient))
         return features

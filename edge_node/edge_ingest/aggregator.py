@@ -11,6 +11,7 @@ from edge_ai.schema import DATASET_COLUMNS, FEATURE_COLUMNS
 from edge_ingest.ble_adapter import BleCsvAdapter
 from edge_ingest.config import EdgeIngestConfig
 from edge_ingest.fitbit_adapter import FitbitAdapter
+from edge_ingest.google_health_adapter import GoogleHealthAdapter
 from edge_ingest.shelly_adapter import ShellyCsvAdapter
 
 
@@ -23,8 +24,8 @@ def build_feature_window(
 
     La finestra temporale e' l'unita minima che il modello AI analizza. La
     funzione inizializza tutte le colonne previste dallo schema e poi aggiorna i
-    valori con i dati disponibili da Fitbit, BLE e Shelly, lasciando `nan` dove
-    una sorgente non e' abilitata o non ha prodotto dati.
+    valori con i dati disponibili da Fitbit legacy, Google Health, BLE e Shelly,
+    lasciando `nan` dove una sorgente non e' abilitata o non ha prodotto dati.
     """
     row: dict[str, Any] = {
         "patient_id": config.patient.patient_id,
@@ -36,11 +37,20 @@ def build_feature_window(
     row.update({column: nan for column in FEATURE_COLUMNS})
 
     if config.fitbit.enabled:
+        # Adapter legacy: resta utile solo per vecchie credenziali Fitbit Web API.
         local_zone = ZoneInfo(config.window.timezone)
         row.update(
             FitbitAdapter(config.fitbit).collect_window(
                 window_start.astimezone(local_zone),
                 window_end.astimezone(local_zone),
+            )
+        )
+    if config.google_health.enabled:
+        # Percorso attuale per Pixel Watch 2: legge dati cloud Google Health.
+        row.update(
+            GoogleHealthAdapter(config.google_health).collect_window(
+                window_start,
+                window_end,
             )
         )
     if config.ble.enabled:

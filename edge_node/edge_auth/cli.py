@@ -6,6 +6,10 @@ import json
 import os
 from pathlib import Path
 
+from edge_auth.google_health_oauth import (
+    describe_token as describe_google_health_token,
+    refresh_access_token as refresh_google_health_access_token,
+)
 from edge_auth.fitbit_oauth import (
     DEFAULT_REDIRECT_URI,
     DEFAULT_SCOPES,
@@ -79,6 +83,33 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--token-file", default="config/fitbit_token.json")
     status.add_argument("--client-file", default="config/fitbit_client.json")
     status.set_defaults(handler=_handle_fitbit_status)
+
+    google_health = subparsers.add_parser(
+        "google-health",
+        help="Manage Google Health API OAuth credentials for Pixel Watch data.",
+    )
+    # Nuovo provider OAuth: usa token ottenuti da Google OAuth Playground.
+    # Non apre il browser: qui facciamo solo status/refresh sui file locali.
+    google_health_subparsers = google_health.add_subparsers(
+        dest="command",
+        required=True,
+    )
+
+    google_refresh = google_health_subparsers.add_parser(
+        "refresh",
+        help="Refresh the Google Health access token using the stored refresh token.",
+    )
+    google_refresh.add_argument("--token-file", default="config/google_health_token.json")
+    google_refresh.add_argument("--client-file", default="config/google_health_client.json")
+    google_refresh.set_defaults(handler=_handle_google_health_refresh)
+
+    google_status = google_health_subparsers.add_parser(
+        "status",
+        help="Show whether Google Health OAuth files are ready, without printing secrets.",
+    )
+    google_status.add_argument("--token-file", default="config/google_health_token.json")
+    google_status.add_argument("--client-file", default="config/google_health_client.json")
+    google_status.set_defaults(handler=_handle_google_health_status)
 
     return parser
 
@@ -182,6 +213,56 @@ def _handle_fitbit_status(
     print(
         json.dumps(
             describe_token(Path(args.token_file), Path(args.client_file)),
+            indent=2,
+        )
+    )
+
+
+def _handle_google_health_refresh(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Forza manualmente il refresh dell'access token Google Health.
+
+    Il runtime lo fa gia' in automatico. Questo comando serve quando vogliamo
+    controllare esplicitamente che `google_health_client.json` e
+    `google_health_token.json` siano coerenti.
+    """
+    del parser
+    token = refresh_google_health_access_token(
+        Path(args.token_file),
+        Path(args.client_file),
+    )
+    print(
+        json.dumps(
+            {
+                "status": "google_health_token_refreshed",
+                "token_file": args.token_file,
+                "scope": token.get("scope"),
+                "expires_at": token.get("expires_at"),
+            },
+            indent=2,
+        )
+    )
+
+
+def _handle_google_health_status(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Mostra lo stato del setup Google Health senza stampare segreti.
+
+    E' il comando di diagnosi principale dopo aver creato i file locali: dice se
+    esistono client/token, se il refresh token e' presente e se l'access token e'
+    scaduto, senza mai mostrare i valori sensibili.
+    """
+    del parser
+    print(
+        json.dumps(
+            describe_google_health_token(
+                Path(args.token_file),
+                Path(args.client_file),
+            ),
             indent=2,
         )
     )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import timedelta
 
 from edge_ingest.ble_collector import collect_ble_samples
 from edge_ingest.aggregator import (
@@ -57,6 +58,8 @@ def main() -> None:
         ble_samples = collect_ble_samples(config.ble)
 
     requested_end = parse_datetime(args.window_end, config.window.timezone)
+    if args.window_end.lower() == "now" and config.window.data_delay_minutes > 0:
+        requested_end = requested_end - timedelta(minutes=config.window.data_delay_minutes)
     window_start, window_end = window_from_end(requested_end, config.window.minutes)
 
     row = build_feature_window(config, window_start, window_end)

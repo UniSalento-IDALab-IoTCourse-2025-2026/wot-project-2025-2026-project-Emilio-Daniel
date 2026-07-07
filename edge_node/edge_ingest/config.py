@@ -16,6 +16,7 @@ class PatientConfig:
 class WindowConfig:
     minutes: int = 4
     timezone: str = "Europe/Rome"
+    data_delay_minutes: int = 0
 
 
 @dataclass(frozen=True)
@@ -36,11 +37,31 @@ class AIConfig:
 
 @dataclass(frozen=True)
 class FitbitConfig:
+    """Configurazione legacy per Fitbit Web API.
+
+    Rimane nel progetto per compatibilita' con setup precedenti, ma per nuove
+    credenziali Pixel Watch 2 usiamo `GoogleHealthConfig`.
+    """
+
     enabled: bool = False
     token_file: Path = Path("config/fitbit_token.json")
     client_file: Path = Path("config/fitbit_client.json")
     user_id: str = "-"
     api_base_url: str = "https://api.fitbit.com"
+
+
+@dataclass(frozen=True)
+class GoogleHealthConfig:
+    """Configurazione del percorso attuale Google Health API.
+
+    `token_file` contiene access/refresh token dell'account utente; `client_file`
+    contiene client id e client secret del progetto Google Cloud.
+    """
+
+    enabled: bool = False
+    token_file: Path = Path("config/google_health_token.json")
+    client_file: Path = Path("config/google_health_client.json")
+    api_base_url: str = "https://health.googleapis.com"
 
 
 @dataclass(frozen=True)
@@ -71,6 +92,7 @@ class EdgeIngestConfig:
     paths: PathsConfig
     ai: AIConfig
     fitbit: FitbitConfig
+    google_health: GoogleHealthConfig
     ble: BleConfig
     shelly: ShellyConfig
 
@@ -93,6 +115,9 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
         window=WindowConfig(
             minutes=int(_section(payload, "window").get("minutes", 4)),
             timezone=str(_section(payload, "window").get("timezone", "Europe/Rome")),
+            data_delay_minutes=int(
+                _section(payload, "window").get("data_delay_minutes", 0)
+            ),
         ),
         paths=PathsConfig(
             latest_window_csv=Path(
@@ -159,6 +184,29 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
                 _section(payload, "fitbit").get(
                     "api_base_url",
                     "https://api.fitbit.com",
+                )
+            ).rstrip("/"),
+        ),
+        google_health=GoogleHealthConfig(
+            # Se abilitato, l'aggregatore usera' GoogleHealthAdapter per leggere
+            # le feature wearable del Pixel Watch 2 sincronizzate nel cloud.
+            enabled=bool(_section(payload, "google_health").get("enabled", False)),
+            token_file=Path(
+                _section(payload, "google_health").get(
+                    "token_file",
+                    "config/google_health_token.json",
+                )
+            ),
+            client_file=Path(
+                _section(payload, "google_health").get(
+                    "client_file",
+                    "config/google_health_client.json",
+                )
+            ),
+            api_base_url=str(
+                _section(payload, "google_health").get(
+                    "api_base_url",
+                    "https://health.googleapis.com",
                 )
             ).rstrip("/"),
         ),

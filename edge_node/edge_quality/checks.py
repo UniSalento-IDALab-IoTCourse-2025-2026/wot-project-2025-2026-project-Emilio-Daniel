@@ -12,7 +12,7 @@ from edge_ai.schema import parse_timestamp
 from edge_ingest.config import EdgeIngestConfig
 
 
-FITBIT_FEATURES = [
+WEARABLE_CLOUD_FEATURES = [
     "heart_rate_mean",
     "heart_rate_std",
     "resting_heart_rate",
@@ -77,7 +77,7 @@ def evaluate_quality(
 
     _check_window_bounds(start_utc, end_utc, now_utc, issues, metrics)
     _check_ble(config, start_utc, end_utc, now_utc, issues, metrics)
-    _check_fitbit(config, row, issues, metrics)
+    _check_wearable_cloud(config, row, issues, metrics)
     _check_shelly(config, start_utc, end_utc, issues, metrics)
 
     status = _overall_status(issues)
@@ -343,31 +343,46 @@ def _check_static_room(
         )
 
 
-def _check_fitbit(
+def _check_wearable_cloud(
     config: EdgeIngestConfig,
     row: dict[str, Any],
     issues: list[QualityIssue],
     metrics: dict[str, Any],
 ) -> None:
-    """Controlla disponibilita e coerenza dei dati Fitbit nella finestra.
+    """Controlla disponibilita e coerenza dei dati wearable cloud nella finestra.
 
-    Se Fitbit e' abilitato ma token o metriche biometriche mancano, la finestra
-    non e' affidabile per il training. Viene anche verificata la presenza del
-    wearable per separare problemi tecnici da anomalie comportamentali.
+    Se Fitbit o Google Health sono abilitati ma token o metriche biometriche
+    mancano, la finestra non e' affidabile per il training. Viene anche
+    verificata la presenza del wearable per separare problemi tecnici da
+    anomalie comportamentali.
     """
-    if not config.fitbit.enabled:
+    cloud_enabled = config.fitbit.enabled or config.google_health.enabled
+    if not cloud_enabled:
         metrics["fitbit_enabled"] = False
+        metrics["google_health_enabled"] = False
         return
 
-    metrics["fitbit_enabled"] = True
-    metrics["fitbit_token_file"] = str(config.fitbit.token_file)
-    if not config.fitbit.token_file.exists():
+    metrics["fitbit_enabled"] = config.fitbit.enabled
+    metrics["google_health_enabled"] = config.google_health.enabled
+    token_checks = []
+    # Fitbit e Google Health condividono lo stesso tipo di requisito: se la
+    # sorgente wearable cloud e' abilitata, deve esistere il relativo token.
+    if config.fitbit.enabled:
+        token_checks.append(("fitbit", config.fitbit.token_file))
+        metrics["fitbit_token_file"] = str(config.fitbit.token_file)
+    if config.google_health.enabled:
+        token_checks.append(("google_health", config.google_health.token_file))
+        metrics["google_health_token_file"] = str(config.google_health.token_file)
+
+    for provider, token_file in token_checks:
+        if token_file.exists():
+            continue
         issues.append(
             QualityIssue(
-                code="fitbit_token_missing",
+                code=f"{provider}_token_missing",
                 severity="error",
-                message="Fitbit is enabled but the token file does not exist.",
-                details={"path": str(config.fitbit.token_file)},
+                message=f"{provider} is enabled but the token file does not exist.",
+                details={"path": str(token_file)},
             )
         )
 
@@ -384,25 +399,27 @@ def _check_fitbit(
 
     available_features = [
         feature
-        for feature in FITBIT_FEATURES
+        for feature in WEARABLE_CLOUD_FEATURES
         if not _is_missing(row.get(feature))
     ]
-    metrics["fitbit_available_feature_count"] = len(available_features)
-    metrics["fitbit_available_features"] = available_features
+    # Basta almeno una feature biometrica per considerare la sorgente viva; la
+    # frequenza cardiaca resta pero' il segnale piu' importante per la baseline.
+    metrics["wearable_cloud_available_feature_count"] = len(available_features)
+    metrics["wearable_cloud_available_features"] = available_features
     if not available_features:
         issues.append(
             QualityIssue(
-                code="fitbit_no_biometrics",
+                code="wearable_cloud_no_biometrics",
                 severity="error",
-                message="Fitbit is enabled but no biometric features are available.",
+                message="Wearable cloud source is enabled but no biometric features are available.",
             )
         )
     elif "heart_rate_mean" not in available_features:
         issues.append(
             QualityIssue(
-                code="fitbit_missing_heart_rate",
+                code="wearable_cloud_missing_heart_rate",
                 severity="warning",
-                message="Fitbit data is present but heart_rate_mean is missing.",
+                message="Wearable cloud data is present but heart_rate_mean is missing.",
             )
         )
 

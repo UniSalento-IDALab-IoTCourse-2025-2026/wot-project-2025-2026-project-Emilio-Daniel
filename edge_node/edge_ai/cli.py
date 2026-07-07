@@ -2,11 +2,27 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
 from pathlib import Path
 
 from edge_ai.debounce import AlertDebouncer, decision_to_json
 from edge_ai.features import latest_record, load_feature_frame
 from edge_ai.model import EdgeAnomalyDetector
+from edge_ai.wearable_quality import wearable_signal_summary
+
+try:
+    from sklearn.exceptions import InconsistentVersionWarning
+except Exception:  # pragma: no cover - sklearn might be unavailable before setup.
+    InconsistentVersionWarning = None
+
+if InconsistentVersionWarning is not None:
+    warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+warnings.filterwarnings(
+    "ignore",
+    message="Skipping features without any observed values:.*",
+    category=UserWarning,
+    module="sklearn\\.impute\\._base",
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -122,7 +138,21 @@ def run_inference(args: argparse.Namespace) -> None:
     """
     detector = EdgeAnomalyDetector.load(args.model)
     frame = load_feature_frame(args.input)
-    result = detector.predict_record(latest_record(frame))
+    record = latest_record(frame)
+    wearable_summary = wearable_signal_summary(record)
+    if (
+        detector.metadata.model_scope == "generic_wearable"
+        and not wearable_summary["has_core_signal"]
+    ):
+        payload = _technical_wearable_skip_payload(record, wearable_summary)
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+        print(json.dumps(payload, indent=2))
+        return
+
+    result = detector.predict_record(record)
 
     debouncer = AlertDebouncer.load(args.state)
     decision = debouncer.update(result)
@@ -134,6 +164,30 @@ def run_inference(args: argparse.Namespace) -> None:
         json.dump(decision_to_json(decision), handle, indent=2)
 
     print(json.dumps(decision_to_json(decision), indent=2))
+
+
+def _technical_wearable_skip_payload(
+    record: object,
+    wearable_summary: dict[str, object],
+) -> dict[str, object]:
+    """Crea un output tecnico quando il wearable generico non ha input minimi."""
+    start = record["window_start"]
+    end = record["window_end"]
+    return {
+        "patient_id": str(record.get("patient_id", "patient-001")),
+        "window_start": start.isoformat() if hasattr(start, "isoformat") else str(start),
+        "window_end": end.isoformat() if hasattr(end, "isoformat") else str(end),
+        "level": "technical",
+        "should_publish": True,
+        "anomaly_score": 0.0,
+        "reasons": [
+            "Generic wearable model skipped because the window has no core wearable signal"
+        ],
+        "model_label": "skipped_insufficient_wearable_data",
+        "evidence": {
+            "wearable_signal": wearable_summary,
+        },
+    }
 
 
 def main() -> None:

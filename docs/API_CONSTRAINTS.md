@@ -14,6 +14,8 @@ Riferimenti ufficiali:
   https://developers.google.com/health/migration/api-specifications
 - Fitbit Heart Rate Intraday:
   https://dev.fitbit.com/build/reference/web-api/intraday/get-heartrate-intraday-by-date-range/
+- Fitbit Activity Intraday:
+  https://dev.fitbit.com/build/reference/web-api/intraday/get-activity-intraday-by-date-range/
 
 Fitbit Web API richiede OAuth 2.0 per accedere ai dati utente. Il flusso che prepariamo
 nel progetto e' Authorization Code con PKCE: il setup apre il browser, l'utente concede
@@ -35,9 +37,9 @@ python -m edge_auth.cli fitbit refresh
 ```
 
 Nota temporale: Google indica Google Health API come nuova generazione/evoluzione della
-Fitbit Web API. Per il progetto manteniamo l'adapter Fitbit Web API perche' e' gia'
-integrato nella pipeline, ma questa scelta va tenuta sotto controllo se il progetto deve
-vivere oltre la demo.
+Fitbit Web API. Il vecchio form Fitbit non accetta piu' nuove applicazioni, quindi per
+nuove credenziali usiamo Google Health API e manteniamo l'adapter Fitbit solo come
+compatibilita' con setup gia' esistenti.
 
 ## Dati disponibili per il modello
 

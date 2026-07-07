@@ -153,6 +153,7 @@ docs/
   ANDROID_APP.md        Guida app Android, emulatore e APK
   BEACON_SETUP.md       Setup reale dei 3 BlueBeacon 01
   API_CONSTRAINTS.md    Vincoli reali Google/Fitbit e BLE
+  GOOGLE_WATCH_SETUP.md Procedura Pixel Watch 2 / Google Health API
   FEATURE_SCHEMA.md     Schema dataset reale
   REAL_DATA_PLAN.md     Piano raccolta dati reali
   RPI_DEPLOYMENT.md     Setup Raspberry Pi

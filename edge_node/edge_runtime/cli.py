@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
+import warnings
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +20,23 @@ from edge_ingest.ble_collector import collect_ble_samples
 from edge_ingest.config import load_config
 from edge_ingest.time_windows import parse_datetime, window_from_end
 from edge_quality.checks import evaluate_quality
+
+try:
+    from sklearn.exceptions import InconsistentVersionWarning
+except Exception:  # pragma: no cover - sklearn might be unavailable before setup.
+    InconsistentVersionWarning = None
+
+# I modelli generici sono artefatti pickle e possono essere stati creati con una
+# versione diversa di scikit-learn. Durante i test locali il ciclo e' comunque
+# utilizzabile, quindi filtriamo questi warning per lasciare leggibile il JSON.
+if InconsistentVersionWarning is not None:
+    warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+warnings.filterwarnings(
+    "ignore",
+    message="Skipping features without any observed values:.*",
+    category=UserWarning,
+    module="sklearn\\.impute\\._base",
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -114,6 +135,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail the cycle if the model file does not exist.",
     )
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="Keep the runtime alive and run one edge cycle every interval.",
+    )
+    parser.add_argument(
+        "--interval-seconds",
+        type=int,
+        default=240,
+        help="Seconds between cycles when --loop is enabled. Defaults to 240.",
+    )
     return parser
 
 
@@ -125,8 +157,78 @@ def main() -> None:
     stati gestiti correttamente.
     """
     args = build_parser().parse_args()
+    if args.loop:
+        run_loop(args)
+        return
+
     status = run_cycle(args)
     print(json.dumps(status, indent=2))
+
+
+def run_loop(args: argparse.Namespace) -> None:
+    """Esegue il ciclo edge in modo continuo, come un receiver periodico.
+
+    Questa modalita e' pensata per i test manuali su Windows/Raspberry: il
+    processo resta aperto nel terminale e ogni 4 minuti richiama Google Health,
+    legge i dati BLE gia' ricevuti, aggiorna `latest_window.csv` e produce la
+    decisione AI. Si ferma con Ctrl+C.
+    """
+    interval = max(1, int(args.interval_seconds))
+    _log_info(
+        "Edge runtime loop started "
+        f"(config={args.config}, interval={interval}s, append_baseline={args.append_baseline})"
+    )
+    _log_info("Press CTRL+C to quit")
+
+    while True:
+        cycle_started_at = datetime.now()
+        _log_info("Running edge cycle")
+        try:
+            status = run_cycle(args)
+            duration_s = (datetime.now() - cycle_started_at).total_seconds()
+            _log_info(
+                "Cycle completed "
+                f"window={status.get('window_start')}..{status.get('window_end')} "
+                f"quality={status.get('quality_status')} "
+                f"inference={status.get('inference')} "
+                f"decision={status.get('decision_level')} "
+                f"duration={duration_s:.1f}s"
+            )
+            if status.get("quality_status") != "ok":
+                _log_info(
+                    "Quality report has "
+                    f"{status.get('quality_warning_count')} warning(s), "
+                    f"{status.get('quality_error_count')} error(s): "
+                    f"{status.get('quality_report')}"
+                )
+            _log_info(f"Next cycle in {interval} seconds")
+        except KeyboardInterrupt:
+            _log_info("Edge runtime loop stopped by user")
+            return
+        except Exception as exc:
+            _log_info(
+                f"Cycle error {type(exc).__name__}: {exc}. "
+                f"Next cycle in {interval} seconds"
+            )
+
+        try:
+            time.sleep(interval)
+        except KeyboardInterrupt:
+            _log_info("Edge runtime loop stopped by user")
+            return
+
+
+def _log_info(message: str) -> None:
+    """Stampa log compatti in stile Uvicorn/receiver per la modalita loop."""
+    if _supports_color():
+        print(f"\033[32mINFO\033[0m:     {message}", flush=True)
+    else:
+        print(f"INFO:     {message}", flush=True)
+
+
+def _supports_color() -> bool:
+    """Rileva se il terminale corrente puo' mostrare colori ANSI."""
+    return not os.environ.get("NO_COLOR")
 
 
 def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
@@ -145,6 +247,8 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         ble_samples = collect_ble_samples(config.ble)
 
     requested_end = parse_datetime(args.window_end, config.window.timezone)
+    if args.window_end.lower() == "now" and config.window.data_delay_minutes > 0:
+        requested_end = requested_end - timedelta(minutes=config.window.data_delay_minutes)
     window_start, window_end = window_from_end(requested_end, config.window.minutes)
 
     row = build_feature_window(config, window_start, window_end)
@@ -308,8 +412,11 @@ def _run_inference(
         generic_spatial_detector = EdgeAnomalyDetector.load(generic_spatial_model_path)
         generic_spatial_result = generic_spatial_detector.predict_record(record)
     if generic_wearable_model_path.exists():
-        generic_wearable_detector = EdgeAnomalyDetector.load(generic_wearable_model_path)
-        generic_wearable_result = generic_wearable_detector.predict_record(record)
+        from edge_ai.wearable_quality import has_wearable_core_signal
+
+        if has_wearable_core_signal(record):
+            generic_wearable_detector = EdgeAnomalyDetector.load(generic_wearable_model_path)
+            generic_wearable_result = generic_wearable_detector.predict_record(record)
     if personal_model_path.exists():
         personal_detector = EdgeAnomalyDetector.load(personal_model_path)
         personal_result = personal_detector.predict_record(record)
@@ -374,6 +481,15 @@ def _run_baseline_safety_gate(
 
     model_results: dict[str, dict[str, Any]] = {}
     for name, path in existing_model_paths.items():
+        if name == "generic_wearable":
+            from edge_ai.wearable_quality import has_wearable_core_signal
+
+            if not has_wearable_core_signal(row):
+                model_results[name] = {
+                    "score": None,
+                    "model_label": "skipped_insufficient_wearable_data",
+                }
+                continue
         detector = EdgeAnomalyDetector.load(path)
         result = detector.predict_record(row)
         model_results[name] = {
@@ -381,11 +497,26 @@ def _run_baseline_safety_gate(
             "model_label": result.model_label,
         }
 
-    max_score = max(item["score"] for item in model_results.values())
+    scored_items = [
+        item for item in model_results.values() if item.get("score") is not None
+    ]
+    if not scored_items:
+        payload.update(
+            {
+                "model_results": model_results,
+                "blocked": False,
+                "blocking_models": [],
+                "reason": "generic_models_skipped_insufficient_data",
+            }
+        )
+        return payload
+
+    max_score = max(float(item["score"]) for item in scored_items)
     blocking_models = [
         name
         for name, item in model_results.items()
-        if item["score"] >= float(config.ai.baseline_gate_block_score)
+        if item.get("score") is not None
+        and float(item["score"]) >= float(config.ai.baseline_gate_block_score)
     ]
     payload.update(
         {
