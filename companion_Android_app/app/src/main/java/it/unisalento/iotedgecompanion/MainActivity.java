@@ -6,8 +6,11 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.View;
@@ -32,6 +35,8 @@ public class MainActivity extends Activity {
     private EditText receiverUrlInput;
     private EditText phoneIdInput;
     private EditText beaconMapInput;
+    private LinearLayout gatewayConfigPanel;
+    private TextView gatewaySummaryText;
     private LinearLayout beaconConfigPanel;
     private TextView beaconSummaryText;
     private TextView statusText;
@@ -49,11 +54,15 @@ public class MainActivity extends Activity {
         receiverUrlInput = findViewById(R.id.receiverUrlInput);
         phoneIdInput = findViewById(R.id.phoneIdInput);
         beaconMapInput = findViewById(R.id.beaconMapInput);
+        gatewayConfigPanel = findViewById(R.id.gatewayConfigPanel);
+        gatewaySummaryText = findViewById(R.id.gatewaySummaryText);
         beaconConfigPanel = findViewById(R.id.beaconConfigPanel);
         beaconSummaryText = findViewById(R.id.beaconSummaryText);
         statusText = findViewById(R.id.statusText);
 
         Button saveConfigButton = findViewById(R.id.saveConfigButton);
+        Button unlockGatewayConfigButton = findViewById(R.id.unlockGatewayConfigButton);
+        Button lockGatewayConfigButton = findViewById(R.id.lockGatewayConfigButton);
         Button unlockBeaconConfigButton = findViewById(R.id.unlockBeaconConfigButton);
         Button saveBeaconMapButton = findViewById(R.id.saveBeaconMapButton);
         Button lockBeaconConfigButton = findViewById(R.id.lockBeaconConfigButton);
@@ -63,11 +72,29 @@ public class MainActivity extends Activity {
         loadConfig();
 
         saveConfigButton.setOnClickListener(view -> saveConfig());
-        unlockBeaconConfigButton.setOnClickListener(view -> showAdminLoginDialog());
+        unlockGatewayConfigButton.setOnClickListener(view -> showAdminLoginDialog(
+                "Accesso gateway",
+                "Sblocca",
+                this::unlockGatewayConfigEditor
+        ));
+        lockGatewayConfigButton.setOnClickListener(view -> lockGatewayConfigEditor());
+        unlockBeaconConfigButton.setOnClickListener(view -> showAdminLoginDialog(
+                "Accesso mappa beacon",
+                "Sblocca",
+                this::unlockBeaconMapEditor
+        ));
         saveBeaconMapButton.setOnClickListener(view -> saveBeaconMap());
         lockBeaconConfigButton.setOnClickListener(view -> lockBeaconMapEditor());
         startScanButton.setOnClickListener(view -> startMonitoringService());
-        stopScanButton.setOnClickListener(view -> stopMonitoringService());
+        stopScanButton.setOnClickListener(view -> showAdminLoginDialog(
+                "Ferma monitoraggio",
+                "Ferma",
+                this::stopMonitoringService
+        ));
+
+        startMonitoringService();
+        requestBatteryOptimizationExemptionIfNeeded();
+        requestBackgroundLocationSettingsIfNeeded();
     }
 
     @Override
@@ -95,7 +122,9 @@ public class MainActivity extends Activity {
             preferences.edit().putString("beaconMap", DEFAULT_BEACON_MAP).apply();
         }
         beaconMapInput.setText(savedBeaconMap);
+        renderGatewaySummary();
         renderBeaconSummary();
+        lockGatewayConfigEditor();
         lockBeaconMapEditor();
     }
 
@@ -124,7 +153,10 @@ public class MainActivity extends Activity {
                 .putString("receiverUrl", receiverUrlInput.getText().toString().trim())
                 .putString("phoneId", phoneIdInput.getText().toString().trim())
                 .apply();
-        setStatus("Gateway salvato");
+        renderGatewaySummary();
+        lockGatewayConfigEditor();
+        setStatus("Gateway salvato e monitoraggio aggiornato");
+        startMonitoringService();
     }
 
     private void saveBeaconMap() {
@@ -140,11 +172,12 @@ public class MainActivity extends Activity {
         renderBeaconSummary();
         lockBeaconMapEditor();
         setStatus("Mappa beacon salvata");
+        startMonitoringService();
     }
 
-    private void showAdminLoginDialog() {
+    private void showAdminLoginDialog(String title, String positiveLabel, AdminAction action) {
         /*
-         * Mostra una finestra di login prima di permettere la modifica dei beacon.
+         * Mostra una finestra di login prima di eseguire un'azione protetta.
          * Per ora le credenziali sono fisse admin/admin, come richiesto per il
          * prototipo. In futuro potranno essere sostituite da credenziali reali.
          */
@@ -166,19 +199,37 @@ public class MainActivity extends Activity {
         container.addView(passwordInput);
 
         new AlertDialog.Builder(this)
-                .setTitle("Accesso amministratore")
+                .setTitle(title)
                 .setView(container)
                 .setNegativeButton("Annulla", null)
-                .setPositiveButton("Sblocca", (dialog, which) -> {
+                .setPositiveButton(positiveLabel, (dialog, which) -> {
                     String username = usernameInput.getText().toString().trim();
                     String password = passwordInput.getText().toString().trim();
                     if (ADMIN_USERNAME.equals(username) && ADMIN_PASSWORD.equals(password)) {
-                        unlockBeaconMapEditor();
+                        action.run();
                     } else {
                         setStatus("Credenziali non valide");
                     }
                 })
                 .show();
+    }
+
+    private void unlockGatewayConfigEditor() {
+        /*
+         * Mostra i campi tecnici del gateway solo dopo autenticazione admin.
+         * Nell'uso normale l'utente vede il riepilogo, non i campi modificabili.
+         */
+        gatewayConfigPanel.setVisibility(View.VISIBLE);
+        setStatus("Modifica gateway sbloccata");
+    }
+
+    private void lockGatewayConfigEditor() {
+        /*
+         * Nasconde i campi tecnici del gateway.
+         * Questo rende la schermata piu' pulita e impedisce modifiche casuali
+         * all'URL del receiver o all'identificativo del telefono.
+         */
+        gatewayConfigPanel.setVisibility(View.GONE);
     }
 
     private void unlockBeaconMapEditor() {
@@ -222,6 +273,21 @@ public class MainActivity extends Activity {
                     .append("\n");
         }
         beaconSummaryText.setText(summary.length() == 0 ? "Mappa beacon non configurata" : summary.toString().trim());
+    }
+
+    private void renderGatewaySummary() {
+        /*
+         * Mostra la configurazione gateway in forma compatta e leggibile.
+         * I valori completi restano modificabili nel pannello admin.
+         */
+        String receiverUrl = receiverUrlInput.getText().toString().trim();
+        String phoneId = phoneIdInput.getText().toString().trim();
+        StringBuilder summary = new StringBuilder();
+        summary.append("Receiver\n")
+                .append(TextUtils.isEmpty(receiverUrl) ? "Non configurato" : receiverUrl)
+                .append("\n\nDispositivo\n")
+                .append(TextUtils.isEmpty(phoneId) ? "android-phone" : phoneId);
+        gatewaySummaryText.setText(summary.toString());
     }
 
     private String prettyRoomName(String room) {
@@ -268,7 +334,6 @@ public class MainActivity extends Activity {
          * Prima controlla i permessi Android necessari; se mancano, li richiede
          * e riparte automaticamente dopo la concessione.
          */
-        saveConfig();
         if (!hasRequiredPermissions()) {
             startServiceAfterPermissionGrant = true;
             requestRequiredPermissions();
@@ -281,7 +346,7 @@ public class MainActivity extends Activity {
         } else {
             startService(intent);
         }
-        setStatus("Monitoraggio BLE avviato in background");
+        setStatus("Monitoraggio IoT avviato in background");
     }
 
     private void stopMonitoringService() {
@@ -291,7 +356,7 @@ public class MainActivity extends Activity {
          * mostrato nell'interfaccia utente.
          */
         stopService(new Intent(this, BleMonitoringService.class));
-        setStatus("Monitoraggio BLE fermato");
+        setStatus("Monitoraggio IoT fermato");
     }
 
     private boolean hasRequiredPermissions() {
@@ -335,6 +400,67 @@ public class MainActivity extends Activity {
         requestPermissions(permissions.toArray(new String[0]), REQUEST_PERMISSIONS);
     }
 
+    private void requestBatteryOptimizationExemptionIfNeeded() {
+        /*
+         * Chiede ad Android di non limitare l'app in standby.
+         * Su molti telefoni il Foreground Service resta visibile, ma la scansione
+         * BLE viene comunque ridotta dal risparmio energetico dopo schermo spento.
+         */
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return;
+        }
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (powerManager == null || powerManager.isIgnoringBatteryOptimizations(getPackageName())) {
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Monitoraggio in background")
+                .setMessage(
+                        "Per continuare a rilevare i beacon anche a schermo spento, " +
+                        "consenti a IoT Edge Companion di non essere ottimizzata dalla batteria."
+                )
+                .setNegativeButton("Dopo", null)
+                .setPositiveButton("Consenti", (dialog, which) -> {
+                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                    intent.setData(Uri.parse("package:" + getPackageName()));
+                    startActivity(intent);
+                })
+                .show();
+    }
+
+    private void requestBackgroundLocationSettingsIfNeeded() {
+        /*
+         * Su Android 10/11 la scansione BLE a schermo spento puo' richiedere
+         * anche la posizione in background. Android non sempre consente di
+         * chiederla con un popup diretto, quindi accompagniamo l'utente nella
+         * schermata impostazioni dell'app.
+         */
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Posizione in background")
+                .setMessage(
+                        "Per rilevare i beacon anche quando lo schermo e' spento, " +
+                        "imposta la posizione su 'Consenti sempre' nelle autorizzazioni dell'app."
+                )
+                .setNegativeButton("Dopo", null)
+                .setPositiveButton("Apri impostazioni", (dialog, which) -> {
+                    Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                    intent.setData(Uri.parse("package:" + getPackageName()));
+                    startActivity(intent);
+                })
+                .show();
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         /*
@@ -365,5 +491,14 @@ public class MainActivity extends Activity {
          * futuro il modo in cui comunichiamo errori o successi all'utente.
          */
         statusText.setText(message);
+    }
+
+    private interface AdminAction {
+        /*
+         * Piccola interfaccia usata per riutilizzare lo stesso dialog admin.
+         * Permette di proteggere configurazione gateway, mappa beacon e stop
+         * del monitoraggio senza duplicare codice di login.
+         */
+        void run();
     }
 }

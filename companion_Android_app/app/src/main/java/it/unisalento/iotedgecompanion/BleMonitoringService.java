@@ -11,7 +11,9 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -21,6 +23,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.text.TextUtils;
 
 import org.json.JSONObject;
@@ -29,8 +32,10 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -39,14 +44,16 @@ import java.util.concurrent.Executors;
 public class BleMonitoringService extends Service {
     private static final String CHANNEL_ID = "iot_edge_ble_monitoring";
     private static final int NOTIFICATION_ID = 2001;
-    private static final long SCAN_DURATION_MS = 5000L;
-    private static final long PAUSE_BETWEEN_SCANS_MS = 10000L;
+    private static final long REPORT_INTERVAL_MS = 15000L;
+    private static final long RESTART_SCAN_DELAY_MS = 3000L;
+    private static final long OBSERVATION_TTL_MS = 45000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
     private final Map<String, BeaconObservation> observations = new HashMap<>();
 
     private BluetoothLeScanner bleScanner;
+    private PowerManager.WakeLock wakeLock;
     private boolean running = false;
     private boolean scanning = false;
 
@@ -60,6 +67,29 @@ public class BleMonitoringService extends Service {
              */
             handleScanResult(result);
         }
+
+        @Override
+        public void onBatchScanResults(List<ScanResult> results) {
+            /*
+             * Alcuni dispositivi Android consegnano risultati BLE a gruppi
+             * quando l'app e' in background. Gestire anche i batch evita di
+             * perdere beacon durante standby o schermo spento.
+             */
+            for (ScanResult result : results) {
+                handleScanResult(result);
+            }
+        }
+
+        @Override
+        public void onScanFailed(int errorCode) {
+            /*
+             * Se Android rifiuta o interrompe la scansione, il servizio non si
+             * ferma: aggiorna la notifica e riprova dopo una breve pausa.
+             */
+            scanning = false;
+            startAsForeground("Errore scansione BLE: " + errorCode);
+            scheduleScanRestart(RESTART_SCAN_DELAY_MS);
+        }
     };
 
     @Override
@@ -72,6 +102,7 @@ public class BleMonitoringService extends Service {
          */
         super.onCreate();
         createNotificationChannel();
+        acquireWakeLock();
         startAsForeground("Monitoraggio indoor in corso");
     }
 
@@ -85,7 +116,8 @@ public class BleMonitoringService extends Service {
         startAsForeground("Monitoraggio indoor in corso");
         if (!running) {
             running = true;
-            scheduleNextScan(0L);
+            startContinuousScan();
+            scheduleNextReport(0L);
         }
         return START_STICKY;
     }
@@ -101,6 +133,7 @@ public class BleMonitoringService extends Service {
         stopCurrentScan();
         handler.removeCallbacksAndMessages(null);
         networkExecutor.shutdownNow();
+        releaseWakeLock();
         super.onDestroy();
     }
 
@@ -115,18 +148,22 @@ public class BleMonitoringService extends Service {
     }
 
     @SuppressLint("MissingPermission")
-    private void startScanCycle() {
+    private void startContinuousScan() {
         /*
-         * Avvia una singola finestra di scansione BLE.
+         * Avvia una scansione BLE continua.
          * Prima verifica permessi, Bluetooth e disponibilita dello scanner; poi
-         * pulisce le osservazioni precedenti e ascolta beacon per alcuni secondi.
+         * ascolta beacon iBeacon senza fermare e riavviare continuamente lo
+         * scanner, comportamento piu' stabile quando lo schermo e' spento.
          */
         if (!running) {
             return;
         }
+        if (scanning) {
+            return;
+        }
         if (!hasRequiredPermissions()) {
             startAsForeground("Permessi BLE mancanti");
-            scheduleNextScan(PAUSE_BETWEEN_SCANS_MS);
+            scheduleScanRestart(RESTART_SCAN_DELAY_MS);
             return;
         }
 
@@ -134,30 +171,60 @@ public class BleMonitoringService extends Service {
         BluetoothAdapter adapter = manager != null ? manager.getAdapter() : null;
         if (adapter == null || !adapter.isEnabled()) {
             startAsForeground("Bluetooth non attivo");
-            scheduleNextScan(PAUSE_BETWEEN_SCANS_MS);
+            scheduleScanRestart(RESTART_SCAN_DELAY_MS);
             return;
         }
 
         bleScanner = adapter.getBluetoothLeScanner();
         if (bleScanner == null) {
             startAsForeground("Scanner BLE non disponibile");
-            scheduleNextScan(PAUSE_BETWEEN_SCANS_MS);
+            scheduleScanRestart(RESTART_SCAN_DELAY_MS);
             return;
         }
 
-        observations.clear();
-        scanning = true;
-        bleScanner.startScan(scanCallback);
-        handler.postDelayed(this::finishScanCycle, SCAN_DURATION_MS);
+        try {
+            scanning = true;
+            bleScanner.startScan(buildScanFilters(), buildScanSettings(), scanCallback);
+            startAsForeground("Scansione beacon attiva");
+        } catch (RuntimeException exception) {
+            scanning = false;
+            startAsForeground("Scansione BLE non avviata");
+            scheduleScanRestart(RESTART_SCAN_DELAY_MS);
+        }
     }
 
-    private void finishScanCycle() {
+    private ScanSettings buildScanSettings() {
         /*
-         * Conclude la finestra di scansione e decide cosa inviare.
+         * Usa una scansione piu' aggressiva per il prototipo reale.
+         * In standby Android tende a limitare il BLE: LOW_LATENCY riduce i buchi
+         * di rilevamento, mentre il Foreground Service e il wakelock mantengono
+         * il ciclo abbastanza stabile per i test indoor.
+         */
+        ScanSettings.Builder builder = new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .setReportDelay(0L);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            builder
+                    .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+                    .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
+                    .setNumOfMatches(ScanSettings.MATCH_NUM_MAX_ADVERTISEMENT);
+        }
+        return builder.build();
+    }
+
+    private void reportStrongestObservation() {
+        /*
+         * Decide periodicamente cosa inviare mentre la scansione resta attiva.
          * Tra tutti i beacon mappati rilevati sceglie quello con RSSI piu' forte,
          * assumendo che rappresenti la stanza piu' vicina al telefono.
          */
-        stopCurrentScan();
+        if (!running) {
+            return;
+        }
+        if (!scanning) {
+            startContinuousScan();
+        }
+        removeStaleObservations();
         BeaconObservation strongest = strongestObservation();
         if (strongest != null) {
             sendBleSample(strongest);
@@ -165,8 +232,7 @@ public class BleMonitoringService extends Service {
         } else {
             startAsForeground("Nessun beacon mappato rilevato");
         }
-        observations.clear();
-        scheduleNextScan(PAUSE_BETWEEN_SCANS_MS);
+        scheduleNextReport(REPORT_INTERVAL_MS);
     }
 
     @SuppressLint("MissingPermission")
@@ -202,7 +268,25 @@ public class BleMonitoringService extends Service {
         }
 
         String beaconId = TextUtils.isEmpty(iBeaconId) ? address : iBeaconId;
-        observations.put(beaconId, new BeaconObservation(beaconId, name, room, rssi));
+        observations.put(beaconId, new BeaconObservation(beaconId, name, room, rssi, System.currentTimeMillis()));
+    }
+
+    private List<ScanFilter> buildScanFilters() {
+        /*
+         * Usa un filtro iBeacon esplicito. Android applica forti limitazioni
+         * alle scansioni in background senza filtro; dichiarare il manufacturer
+         * Apple iBeacon aiuta il sistema a continuare a consegnare risultati
+         * anche quando l'app non e' in primo piano.
+         */
+        List<ScanFilter> filters = new ArrayList<>();
+        byte[] manufacturerData = new byte[]{0x02, 0x15};
+        byte[] manufacturerMask = new byte[]{(byte) 0xFF, (byte) 0xFF};
+        filters.add(
+                new ScanFilter.Builder()
+                        .setManufacturerData(0x004C, manufacturerData, manufacturerMask)
+                        .build()
+        );
+        return filters;
     }
 
     private void sendBleSample(BeaconObservation observation) {
@@ -361,13 +445,71 @@ public class BleMonitoringService extends Service {
         return strongest;
     }
 
-    private void scheduleNextScan(long delayMs) {
+    private void scheduleScanRestart(long delayMs) {
         /*
-         * Pianifica il prossimo ciclo di scansione.
-         * Alternare scansione e pausa riduce consumo batteria e mantiene il
-         * monitoraggio sufficientemente continuo per il progetto.
+         * Pianifica un riavvio della scansione in caso di errore o permessi
+         * temporaneamente mancanti.
          */
-        handler.postDelayed(this::startScanCycle, delayMs);
+        handler.postDelayed(this::startContinuousScan, delayMs);
+    }
+
+    private void scheduleNextReport(long delayMs) {
+        /*
+         * Pianifica il prossimo invio della stanza piu' probabile.
+         * La scansione BLE resta attiva in parallelo e aggiorna continuamente
+         * le osservazioni dei beacon.
+         */
+        handler.postDelayed(this::reportStrongestObservation, delayMs);
+    }
+
+    private void removeStaleObservations() {
+        /*
+         * Elimina beacon non visti di recente.
+         * Se Android sospende temporaneamente i callback, non vogliamo inviare
+         * per minuti una stanza vecchia come se fosse ancora attuale.
+         */
+        long now = System.currentTimeMillis();
+        List<String> staleKeys = new ArrayList<>();
+        for (Map.Entry<String, BeaconObservation> entry : observations.entrySet()) {
+            if (now - entry.getValue().observedAtMs > OBSERVATION_TTL_MS) {
+                staleKeys.add(entry.getKey());
+            }
+        }
+        for (String key : staleKeys) {
+            observations.remove(key);
+        }
+    }
+
+    private void acquireWakeLock() {
+        /*
+         * Mantiene attiva la CPU mentre il servizio e' in foreground.
+         * Non tiene acceso lo schermo, ma riduce il rischio che Android sospenda
+         * timer e callback BLE appena il telefono va in standby.
+         */
+        if (wakeLock != null && wakeLock.isHeld()) {
+            return;
+        }
+        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (powerManager == null) {
+            return;
+        }
+        wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "IoTEdgeCompanion:BleMonitoring"
+        );
+        wakeLock.setReferenceCounted(false);
+        wakeLock.acquire();
+    }
+
+    private void releaseWakeLock() {
+        /*
+         * Rilascia il wakelock quando il monitoraggio viene fermato dall'admin o
+         * quando Android distrugge il servizio.
+         */
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
+        wakeLock = null;
     }
 
     private boolean hasRequiredPermissions() {
@@ -460,8 +602,9 @@ public class BleMonitoringService extends Service {
         final String name;
         final String room;
         final int rssi;
+        final long observedAtMs;
 
-        BeaconObservation(String address, String name, String room, int rssi) {
+        BeaconObservation(String address, String name, String room, int rssi, long observedAtMs) {
             /*
              * Rappresenta una singola osservazione di beacon durante una scansione.
              * La classe conserva solo i dati necessari per scegliere il segnale
@@ -471,6 +614,7 @@ public class BleMonitoringService extends Service {
             this.name = name == null ? "" : name;
             this.room = room;
             this.rssi = rssi;
+            this.observedAtMs = observedAtMs;
         }
     }
 }

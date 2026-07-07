@@ -30,16 +30,17 @@ L'app Android deve:
 
 ## Modalita disponibili
 
-### Configurazione protetta beacon
+### Configurazione protetta
 
-La configurazione base del gateway resta libera:
+La configurazione modificabile e' protetta da login amministratore.
+
+I campi protetti sono:
 
 ```text
 Receiver URL
 Phone ID
+Mappa beacon
 ```
-
-La mappa dei beacon invece e' protetta da login amministratore.
 
 Credenziali provvisorie:
 
@@ -48,13 +49,16 @@ username: admin
 password: admin
 ```
 
-Per modificare la mappa:
+Per modificare gateway o mappa beacon:
 
-1. premere `Sblocca modifica`;
+1. premere `Modifica gateway` oppure `Sblocca modifica`;
 2. inserire `admin` / `admin`;
-3. modificare la mappa beacon;
-4. premere `Salva mappa beacon`;
+3. modificare i campi necessari;
+4. premere `Salva gateway` oppure `Salva mappa beacon`;
 5. la sezione torna bloccata automaticamente.
+
+Nella schermata normale l'app non mostra i campi come testo modificabile: mostra
+riepiloghi leggibili e compatti, mentre i dettagli tecnici restano nel pannello admin.
 
 La mappa attuale dei 3 BlueBeacon 01 e':
 
@@ -95,11 +99,11 @@ L'app scansiona i beacon, sceglie quello con RSSI piu' alto e invia la stanza al
 La scansione reale non resta dentro la schermata principale: viene avviata come
 Foreground Service Android. In pratica:
 
-1. si salva la configurazione;
-2. si preme `Avvia monitoraggio BLE`;
-3. Android mostra una notifica persistente `IoT Edge Companion attivo`;
-4. il servizio continua a fare cicli di scansione anche con app in background;
-5. per fermarlo si preme `Ferma monitoraggio BLE`.
+1. quando l'app viene aperta prova ad avviare automaticamente il monitoraggio;
+2. Android mostra una notifica persistente `IoT Edge Companion attivo`;
+3. il servizio continua a fare cicli di scansione anche con app in background;
+4. il pulsante `Avvia monitoraggio IoT` permette di riavviarlo manualmente;
+5. il pulsante `Ferma monitoraggio IoT` richiede login `admin` / `admin`.
 
 Questo e' il comportamento corretto per il progetto reale, perche' il telefono deve
 restare vicino/addosso al paziente e inviare campioni senza tenere sempre aperta la
@@ -107,6 +111,32 @@ schermata dell'app.
 
 Nota pratica: su telefono reale potrebbe essere necessario disattivare le ottimizzazioni
 batteria per questa app, altrimenti Android puo' limitarla dopo molto tempo.
+
+La versione attuale prova a risolvere automaticamente il problema:
+
+- quando l'app viene aperta chiede di escludere `IoT Edge Companion` dal risparmio batteria;
+- il Foreground Service usa un wakelock parziale, quindi mantiene attiva la CPU anche a schermo spento;
+- la scansione BLE usa modalita `LOW_LATENCY`;
+- la scansione resta continua e filtrata su iBeacon, evitando cicli stop/start che Android puo' bloccare in background;
+- su Android 10/11 l'app guida anche verso la posizione in background, se necessaria.
+
+Se il telefono continua a smettere di rilevare beacon in standby, controllare manualmente:
+
+```text
+Impostazioni Android
+-> App
+-> IoT Edge Companion
+-> Batteria
+-> Nessuna restrizione / Non ottimizzare
+```
+
+Su alcuni produttori Android puo' servire anche:
+
+```text
+Consenti attivita in background
+Consenti avvio automatico
+Disattiva risparmio energetico per questa app
+```
 
 ## Payload inviato
 
@@ -170,9 +200,9 @@ python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --po
 http://IP_DEL_PC_O_RASPBERRY:8000/ble/sample
 ```
 
-4. Premere `Salva gateway`.
-5. Verificare la mappa beacon, sbloccandola con `admin` / `admin` solo se serve.
-6. Premere `Avvia monitoraggio BLE`.
+4. Se serve, modificare gateway o mappa beacon con `admin` / `admin`.
+5. Verificare che la notifica persistente sia attiva.
+6. Se non e' attiva, premere `Avvia monitoraggio IoT`.
 7. Controllare:
 
 ```text
@@ -258,8 +288,8 @@ app/src/main/java/it/unisalento/iotedgecompanion/BleMonitoringService.java
 Fa cicli periodici:
 
 ```text
-5 secondi di scansione BLE
-10 secondi di pausa
+scansione BLE continua filtrata su iBeacon
+invio periodico ogni 15 secondi
 invio del beacon/stanza con RSSI piu' forte
 ```
 
@@ -268,4 +298,5 @@ I permessi Android usati sono:
 - Bluetooth scan/connect;
 - localizzazione, necessaria per la scansione BLE;
 - notifiche, necessarie per mostrare la notifica persistente;
-- foreground service, necessario per lavorare in background.
+- foreground service, necessario per lavorare in background;
+- wakelock, necessario per ridurre blocchi in standby.

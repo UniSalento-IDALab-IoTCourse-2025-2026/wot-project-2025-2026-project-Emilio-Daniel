@@ -115,13 +115,13 @@ ipconfig
 Cercare l'IPv4 della rete Wi-Fi o Ethernet, ad esempio:
 
 ```text
-192.168.1.50
+192.168.5.227
 ```
 
 Nell'app Android il receiver URL deve essere:
 
 ```text
-http://192.168.1.50:8000/ble/sample
+http://192.168.5.227:8000/ble/sample
 ```
 
 Se si usa emulatore Android Studio:
@@ -367,6 +367,29 @@ Controllare:
 - beacon accesi;
 - telefono vicino al beacon;
 - app non ottimizzata/bloccata dal risparmio batteria.
+```
+
+Se i beacon spariscono solo quando lo schermo va in standby:
+
+```text
+1. Installare l'APK aggiornato.
+2. Accettare la richiesta "non ottimizzare batteria" mostrata dall'app.
+3. Aprire Impostazioni Android -> App -> IoT Edge Companion -> Batteria.
+4. Impostare "Nessuna restrizione" o "Non ottimizzare".
+5. Verificare che la notifica "IoT Edge Companion attivo" resti visibile.
+6. Su Android 10/11 impostare la posizione su "Consenti sempre", se disponibile.
+7. Su telefoni Xiaomi/Oppo/Realme/Huawei/Samsung controllare anche "avvio automatico"
+   e "attivita in background".
+```
+
+La versione aggiornata dell'app usa anche:
+
+```text
+- scansione BLE continua, non piu' cicli stop/start;
+- filtro iBeacon esplicito, piu' stabile in background;
+- wakelock parziale;
+- richiesta posizione in background su Android 10/11;
+- richiesta esclusione da ottimizzazione batteria.
 ```
 
 ### L'app vede beacon ma non invia
