@@ -193,8 +193,10 @@ class EdgeAnomalyDetector:
         source = Path(path)
         with source.open("rb") as handle:
             payload = pickle.load(handle)
+        pipeline = payload["pipeline"]
+        _patch_loaded_pipeline_compatibility(pipeline)
         return cls(
-            pipeline=payload["pipeline"],
+            pipeline=pipeline,
             metadata=payload["metadata"],
         )
 
@@ -210,3 +212,25 @@ class EdgeAnomalyDetector:
             return 0.0
         score = (self.metadata.normal_anchor - decision_value) / span * 100.0
         return float(np.clip(score, 0.0, 100.0))
+
+
+def _patch_loaded_pipeline_compatibility(pipeline: Pipeline) -> None:
+    """Ripara piccoli mismatch di compatibilita nei modelli pickle.
+
+    Gli artefatti `.pkl` di scikit-learn non sono completamente stabili tra
+    versioni diverse. In particolare, modelli salvati con una versione precedente
+    possono caricare un `SimpleImputer` senza attributi interni introdotti dopo.
+    Questo fix mantiene il ciclo edge robusto, ma la soluzione migliore resta
+    rigenerare i modelli con la stessa versione installata sul Raspberry.
+    """
+    try:
+        imputer = pipeline.named_steps.get("imputer")
+    except AttributeError:
+        return
+    if imputer is None:
+        return
+    if hasattr(imputer, "_fill_dtype"):
+        return
+    fit_dtype = getattr(imputer, "_fit_dtype", None)
+    if fit_dtype is not None:
+        setattr(imputer, "_fill_dtype", fit_dtype)
