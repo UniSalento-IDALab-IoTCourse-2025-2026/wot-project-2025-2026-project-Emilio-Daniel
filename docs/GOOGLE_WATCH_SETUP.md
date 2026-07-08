@@ -397,7 +397,105 @@ Per vedere rapidamente il CSV:
 Import-Csv data\processed\latest_window.csv | ConvertTo-Json -Depth 4
 ```
 
-## 10. Warning visti durante i test
+Per lasciarlo acceso come il receiver BLE, usare la modalita loop:
+
+```powershell
+python -m edge_runtime.cli --config config\edge.yml --loop
+```
+
+Di default il loop esegue un ciclo ogni 240 secondi, cioe' ogni 4 minuti. Ogni ciclo:
+
+```text
+legge i dati BLE gia' ricevuti
+-> interroga Google Health
+-> aggiorna data/processed/latest_window.csv
+-> controlla la qualita dati
+-> esegue i modelli AI disponibili
+-> aggiorna outputs/patient-001-decision.json
+```
+
+Per cambiare intervallo durante i test:
+
+```powershell
+python -m edge_runtime.cli --config config\edge.yml --loop --interval-seconds 120
+```
+
+Questa modalita e' stata aggiunta per avere lo stesso comportamento pratico del
+receiver: avvii un processo, lo lasci aperto, e lui produce una nuova finestra ogni 4
+minuti senza dover rilanciare il comando a mano.
+
+## 10. Perche' usiamo delay e lookback
+
+Il BLE e Google Health non arrivano nello stesso modo:
+
+```text
+BLE receiver
+  -> dati locali quasi immediati
+
+Google Health
+  -> dati cloud sincronizzati dal telefono/watch
+  -> possibili minuti di ritardo
+```
+
+Per questo abbiamo spostato il ritardo dentro `google_health`:
+
+```yaml
+google_health:
+  data_delay_minutes: 12
+  heart_rate_lookback_minutes: 30
+```
+
+Motivazione:
+
+- `data_delay_minutes` evita di chiedere al cloud una finestra troppo recente, dove il
+  battito potrebbe non essere ancora sincronizzato;
+- il ritardo vale solo per Google Health, quindi il BLE resta sulla finestra corrente;
+- `heart_rate_lookback_minutes` prova a recuperare battiti recenti se la finestra esatta
+  da 4 minuti e' vuota;
+- il CSV continua a rappresentare la finestra comune corrente, cosi' il modello e il
+  frontend hanno un riferimento temporale unico.
+
+Quando Google Health e' attivo e il battito e' valido, ma `steps` non arriva, trattiamo
+`steps` come `0.0`: in quel caso e' piu' utile indicare "nessun passo nella finestra" che
+lasciare `nan`. Se manca `sedentary_minutes`, stimiamo la finestra come sedentaria.
+
+## 11. Orari UTC e locali
+
+Nel CSV e nel JSON manteniamo gli orari UTC:
+
+```json
+"window_start": "2026-07-08T09:52:00+00:00",
+"window_end": "2026-07-08T09:56:00+00:00"
+```
+
+Nel JSON decisione aggiungiamo anche gli orari locali:
+
+```json
+"window_start_local": "2026-07-08T11:52:00+02:00",
+"window_end_local": "2026-07-08T11:56:00+02:00"
+```
+
+Motivazione:
+
+- UTC e' stabile per backend, AI e allineamento sensori;
+- local time e' piu' leggibile per noi e per il frontend;
+- non facciamo un campo unico perche' perderemmo o precisione tecnica o leggibilita.
+
+Il frontend dovra' leggere soprattutto:
+
+```text
+outputs/patient-001-decision.json
+```
+
+Il file:
+
+```text
+data/state/patient-001-debounce.json
+```
+
+e' memoria interna del debounce, non e' il file principale da mostrare in dashboard.
+
+## 12. Warning visti durante i test
 
 Durante i primi test apparivano molti warning `scikit-learn`, ad esempio:
 
@@ -416,7 +514,23 @@ per rendere leggibile l'output. La causa e':
 Piu' avanti conviene rigenerare i modelli con la stessa versione Python/scikit-learn che
 useremo sul Raspberry Pi.
 
-## 11. Comandi principali
+## 13. Comportamento AI aggiunto durante i test
+
+Durante i test reali il modello wearable generico puo' vedere dati plausibili del Watch
+come outlier, perche' e' stato addestrato su dataset pubblici diversi dal paziente reale.
+Per evitare falsi rossi troppo aggressivi abbiamo aggiunto queste protezioni:
+
+- se il wearable non ha segnali core sufficienti, il modello wearable viene saltato;
+- un'anomalia confermata solo da un modello generico viene limitata a livello attenzione;
+- il debounce puo' produrre `yellow` prima di pubblicare un alert forte;
+- la decisione finale mantiene `evidence.fusion`, cosi' si vede quale modello ha generato
+  il sospetto.
+
+Motivazione: prima della baseline personale vogliamo usare i modelli generici come aiuto,
+non come verita assoluta. Il modello personale del paziente servira' a rendere gli alert
+piu' aderenti alla routine reale.
+
+## 14. Comandi principali
 
 Setup dipendenze:
 
@@ -441,6 +555,12 @@ Ciclo runtime:
 
 ```powershell
 python -m edge_runtime.cli --config config\edge.yml
+```
+
+Ciclo automatico ogni 4 minuti:
+
+```powershell
+python -m edge_runtime.cli --config config\edge.yml --loop
 ```
 
 Controllo ultima finestra:

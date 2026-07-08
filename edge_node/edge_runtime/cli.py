@@ -8,6 +8,7 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from edge_ai.debounce import AlertDebouncer, decision_to_json
 from edge_baseline.session import DEFAULT_BASELINE_STATE, update_session_from_cycle
@@ -188,7 +189,7 @@ def run_loop(args: argparse.Namespace) -> None:
             duration_s = (datetime.now() - cycle_started_at).total_seconds()
             _log_info(
                 "Cycle completed "
-                f"window={status.get('window_start')}..{status.get('window_end')} "
+                f"window={status.get('window_start_local')}..{status.get('window_end_local')} "
                 f"quality={status.get('quality_status')} "
                 f"inference={status.get('inference')} "
                 f"decision={status.get('decision_level')} "
@@ -317,6 +318,7 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
             latest_window_csv=config.paths.latest_window_csv,
             state_path=state_path,
             decision_output=decision_output,
+            timezone_name=config.window.timezone,
         )
         inference_status = str(decision_payload.get("inference_status", "completed"))
     elif args.require_model:
@@ -332,6 +334,8 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "config": str(args.config),
         "window_start": row["window_start"],
         "window_end": row["window_end"],
+        "window_start_local": _to_local_iso(row["window_start"], config.window.timezone),
+        "window_end_local": _to_local_iso(row["window_end"], config.window.timezone),
         "latest_window_csv": str(config.paths.latest_window_csv),
         "baseline_appended": baseline_appended,
         "baseline_csv": str(config.paths.baseline_csv) if baseline_appended else None,
@@ -389,6 +393,7 @@ def _run_inference(
     latest_window_csv: Path,
     state_path: Path,
     decision_output: Path,
+    timezone_name: str,
 ) -> dict[str, Any]:
     """Carica i modelli disponibili, fonde i risultati e salva la decisione.
 
@@ -430,6 +435,8 @@ def _run_inference(
     debouncer.save(state_path)
 
     payload = decision_to_json(decision)
+    payload["window_start_local"] = _to_local_iso(payload["window_start"], timezone_name)
+    payload["window_end_local"] = _to_local_iso(payload["window_end"], timezone_name)
     payload["inference_status"] = _inference_status(
         {
             "generic_spatial": generic_spatial_result,
@@ -596,6 +603,20 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
+
+
+def _to_local_iso(value: Any, timezone_name: str) -> str:
+    """Converte un timestamp UTC/ISO nel fuso configurato per output leggibili."""
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value)
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo("UTC"))
+    return parsed.astimezone(ZoneInfo(timezone_name)).isoformat()
 
 
 def _count_quality_issues(payload: dict[str, Any], severity: str) -> int:
