@@ -470,3 +470,69 @@ Il test e' riuscito se:
 
 Se questi punti funzionano, la parte BLE reale del progetto e' pronta per essere
 portata su Raspberry Pi 5.
+
+## 16. Comando unico BLE + Google Health
+
+Quando vogliamo far partire insieme receiver Android BLE e runtime Google Health,
+usiamo il comando breve dalla root del progetto:
+
+```powershell
+.\avviaSistema
+```
+
+Se PowerShell non lo esegue senza estensione:
+
+```powershell
+.\avviaSistema.cmd
+```
+
+Sul Raspberry Pi:
+
+```bash
+chmod +x avviaSistema
+./avviaSistema
+```
+
+Questo comando avvia nello stesso terminale:
+
+```text
+edge_receiver
+  -> riceve i campioni BLE dall'app Android
+  -> scrive data/raw/ble_samples.csv
+
+edge_runtime --loop
+  -> ogni 4 minuti legge Google Health / Pixel Watch 2
+  -> legge i campioni BLE gia' ricevuti
+  -> crea data/processed/latest_window.csv
+  -> crea outputs/patient-001-decision.json
+```
+
+Per fermare tutto:
+
+```text
+CTRL+C
+```
+
+Il file `config/edge.yml` deve avere entrambe le sorgenti abilitate:
+
+```yaml
+google_health:
+  enabled: true
+  data_delay_minutes: 0
+
+ble:
+  enabled: true
+```
+
+Con `google_health.data_delay_minutes: 0`, il runtime non guarda piu' finestre
+passate: ogni 4 minuti aggrega la finestra corrente sia per Google Watch 2 sia per
+BLE. In `latest_window.csv` ci aspettiamo quindi, nello stesso ciclo, campi
+wearable e campi stanza. Se il cloud Google non ha ancora sincronizzato un valore,
+quel singolo campo puo' restare vuoto/`nan`, ma il sistema non ritarda piu'
+l'intera analisi.
+
+Durante la baseline il comando diventa:
+
+```powershell
+.\avviaSistema --append-baseline
+```

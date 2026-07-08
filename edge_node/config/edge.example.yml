@@ -29,8 +29,8 @@ google_health:
   token_file: config/google_health_token.json
   client_file: config/google_health_client.json
   api_base_url: https://health.googleapis.com
-  # Delay solo per Google Health: BLE resta sulla finestra corrente.
-  data_delay_minutes: 12
+  # Nessun ritardo: Watch e BLE vengono aggregati sulla stessa finestra corrente da 4 minuti.
+  data_delay_minutes: 0
   # Se la finestra esatta da 4 minuti non contiene battiti, usa un lookback
   # recente per ridurre buchi dovuti alla sincronizzazione cloud non live.
   heart_rate_lookback_minutes: 30
