@@ -4,6 +4,14 @@ Ogni riga rappresenta una finestra temporale gia' aggregata dal Raspberry Pi, ad
 Il modello non riceve dati grezzi continui: riceve feature compatte prodotte dagli adapter reali
 Fitbit/Google Health, BLE e Shelly/NILM.
 
+`window_start` e `window_end` nel CSV sono in UTC e rappresentano la finestra comune del
+sistema. Il JSON decisione aggiunge anche `window_start_local` e `window_end_local` per
+frontend e lettura umana.
+
+Nota Google Health: il CSV resta sulla finestra corrente, ma l'adapter puo' leggere
+internamente una finestra cloud piu' vecchia tramite `google_health.data_delay_minutes`.
+Questo evita di spostare indietro anche il BLE, che invece arriva quasi in tempo reale.
+
 ## Colonne di contesto
 
 | Colonna | Tipo | Origine |
@@ -40,6 +48,16 @@ Fitbit/Google Health, BLE e Shelly/NILM.
 | nilm_coffee_events | Shelly EM / NILM adapter |
 | nilm_stove_events | Shelly EM / NILM adapter |
 | fall_events | Wear OS/Fitbit availability or manual event adapter |
+
+## Note sulle feature wearable
+
+- `heart_rate_mean` e' la media dei battiti nella finestra.
+- `heart_rate_std` e' la deviazione standard dei battiti nella finestra: misura quanto il
+  battito varia dentro quei minuti.
+- Se Google Health non restituisce il battito nella finestra esatta, l'adapter puo' usare
+  un lookback recente configurato con `heart_rate_lookback_minutes`.
+- Se il battito e' valido ma `steps` non arriva, `steps` viene scritto come `0.0`.
+- Se una sorgente non e' attiva o non ha dati, la relativa colonna puo' restare `nan`.
 
 ## CSV header
 

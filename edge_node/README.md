@@ -7,10 +7,15 @@ locali.
 
 ```text
 edge_ai/        modelli generici/personale, fusione, debounce e CLI train/infer
-edge_auth/      setup OAuth Fitbit, token e refresh per Pixel Watch 2
+edge_auth/      setup OAuth Google Health/Fitbit, token e refresh per Pixel Watch 2
 edge_baseline/  gestione fase baseline: start, status, finalize, train
+<<<<<<< HEAD
 edge_datasets/  convertitori dataset pubblici CASAS/fitbitdata/PAMAP2/WESAD
 edge_ingest/    aggregazione dati Fitbit, BLE e Shelly in finestre da 4 minuti
+=======
+edge_datasets/  convertitori dataset pubblici CASAS/PAMAP2/WESAD
+edge_ingest/    aggregazione dati Google Health/Fitbit, BLE e Shelly in finestre da 4 minuti
+>>>>>>> 4fb8463ce1af090dbe5827ace9cb727510ff9b8f
 edge_receiver/  receiver FastAPI per campioni BLE inviati dall'app Android
 edge_runtime/   ciclo edge: aggregazione, qualita, inferenza e decisione
 edge_stack/     comando unico che avvia receiver BLE e runtime continuo
@@ -35,50 +40,53 @@ Se usi la virtualenv creata nella root del progetto su Windows:
 ..\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-## Fitbit OAuth / Pixel Watch 2
+## Google Health OAuth / Pixel Watch 2
 
 Il Pixel Watch 2 sincronizza i dati biometrici con Fitbit/Google. Il Raspberry li legge
 via API solo dopo autorizzazione OAuth.
 
-I file locali sono:
+Per nuove credenziali usiamo Google Health API. I file locali sono:
 
 ```text
-config/fitbit_client.json
-config/fitbit_token.json
+config/google_health_client.json
+config/google_health_token.json
 ```
 
 Sono ignorati da Git perche' contengono credenziali e token.
 
-Setup iniziale, da dentro `edge_node/`:
-
-```powershell
-python -m edge_auth.cli fitbit setup --client-id CLIENT_ID --client-secret CLIENT_SECRET
-```
-
 Controllo stato:
 
 ```powershell
-python -m edge_auth.cli fitbit status
+python -m edge_auth.cli google-health status
 ```
 
 Refresh manuale, se serve:
 
 ```powershell
-python -m edge_auth.cli fitbit refresh
+python -m edge_auth.cli google-health refresh
 ```
 
 Poi in `config/edge.yml`:
 
 ```yaml
 fitbit:
+  enabled: false
+
+google_health:
   enabled: true
-  token_file: config/fitbit_token.json
-  client_file: config/fitbit_client.json
-  user_id: "-"
-  api_base_url: https://api.fitbit.com
+  token_file: config/google_health_token.json
+  client_file: config/google_health_client.json
+  api_base_url: https://health.googleapis.com
+  data_delay_minutes: 12
+  heart_rate_lookback_minutes: 30
 ```
 
-Durante il ciclo edge il token viene rinfrescato automaticamente quando scade.
+Durante il ciclo edge il token viene rinfrescato automaticamente quando scade. Il delay e
+il lookback sono specifici di Google Health: servono per compensare la sincronizzazione
+cloud del watch senza spostare indietro la finestra BLE.
+
+Fitbit resta supportato come adapter legacy, ma per il Pixel Watch 2 nuovo percorso e'
+Google Health. La procedura completa e' in `docs/GOOGLE_WATCH_SETUP.md`.
 
 ## Receiver Android BLE
 
@@ -260,6 +268,15 @@ Sul Raspberry, quando useremo `config/edge.yml` reale:
 python -m edge_runtime.cli --config config/edge.yml
 ```
 
+Per lasciarlo acceso e far partire automaticamente un ciclo ogni 4 minuti:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml --loop
+```
+
+In modalita loop il terminale mostra log `INFO` compatti e ogni ciclo aggiorna
+`latest_window.csv`, report qualita e decisione AI.
+
 ## Controllo qualita manuale
 
 ```bash
@@ -276,7 +293,7 @@ Il report segnala problemi tecnici come:
 
 - pochi o zero campioni BLE nella finestra;
 - timestamp BLE invalidi o nel futuro;
-- Fitbit abilitato ma senza dati biometrici;
+- wearable cloud abilitato ma senza dati biometrici;
 - wearable non presente;
 - Shelly/NILM abilitato ma senza campioni.
 

@@ -15,52 +15,70 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## Fitbit OAuth / Pixel Watch 2
+## Google Health OAuth / Pixel Watch 2
 
 Prima della baseline, collegare l'account Fitbit/Google usato dal Google Pixel Watch 2.
 Il Raspberry non legge il battito dal Bluetooth del watch: legge le API dopo consenso
 OAuth.
 
-Nel portale sviluppatori Fitbit registrare l'app e impostare questo redirect URI:
+Per nuove credenziali usiamo Google Health API. La procedura completa e' in:
 
 ```text
-http://127.0.0.1:8765/callback
+docs/GOOGLE_WATCH_SETUP.md
 ```
 
-Poi, da dentro `edge_node/`:
+Sul Raspberry devono essere presenti questi file locali:
+
+```text
+config/google_health_client.json
+config/google_health_token.json
+```
+
+Controllare che siano pronti:
 
 ```bash
-python -m edge_auth.cli fitbit setup --client-id CLIENT_ID --client-secret CLIENT_SECRET
+python -m edge_auth.cli google-health status
 ```
 
-Il comando salva:
+Testare il refresh token:
+
+```bash
+python -m edge_auth.cli google-health refresh
+```
+
+In `config/edge.yml` abilitare Google Health:
+
+```yaml
+fitbit:
+  enabled: false
+
+google_health:
+  enabled: true
+  token_file: config/google_health_token.json
+  client_file: config/google_health_client.json
+  api_base_url: https://health.googleapis.com
+  data_delay_minutes: 12
+  heart_rate_lookback_minutes: 30
+```
+
+Motivazione della configurazione:
+
+- Google Health e' il percorso attuale per Pixel Watch 2;
+- Fitbit resta nel progetto come compatibilita legacy, ma e' disabilitato;
+- il delay e il lookback riducono i buchi di battito dovuti alla sincronizzazione cloud;
+- il delay vale solo per Google Health, quindi i dati BLE restano sulla finestra corrente.
+
+Fitbit legacy usa ancora questi file, solo per setup gia' esistenti:
 
 ```text
 config/fitbit_client.json
 config/fitbit_token.json
 ```
 
-Controllare che sia tutto pronto:
+e questi comandi:
 
 ```bash
 python -m edge_auth.cli fitbit status
-```
-
-In `config/edge.yml` abilitare Fitbit:
-
-```yaml
-fitbit:
-  enabled: true
-  token_file: config/fitbit_token.json
-  client_file: config/fitbit_client.json
-  user_id: "-"
-  api_base_url: https://api.fitbit.com
-```
-
-L'access token viene rinfrescato automaticamente dal ciclo edge. Se si vuole forzare un
-test manuale:
-
-```bash
 python -m edge_auth.cli fitbit refresh
 ```
 
@@ -184,6 +202,27 @@ Questo comando:
 Se nessun modello esiste ancora, il ciclo non fallisce: aggrega la finestra e salta
 l'inferenza con stato `skipped_all_models_missing`.
 
+Per i test manuali continui, senza cron/systemd, usare:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml --loop
+```
+
+Il loop resta acceso e ogni 4 minuti esegue lo stesso ciclo completo:
+
+```text
+BLE raw CSV
+-> Google Health API
+-> latest_window.csv
+-> quality report
+-> modelli AI
+-> debounce
+-> outputs/patient-001-decision.json
+```
+
+Questa modalita e' utile su Windows e su Raspberry quando vogliamo vedere nel terminale
+ogni ciclo completato senza schedulatore esterno.
+
 Il ciclo esegue anche controlli qualita sui dati. Se `--append-baseline` e' attivo ma il
 report qualita ha stato `error`, la finestra non viene aggiunta a
 `data/processed/baseline.csv`.
@@ -221,7 +260,7 @@ Controlla problemi tecnici come:
 
 - campioni BLE mancanti o insufficienti;
 - timestamp strani;
-- Fitbit abilitato ma senza dati;
+- wearable cloud abilitato ma senza dati;
 - wearable non presente;
 - Shelly/NILM abilitato ma senza campioni.
 

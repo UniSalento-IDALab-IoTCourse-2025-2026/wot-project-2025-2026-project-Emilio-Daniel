@@ -29,7 +29,7 @@ tutti gli score disponibili e produce una decisione fusa.
 - [Modello AI ibrido](#modello-ai-ibrido)
 - [Step attuale](#step-attuale)
 - [Configurazione](#configurazione)
-- [Fitbit / Pixel Watch 2](#fitbit--pixel-watch-2)
+- [Google Health / Pixel Watch 2](#google-health--pixel-watch-2)
 - [BLE indoor positioning](#ble-indoor-positioning)
   - [Hardware previsto](#hardware-previsto)
   - [Cosa abbiamo fatto con Android](#cosa-abbiamo-fatto-con-android)
@@ -189,9 +189,10 @@ L'app iOS si crea su Mac con Xcode usando i file in `companion_iOS_app/`.
 - Ho rimosso `joblib` e ora salvo/carico i modelli con `pickle` standard in file `.pkl`.
 - Ho creato il nuovo pacchetto `edge_ingest`, cioe' il ponte tra dati reali e modello AI.
 - Ho aggiunto una configurazione YAML di esempio in `edge_node/config/edge.example.yml`.
-- Ho implementato un primo adapter Fitbit Web API, pronto a usare un token OAuth reale.
-- Ho aggiunto `edge_auth`, che prepara OAuth Fitbit per Pixel Watch 2 con setup,
-  salvataggio token e refresh automatico.
+- Ho implementato l'adapter Google Health per Pixel Watch 2 e mantenuto Fitbit come
+  compatibilita legacy.
+- Ho aggiunto `edge_auth`, che gestisce token Google Health/Fitbit, salvataggio locale e
+  refresh automatico.
 - Ho implementato adapter CSV per BLE e Shelly/NILM, cosi' appena il Raspberry raccoglie campioni
   grezzi possiamo aggregarli in feature.
 - Ho predisposto la parte BLE lato aggregazione: il sistema sa leggere campioni stanza/RSSI
@@ -351,67 +352,62 @@ shelly:
 
 Quando avremo credenziali e hardware, abiliteremo anche le altre sorgenti una alla volta.
 
-## Fitbit / Pixel Watch 2
+## Google Health / Pixel Watch 2
 
 Il Google Pixel Watch 2 verra' sincronizzato con l'account Fitbit/Google. Il Raspberry
 non legge i dati biometrici grezzi via Bluetooth: li recupera via API dopo autorizzazione
 OAuth.
 
-Abbiamo preparato la struttura OAuth locale. I file sensibili non vanno committati:
+Per nuove credenziali usiamo Google Health API. Fitbit resta nel progetto come adapter
+legacy, ma il percorso attuale per Pixel Watch 2 e':
 
 ```text
-config/fitbit_token.json
-config/fitbit_client.json
+Pixel Watch 2
+-> telefono/account Google
+-> Google Health API
+-> token OAuth locali
+-> edge_ingest/google_health_adapter.py
+-> latest_window.csv
+-> modelli AI
 ```
 
-`fitbit_token.json` conterra' access token, refresh token, scadenza e user id.
-`fitbit_client.json` conterra' client id/secret e redirect URI dell'app Fitbit.
-
-Prima di tutto, nel portale sviluppatori Fitbit si registra l'app OAuth e si
-imposta come redirect URI:
+I file sensibili non vanno committati:
 
 ```text
-http://127.0.0.1:8765/callback
+config/google_health_token.json
+config/google_health_client.json
 ```
 
-Poi, da dentro `edge_node/`, si avvia il setup:
+La procedura completa di creazione API, OAuth Playground e refresh token e' in:
+
+```text
+docs/GOOGLE_WATCH_SETUP.md
+```
+
+Da dentro `edge_node/`, i comandi principali sono:
 
 ```powershell
-python -m edge_auth.cli fitbit setup --client-id CLIENT_ID --client-secret CLIENT_SECRET
+python -m edge_auth.cli google-health status
+python -m edge_auth.cli google-health refresh
+python -m edge_runtime.cli --config config\edge.yml --loop
 ```
 
-Se la virtualenv non e' attiva:
-
-```powershell
-..\.venv\Scripts\python.exe -m edge_auth.cli fitbit setup --client-id CLIENT_ID --client-secret CLIENT_SECRET
-```
-
-Il comando apre il browser, fa il login/consenso Fitbit e salva i token in locale.
-
-Per controllare lo stato:
-
-```powershell
-python -m edge_auth.cli fitbit status
-```
-
-Per forzare manualmente un refresh:
-
-```powershell
-python -m edge_auth.cli fitbit refresh
-```
-
-Poi si abilita Fitbit nel file YAML:
+Configurazione reale:
 
 ```yaml
 fitbit:
+  enabled: false
+
+google_health:
   enabled: true
-  token_file: config/fitbit_token.json
-  client_file: config/fitbit_client.json
-  user_id: "-"
-  api_base_url: https://api.fitbit.com
+  token_file: config/google_health_token.json
+  client_file: config/google_health_client.json
+  api_base_url: https://health.googleapis.com
+  data_delay_minutes: 12
+  heart_rate_lookback_minutes: 30
 ```
 
-L'adapter attuale legge:
+L'adapter Google Health legge o stima:
 
 - frequenza cardiaca intraday;
 - media e deviazione standard della frequenza cardiaca nella finestra;
@@ -419,16 +415,17 @@ L'adapter attuale legge:
 - HRV giornaliero se disponibile;
 - SpO2 giornaliero se disponibile;
 - sleep summary se disponibile;
+- passi; se il battito e' valido ma i passi non arrivano, usa `steps = 0.0`;
+- minuti sedentari stimati quando possibile;
 - batteria e presenza wearable tramite device status se disponibile.
 
-Il refresh token e' gestito automaticamente: se l'access token e' scaduto, l'adapter
-Fitbit prova ad aggiornarlo prima di interrogare le API. I dati veri arriveranno solo
-quando il Pixel Watch 2 sara' configurato e sincronizzato con l'account.
+Il refresh token e' gestito automaticamente: non serve rifare login a ogni avvio. Il
+refresh manuale serve solo per test/debug.
 
-Nota tecnica: Fitbit Web API resta utile per il progetto, ma Google indica Google Health
-API come evoluzione/nuova generazione della Fitbit Web API. Per ora manteniamo questo
-adapter perche' il progetto e' gia' costruito su endpoint Fitbit; la migrazione potra'
-essere valutata dopo.
+Nota tecnica: Google Health puo' avere alcuni minuti di ritardo rispetto al watch. Per
+questo `data_delay_minutes` e `heart_rate_lookback_minutes` sono configurati dentro
+`google_health`: il BLE resta sulla finestra corrente, mentre solo la chiamata cloud usa
+una finestra interna piu' consolidata.
 
 ## BLE indoor positioning
 
@@ -883,7 +880,7 @@ Beacon BLE nelle stanze
 
 Braccialetto / wearable al polso
   -> produce dati reali del paziente
-  -> nel caso Google Pixel Watch/Fitbit: dati biometrici via API Fitbit
+  -> nel caso Google Pixel Watch 2: dati biometrici via Google Health API
   -> nel caso tag BLE: dati di prossimita/localizzazione da trasformare in campioni BLE
 ```
 
@@ -966,7 +963,7 @@ Il braccialetto sul polso serve a rappresentare il paziente. Nel nostro progetto
 avere due ruoli:
 
 ```text
-Google Pixel Watch / Fitbit
+Google Pixel Watch 2 / Google Health
   -> dati biometrici: frequenza cardiaca, HRV, SpO2, sonno, batteria
 
 Tag BLE / dispositivo indossabile BLE
@@ -1179,6 +1176,12 @@ Dopo il training, il ciclo normale diventa:
 python -m edge_runtime.cli --config config/edge.yml
 ```
 
+Per lasciarlo acceso e farlo lavorare automaticamente ogni 4 minuti:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml --loop
+```
+
 A questo punto il runtime:
 
 ```text
@@ -1199,6 +1202,9 @@ outputs/patient-001-decision.json
 ```
 
 Questo file sara' poi collegabile al backend/dashboard.
+Nel JSON decisione manteniamo sia gli orari UTC (`window_start`, `window_end`) sia gli
+orari locali (`window_start_local`, `window_end_local`). UTC serve per backend, AI e
+allineamento sensori; local time serve al frontend e alla lettura umana.
 
 ### Comandi separati
 
@@ -1426,16 +1432,22 @@ data/processed/baseline.csv
 
 Questi file sono quelli che il modello AI sa leggere.
 
-### 3. Fitbit / Pixel Watch
+### 3. Google Health / Pixel Watch
 
-Abbiamo preparato un adapter per Fitbit Web API e il modulo OAuth locale.
+Abbiamo implementato il percorso attuale per Pixel Watch 2 tramite Google Health API.
 
-Il setup OAuth salva `config/fitbit_client.json` e `config/fitbit_token.json`, gestisce
-access token, refresh token e scadenza. L'adapter Fitbit usa questi file e prova a fare
-refresh automatico quando il token scade.
+Il setup OAuth salva `config/google_health_client.json` e
+`config/google_health_token.json`, gestisce access token, refresh token e scadenza.
+L'adapter Google Health usa questi file e prova a fare refresh automatico quando il token
+scade.
 
-I dati reali arriveranno solo quando il Pixel Watch 2 sara' collegato all'account
-Fitbit/Google e il Raspberry avra' credenziali OAuth vere.
+Il runtime ora puo' leggere battito, HRV, SpO2, sonno, passi, batteria e presenza
+wearable quando Google li espone. Per ridurre buchi dovuti alla sincronizzazione cloud
+abbiamo aggiunto `data_delay_minutes` e `heart_rate_lookback_minutes` sotto
+`google_health`.
+
+Fitbit Web API resta nel codice come compatibilita legacy, ma per nuove credenziali il
+percorso documentato e' Google Health.
 
 ### 4. BLE indoor positioning
 
@@ -1501,9 +1513,20 @@ prima `edge_ingest` e poi `edge_ai`, ora possiamo usare:
 python -m edge_runtime.cli --config config/edge.yml
 ```
 
-Il comando produce `latest_window.csv`, controlla se esiste il modello addestrato e,
-se il modello c'e', salva anche la decisione JSON. Se il modello non c'e' ancora, non
-fallisce: aggiorna solo la finestra dati e registra che l'inferenza e' stata saltata.
+Per test manuali continui, su Windows o Raspberry:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml --loop
+```
+
+Il comando produce `latest_window.csv`, controlla se esistono i modelli addestrati e,
+se almeno un modello c'e', salva anche la decisione JSON. Se i modelli non ci sono
+ancora, non fallisce: aggiorna la finestra dati e registra che l'inferenza e' stata
+saltata.
+
+In modalita loop il runtime ripete il ciclo ogni 4 minuti e stampa log `INFO` compatti,
+simili al receiver BLE. Questo ci permette di provare anche Google Health come raccolta
+periodica, non solo come chiamata singola.
 
 Per il funzionamento reale continuo, pero', usiamo `edge_stack`, che avvia insieme
 il receiver BLE e `edge_runtime --loop`:
@@ -1521,7 +1544,7 @@ baseline. Per esempio segnala errori o warning tecnici come:
 
 - BLE abilitato ma senza campioni;
 - timestamp BLE invalidi o nel futuro;
-- Fitbit abilitato ma senza dati biometrici;
+- wearable cloud abilitato ma senza dati biometrici;
 - wearable dichiarato non presente;
 - Shelly abilitato ma senza campioni.
 
@@ -1615,6 +1638,6 @@ Mancano ancora i collegamenti reali con hardware:
 
 - beacon BLE fisici nelle stanze;
 - Raspberry Pi reale;
-- creazione app OAuth Fitbit reale e consenso account;
+- credenziali Google Health OAuth reali e consenso account;
 - eventuale Shelly o alternativa per consumi;
 - backend/dashboard finale.
