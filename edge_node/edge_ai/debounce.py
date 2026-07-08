@@ -12,10 +12,11 @@ from edge_ai.schema import InferenceResult, TriageDecision
 
 @dataclass
 class DebounceConfig:
-    yellow_score: float = 60.0
-    red_score: float = 85.0
-    yellow_window_hours: float = 48.0
-    yellow_min_records: int = 4
+    yellow_score: float = 35.0
+    orange_score: float = 65.0
+    red_score: float = 80.0
+    debounce_window_hours: float = 48.0
+    orange_min_records: int = 4
     wearable_battery_min_pct: float = 12.0
 
 
@@ -69,10 +70,10 @@ class AlertDebouncer:
     def update(self, result: InferenceResult) -> TriageDecision:
         """Trasforma il risultato del modello in una decisione di triage.
 
-        La funzione distingue tre casi principali: problemi tecnici del
-        wearable, anomalie severe immediate e anomalie moderate ripetute nel
-        tempo. In questo modo il modello non produce una diagnosi, ma un livello
-        operativo utile al personale sanitario.
+        La funzione distingue problemi tecnici, attenzione lieve, anomalia
+        importante confermata e anomalia severa immediata. In questo modo il
+        modello non produce una diagnosi, ma un livello operativo utile al
+        personale sanitario.
         """
         self._append(result)
         self._prune(result.window_end)
@@ -104,26 +105,41 @@ class AlertDebouncer:
                 evidence=self._decision_evidence(result),
             )
 
-        yellow_records = [
-            item for item in self.history
-            if item.get("patient_id") == result.patient_id
-            and float(item.get("anomaly_score", 0.0)) >= self.config.yellow_score
-        ]
-        if len(yellow_records) >= self.config.yellow_min_records:
-            avg_score = sum(
-                float(item.get("anomaly_score", 0.0))
-                for item in yellow_records
-            ) / len(yellow_records)
+        if result.anomaly_score >= self.config.orange_score:
+            orange_records = [
+                item for item in self.history
+                if item.get("patient_id") == result.patient_id
+                and float(item.get("anomaly_score", 0.0)) >= self.config.orange_score
+            ]
+            if len(orange_records) >= self.config.orange_min_records:
+                avg_score = sum(
+                    float(item.get("anomaly_score", 0.0))
+                    for item in orange_records
+                ) / len(orange_records)
+                return TriageDecision(
+                    patient_id=result.patient_id,
+                    window_start=result.window_start,
+                    window_end=result.window_end,
+                    level="orange",
+                    should_publish=True,
+                    anomaly_score=result.anomaly_score,
+                    reasons=[
+                        f"{len(orange_records)} important anomalous records in debounce window",
+                        f"Average important anomalous score {avg_score:.1f}",
+                    ],
+                    model_label=result.model_label,
+                    evidence=self._decision_evidence(result),
+                )
             return TriageDecision(
                 patient_id=result.patient_id,
                 window_start=result.window_start,
                 window_end=result.window_end,
-                level="yellow",
-                should_publish=True,
+                level="orange",
+                should_publish=False,
                 anomaly_score=result.anomaly_score,
                 reasons=[
-                    f"{len(yellow_records)} anomalous records in debounce window",
-                    f"Average anomalous score {avg_score:.1f}",
+                    "Current anomaly score exceeds important threshold",
+                    "Waiting for repeated windows or model confirmation before publishing",
                 ],
                 model_label=result.model_label,
                 evidence=self._decision_evidence(result),
@@ -139,7 +155,7 @@ class AlertDebouncer:
                 anomaly_score=result.anomaly_score,
                 reasons=[
                     "Current anomaly score exceeds attention threshold",
-                    "Waiting for repeated windows or model confirmation before publishing",
+                    "Attention level is visible in dashboard but not published as an alert",
                 ],
                 model_label=result.model_label,
                 evidence=self._decision_evidence(result),
@@ -194,7 +210,7 @@ class AlertDebouncer:
         Questo limita la crescita del file di stato e rende la decisione
         dipendente dal comportamento attuale del paziente.
         """
-        cutoff = now.astimezone(timezone.utc) - timedelta(hours=self.config.yellow_window_hours)
+        cutoff = now.astimezone(timezone.utc) - timedelta(hours=self.config.debounce_window_hours)
         kept = []
         for item in self.history:
             window_end = datetime.fromisoformat(str(item["window_end"]))

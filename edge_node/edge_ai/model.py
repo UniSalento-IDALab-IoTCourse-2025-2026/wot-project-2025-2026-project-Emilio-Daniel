@@ -222,6 +222,7 @@ class EdgeAnomalyDetector:
         decision_value = float(self.pipeline.decision_function(features)[0])
         label = "outlier" if int(self.pipeline.predict(features)[0]) == -1 else "normal"
         anomaly_score = self._decision_to_score(decision_value)
+        feature_explanation = self._explain_record_features(features)
 
         patient_id = str(row.iloc[0].get("patient_id", self.metadata.patient_id))
         return InferenceResult(
@@ -238,6 +239,8 @@ class EdgeAnomalyDetector:
             context={
                 "wearable_present": row.iloc[0].get("wearable_present"),
                 "wearable_battery_pct": row.iloc[0].get("wearable_battery_pct"),
+                "model_scope": self.metadata.model_scope,
+                "feature_explanation": feature_explanation,
             },
         )
 
@@ -287,6 +290,72 @@ class EdgeAnomalyDetector:
             return 0.0
         score = (self.metadata.normal_anchor - decision_value) / span * 100.0
         return float(np.clip(score, 0.0, 100.0))
+
+    def _explain_record_features(self, features: pd.DataFrame) -> dict[str, Any]:
+        """Riassume quali feature sono piu' lontane dal training del modello.
+
+        Isolation Forest non produce una spiegazione clinica diretta. Per avere
+        un'indicazione leggibile, confrontiamo i valori della finestra con la
+        media/deviazione standard imparate dallo scaler in training e mostriamo
+        le feature con z-score assoluto piu' alto.
+        """
+        try:
+            values = features.to_numpy(dtype=float)
+            transformed = values.copy()
+            if "physiology_clip" in self.pipeline.named_steps:
+                transformed = self.pipeline.named_steps["physiology_clip"].transform(
+                    transformed
+                )
+
+            imputer = self.pipeline.named_steps.get("imputer")
+            scaler = self.pipeline.named_steps.get("scaler")
+            if imputer is None or scaler is None:
+                return {"available": False, "reason": "preprocessing_steps_missing"}
+
+            if hasattr(imputer, "feature_names_in_"):
+                transformed_input = pd.DataFrame(
+                    transformed,
+                    columns=self.metadata.feature_columns,
+                )
+            else:
+                transformed_input = transformed
+            imputed = imputer.transform(transformed_input)
+            scaled = scaler.transform(imputed)
+            z_scores = scaled[0]
+            imputed_values = imputed[0]
+            raw_values = values[0]
+        except Exception as exc:
+            return {
+                "available": False,
+                "reason": f"feature_explanation_failed: {type(exc).__name__}",
+            }
+
+        items: list[dict[str, Any]] = []
+        for index, column in enumerate(self.metadata.feature_columns):
+            z_score = float(z_scores[index])
+            if not np.isfinite(z_score):
+                continue
+            raw_value = float(raw_values[index])
+            imputed_value = float(imputed_values[index])
+            used_imputation = not np.isfinite(raw_value)
+            items.append(
+                {
+                    "feature": column,
+                    "value": None if used_imputation else round(raw_value, 4),
+                    "model_value": round(imputed_value, 4),
+                    "z_score": round(z_score, 3),
+                    "abs_z_score": round(abs(z_score), 3),
+                    "direction": "above_training" if z_score > 0 else "below_training",
+                    "imputed": bool(used_imputation),
+                }
+            )
+
+        items.sort(key=lambda item: float(item["abs_z_score"]), reverse=True)
+        return {
+            "available": True,
+            "method": "largest_absolute_z_scores_after_training_preprocessing",
+            "top_features": items[:6],
+        }
 
 
 def _patch_loaded_pipeline_compatibility(pipeline: Pipeline) -> None:

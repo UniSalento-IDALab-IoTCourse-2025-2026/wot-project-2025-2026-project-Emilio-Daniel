@@ -195,12 +195,46 @@ latest_window.csv
 -> modello generico wearable   -> generic_wearable_score
 -> modello personale           -> personal_score
 -> fusion.py                   -> anomaly_score finale
--> debounce.py                 -> livello green/yellow/red/technical
+-> debounce.py                 -> livello green/yellow/orange/red/technical
 ```
 
 Nel JSON finale la sezione `evidence.fusion` conserva i punteggi separati, cosi'
 possiamo capire se l'allarme nasce dalla routine spaziale, dai dati wearable, dalla
 baseline personale o da una concordanza tra piu' modelli.
+
+Scala operativa:
+
+```text
+0-35    green     normale
+35-65   yellow    attenzione lieve, non pubblicata come alert
+65-80   orange    anomalia importante, pubblicata se confermata dal debounce
+80-100  red       anomalia severa, pubblicata subito
+```
+
+`technical` resta separato dai colori clinici e segnala problemi di device o dati.
+
+Per capire quale parte ha causato lo score, leggere la decisione:
+
+```powershell
+Get-Content outputs\patient-001-decision.json
+```
+
+Poi isolare la spiegazione del Watch:
+
+```powershell
+$d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
+$d.evidence.fusion.models.generic_wearable.feature_explanation | ConvertTo-Json -Depth 8
+```
+
+oppure quella dei Beacon/BLE:
+
+```powershell
+$d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
+$d.evidence.fusion.models.generic_spatial.feature_explanation | ConvertTo-Json -Depth 8
+```
+
+`generic_wearable` guarda feature come battito, HRV, SpO2, passi e sedentary minutes.
+`generic_spatial` guarda room changes e minuti nelle stanze.
 
 Durante la baseline i modelli generici vengono usati anche come filtro di sicurezza:
 se uno dei loro score supera `ai.baseline_gate_block_score`, la finestra puo' generare

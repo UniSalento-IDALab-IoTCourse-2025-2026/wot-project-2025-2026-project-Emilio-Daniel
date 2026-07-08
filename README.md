@@ -291,12 +291,43 @@ dati reali ogni 4 minuti
 -> modello generico wearable   -> generic_wearable_score
 -> modello personale           -> personal_score
 -> fusione                     -> anomaly_score finale
--> debounce                    -> green / yellow / red / technical
+-> debounce                    -> green / yellow / orange / red / technical
 ```
 
 Il JSON finale conserva anche `evidence.fusion`, cioe' il riepilogo dei tre modelli.
 In questo modo possiamo capire se una segnalazione nasce dalla parte spaziale, dalla
 parte wearable, dalla routine personale oppure da una concordanza tra piu' modelli.
+
+Scala operativa dello score:
+
+```text
+0-35    green     routine compatibile, nessun alert
+35-65   yellow    attenzione lieve, visibile in dashboard ma non pubblicata
+65-80   orange    anomalia importante, pubblicata solo se confermata dal debounce
+80-100  red       anomalia severa, alert pubblicato subito
+```
+
+`technical` resta separato: indica problemi di sensore, batteria, token o wearable non
+indossato, non un peggioramento clinico.
+
+Per capire da quale sorgente nasce lo score:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT\edge_node
+$d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
+```
+
+Spiegazione orologio / wearable:
+
+```powershell
+$d.evidence.fusion.models.generic_wearable.feature_explanation | ConvertTo-Json -Depth 8
+```
+
+Spiegazione beacon / BLE:
+
+```powershell
+$d.evidence.fusion.models.generic_spatial.feature_explanation | ConvertTo-Json -Depth 8
+```
 
 ## Step attuale
 
@@ -1379,7 +1410,7 @@ python -m edge_runtime.cli --config config/edge.yml
 
 1. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
 2. Configurare la mappa reale dei 3 BlueBeacon nell'app Android.
-3. Creare l'app OAuth Fitbit reale e lanciare `edge_auth` con le credenziali vere.
+3. Creare le credenziali Google Health OAuth reali e salvare il consenso account.
 4. Preparare `edge_node/config/edge.yml` reale per Raspberry Pi 5.
 5. Spostare repository, modelli generici e configurazione sul Raspberry.
 6. Avviare raccolta baseline reale.

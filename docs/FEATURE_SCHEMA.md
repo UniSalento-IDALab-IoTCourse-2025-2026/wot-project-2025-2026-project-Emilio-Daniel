@@ -12,6 +12,10 @@ Nota Google Health: il CSV resta sulla finestra corrente, ma l'adapter puo' legg
 internamente una finestra cloud piu' vecchia tramite `google_health.data_delay_minutes`.
 Questo evita di spostare indietro anche il BLE, che invece arriva quasi in tempo reale.
 
+Il campo `level` non sta nel CSV delle feature, ma nel JSON decisione. La scala e':
+`green` sotto 35, `yellow` da 35, `orange` da 65, `red` da 80. `technical` e' separato
+e indica problemi di raccolta dati o device.
+
 ## Colonne di contesto
 
 | Colonna | Tipo | Origine |
