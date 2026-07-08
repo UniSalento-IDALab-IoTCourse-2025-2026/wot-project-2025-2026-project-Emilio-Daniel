@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -60,6 +60,11 @@ class GoogleHealthAdapter:
             heart_payload,
             ("beatsPerMinuteAvg", "beatsPerMinute"),
         )
+        if not heart_values:
+            heart_values = self._collect_recent_heart_rate_fallback(
+                token,
+                end_time=end_time,
+            )
         if heart_values:
             metrics["heart_rate_mean"] = mean(heart_values)
             metrics["heart_rate_std"] = pstdev(heart_values) if len(heart_values) > 1 else 0.0
@@ -118,6 +123,38 @@ class GoogleHealthAdapter:
             metrics["sedentary_minutes"] = _window_minutes(start_time, end_time)
 
         return metrics
+
+    def _collect_recent_heart_rate_fallback(
+        self,
+        token: str,
+        *,
+        end_time: str,
+    ) -> list[float]:
+        """Cerca battiti recenti se la finestra esatta non contiene HR.
+
+        Google Health non e' streaming live e a volte non restituisce data point
+        nella finestra da 4 minuti, anche se il Watch ha misurato il battito.
+        Per evitare buchi inutili, leggiamo un lookback recente configurabile e
+        usiamo quei valori come proxy della finestra.
+        """
+        lookback_minutes = max(0, int(self.config.heart_rate_lookback_minutes))
+        if lookback_minutes <= 0:
+            return []
+
+        end = _parse_time(end_time)
+        if end is None:
+            return []
+        fallback_start = _format_utc(end - timedelta(minutes=lookback_minutes))
+        fallback_payload = self._try_rollup(
+            token,
+            "heart-rate",
+            fallback_start,
+            end_time,
+        )
+        return _numbers_by_key(
+            fallback_payload,
+            ("beatsPerMinuteAvg", "beatsPerMinute"),
+        )
 
     def _collect_daily_metrics(self, token: str) -> dict[str, float]:
         """Legge metriche giornaliere o notturne utili al modello.

@@ -349,6 +349,8 @@ google_health:
   token_file: config/google_health_token.json
   client_file: config/google_health_client.json
   api_base_url: https://health.googleapis.com
+  data_delay_minutes: 12
+  heart_rate_lookback_minutes: 30
 
 ble:
   enabled: false
@@ -358,6 +360,11 @@ shelly:
 ```
 
 Quando il BLE sara' pronto, `ble.enabled` potra' tornare a `true`.
+
+Nota importante: `data_delay_minutes` deve stare sotto `google_health`, non sotto
+`window`. Il CSV finale continua a rappresentare la finestra corrente comune a tutte le
+sorgenti; solo la chiamata Google Health usa internamente una finestra cloud piu'
+vecchia, perche' il Watch non sincronizza in tempo reale come il receiver BLE.
 
 ## 9. Avviare raccolta dati
 

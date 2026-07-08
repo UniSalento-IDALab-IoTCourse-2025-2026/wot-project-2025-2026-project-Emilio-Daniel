@@ -5,7 +5,7 @@ import json
 import os
 import time
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -247,8 +247,6 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         ble_samples = collect_ble_samples(config.ble)
 
     requested_end = parse_datetime(args.window_end, config.window.timezone)
-    if args.window_end.lower() == "now" and config.window.data_delay_minutes > 0:
-        requested_end = requested_end - timedelta(minutes=config.window.data_delay_minutes)
     window_start, window_end = window_from_end(requested_end, config.window.minutes)
 
     row = build_feature_window(config, window_start, window_end)

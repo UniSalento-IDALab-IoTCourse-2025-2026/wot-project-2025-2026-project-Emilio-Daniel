@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from math import nan
 from pathlib import Path
 from typing import Any
@@ -47,10 +47,13 @@ def build_feature_window(
         )
     if config.google_health.enabled:
         # Percorso attuale per Pixel Watch 2: legge dati cloud Google Health.
+        # Il delay e' solo per questa sorgente: BLE/Shelly restano sulla
+        # finestra corrente, mentre il Watch usa una finestra cloud consolidata.
+        google_delay = timedelta(minutes=max(0, config.google_health.data_delay_minutes))
         row.update(
             GoogleHealthAdapter(config.google_health).collect_window(
-                window_start,
-                window_end,
+                window_start - google_delay,
+                window_end - google_delay,
             )
         )
     if config.ble.enabled:

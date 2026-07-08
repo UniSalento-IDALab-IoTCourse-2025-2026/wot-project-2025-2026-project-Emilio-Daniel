@@ -16,7 +16,6 @@ class PatientConfig:
 class WindowConfig:
     minutes: int = 4
     timezone: str = "Europe/Rome"
-    data_delay_minutes: int = 0
 
 
 @dataclass(frozen=True)
@@ -62,6 +61,8 @@ class GoogleHealthConfig:
     token_file: Path = Path("config/google_health_token.json")
     client_file: Path = Path("config/google_health_client.json")
     api_base_url: str = "https://health.googleapis.com"
+    data_delay_minutes: int = 12
+    heart_rate_lookback_minutes: int = 30
 
 
 @dataclass(frozen=True)
@@ -115,9 +116,6 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
         window=WindowConfig(
             minutes=int(_section(payload, "window").get("minutes", 4)),
             timezone=str(_section(payload, "window").get("timezone", "Europe/Rome")),
-            data_delay_minutes=int(
-                _section(payload, "window").get("data_delay_minutes", 0)
-            ),
         ),
         paths=PathsConfig(
             latest_window_csv=Path(
@@ -209,6 +207,18 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
                     "https://health.googleapis.com",
                 )
             ).rstrip("/"),
+            data_delay_minutes=int(
+                _section(payload, "google_health").get(
+                    "data_delay_minutes",
+                    12,
+                )
+            ),
+            heart_rate_lookback_minutes=int(
+                _section(payload, "google_health").get(
+                    "heart_rate_lookback_minutes",
+                    30,
+                )
+            ),
         ),
         ble=BleConfig(
             enabled=bool(_section(payload, "ble").get("enabled", False)),
