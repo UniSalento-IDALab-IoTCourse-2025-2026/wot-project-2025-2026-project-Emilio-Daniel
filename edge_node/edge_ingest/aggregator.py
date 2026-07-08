@@ -47,8 +47,9 @@ def build_feature_window(
         )
     if config.google_health.enabled:
         # Percorso attuale per Pixel Watch 2: legge dati cloud Google Health.
-        # Il delay e' solo per questa sorgente: BLE/Shelly restano sulla
-        # finestra corrente, mentre il Watch usa una finestra cloud consolidata.
+        # Di default il Watch usa la stessa finestra corrente di BLE/Shelly.
+        # `data_delay_minutes` resta disponibile solo come fallback esplicito se
+        # in futuro il cloud Google dovesse sincronizzare con troppo ritardo.
         google_delay = timedelta(minutes=max(0, config.google_health.data_delay_minutes))
         row.update(
             GoogleHealthAdapter(config.google_health).collect_window(

@@ -61,7 +61,7 @@ class GoogleHealthConfig:
     token_file: Path = Path("config/google_health_token.json")
     client_file: Path = Path("config/google_health_client.json")
     api_base_url: str = "https://health.googleapis.com"
-    data_delay_minutes: int = 12
+    data_delay_minutes: int = 0
     heart_rate_lookback_minutes: int = 30
 
 
@@ -210,7 +210,7 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
             data_delay_minutes=int(
                 _section(payload, "google_health").get(
                     "data_delay_minutes",
-                    12,
+                    0,
                 )
             ),
             heart_rate_lookback_minutes=int(

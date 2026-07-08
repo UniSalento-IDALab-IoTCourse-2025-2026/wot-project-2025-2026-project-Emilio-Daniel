@@ -83,6 +83,10 @@ edge_node/outputs/patient-001-decision.json
 ## Struttura
 
 ```text
+avviaSistema       Launcher breve per Raspberry/Linux
+avviaSistema.cmd   Launcher breve per Windows
+avviaSistema.ps1   Launcher PowerShell alternativo
+
 edge_node/
   requirements.txt      Dipendenze Python del Raspberry/edge node
 
@@ -129,7 +133,10 @@ edge_node/
     cli.py              Comando per avviare il receiver
 
   edge_runtime/
-    cli.py              Comando unico del ciclo edge
+    cli.py              Ciclo edge: aggregazione, qualita, inferenza e decisione
+
+  edge_stack/
+    cli.py              Comando unico per receiver BLE + runtime continuo
 
   edge_quality/
     checks.py           Controlli qualita dati prima di baseline/training
@@ -697,14 +704,88 @@ vale solo quando sei gia' dentro `edge_node/`.
 
 ### Comando unico consigliato
 
-Questo e' il comando da usare normalmente sul Raspberry:
+Questo e' il comando breve da usare normalmente dalla root del progetto:
 
 ```powershell
-cd edge_node
-python -m edge_runtime.cli --config config/edge.example.yml
+.\avviaSistema
 ```
 
-Fa un ciclo completo:
+Su Windows, se PowerShell non esegue lo script senza estensione, usa:
+
+```powershell
+.\avviaSistema.cmd
+```
+
+Sul Raspberry Pi, dopo il clone, la prima volta rendi eseguibile lo script:
+
+```bash
+chmod +x avviaSistema
+```
+
+Poi avvii tutto con:
+
+```bash
+./avviaSistema
+```
+
+Il launcher entra automaticamente in `edge_node/`, sceglie il Python giusto e
+avvia lo stack reale: receiver BLE per l'app Android e runtime continuo per Google
+Health / Pixel Watch 2. In pratica avvia insieme:
+
+```text
+edge_receiver
+-> resta in ascolto su http://0.0.0.0:8000
+-> riceve i campioni BLE inviati dall'app Android
+-> salva/aggiorna data/raw/ble_samples.csv
+
+edge_runtime --loop
+-> ogni 4 minuti legge Google Health / Pixel Watch 2
+-> legge i campioni BLE gia' ricevuti dal receiver
+-> aggrega la finestra da 4 minuti
+-> scrive data/processed/latest_window.csv
+-> esegue i modelli AI disponibili
+-> salva outputs/patient-001-decision.json
+-> salva outputs/last-quality-report.json
+-> salva outputs/last-cycle.json
+```
+
+Il file `config/edge.yml` deve avere abilitate le sorgenti reali:
+
+```yaml
+google_health:
+  enabled: true
+  data_delay_minutes: 0
+
+ble:
+  enabled: true
+```
+
+Con `google_health.data_delay_minutes: 0`, Watch e BLE vengono letti sulla stessa
+finestra corrente da 4 minuti. Quindi, a ogni ciclo, `latest_window.csv` prova a
+contenere insieme dati biometrici del Google Watch 2 e permanenza nelle stanze.
+Se Google Health non ha ancora sincronizzato un valore, quel campo puo' restare
+vuoto/`nan`, ma il sistema non sposta piu' artificialmente la finestra nel passato.
+
+Il comando resta attivo finche' non viene premuto `CTRL+C`. Durante la baseline:
+
+```bash
+./avviaSistema --append-baseline
+```
+
+Su Windows, la stessa baseline si avvia con:
+
+```powershell
+.\avviaSistema --append-baseline
+```
+
+Se invece vogliamo fare un solo ciclo manuale, senza tenere acceso anche il receiver,
+si puo' ancora usare:
+
+```bash
+python -m edge_runtime.cli --config config/edge.yml
+```
+
+Il singolo ciclo fa:
 
 ```text
 legge i dati gia' ricevuti in data/raw/
@@ -722,14 +803,9 @@ legge i dati gia' ricevuti in data/raw/
 Se nessun modello esiste ancora, non fallisce: aggiorna la finestra e scrive nello stato
 `skipped_all_models_missing`.
 
-Durante la baseline:
-
-```bash
-python -m edge_runtime.cli --config config/edge.example.yml --append-baseline
-```
-
-Questo appende anche la finestra a `data/processed/baseline.csv`, ma solo se i controlli
-qualita non trovano errori. Se i dati sono rotti o incompleti, il ciclo scrive
+Con `--append-baseline`, il runtime appende anche la finestra a
+`data/processed/baseline.csv`, ma solo se i controlli qualita non trovano errori.
+Se i dati sono rotti o incompleti, il ciclo scrive
 `baseline_skipped_reason: quality_error` e non sporca la baseline.
 Se almeno un modello generico e' gia' presente, durante questi giorni il sistema puo'
 produrre comunque una decisione basata sui modelli disponibili.
@@ -1385,8 +1461,8 @@ Poi `edge_ingest` li aggrega e li passa al modello AI.
 
 Abbiamo creato il modulo `edge_runtime`.
 
-Questo modulo e' il comando unico del Raspberry. Invece di lanciare manualmente prima
-`edge_ingest` e poi `edge_ai`, ora possiamo usare:
+Questo modulo esegue il ciclo logico dell'edge node. Invece di lanciare manualmente
+prima `edge_ingest` e poi `edge_ai`, ora possiamo usare:
 
 ```bash
 python -m edge_runtime.cli --config config/edge.yml
@@ -1395,6 +1471,13 @@ python -m edge_runtime.cli --config config/edge.yml
 Il comando produce `latest_window.csv`, controlla se esiste il modello addestrato e,
 se il modello c'e', salva anche la decisione JSON. Se il modello non c'e' ancora, non
 fallisce: aggiorna solo la finestra dati e registra che l'inferenza e' stata saltata.
+
+Per il funzionamento reale continuo, pero', usiamo `edge_stack`, che avvia insieme
+il receiver BLE e `edge_runtime --loop`:
+
+```bash
+python -m edge_stack.cli --config config/edge.yml
+```
 
 ### 7. Qualita Dati
 

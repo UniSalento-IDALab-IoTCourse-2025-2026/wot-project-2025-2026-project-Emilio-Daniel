@@ -12,7 +12,8 @@ edge_baseline/  gestione fase baseline: start, status, finalize, train
 edge_datasets/  convertitori dataset pubblici CASAS/PAMAP2/WESAD
 edge_ingest/    aggregazione dati Fitbit, BLE e Shelly in finestre da 4 minuti
 edge_receiver/  receiver FastAPI per campioni BLE inviati dall'app Android
-edge_runtime/   comando unico del ciclo edge
+edge_runtime/   ciclo edge: aggregazione, qualita, inferenza e decisione
+edge_stack/     comando unico che avvia receiver BLE e runtime continuo
 edge_quality/   controlli qualita dati per baseline/training
 config/         configurazioni YAML dell'edge node
 data/           dati grezzi, feature aggregate e stato locale
@@ -96,6 +97,74 @@ Il receiver salva i campioni in:
 ```text
 data/raw/ble_samples.csv
 ```
+
+## Comando Unico Edge Stack
+
+Normalmente dalla root del progetto usiamo il launcher breve:
+
+```powershell
+.\avviaSistema
+```
+
+Su Windows, se PowerShell non lo esegue senza estensione:
+
+```powershell
+.\avviaSistema.cmd
+```
+
+Sul Raspberry Pi:
+
+```bash
+chmod +x avviaSistema
+./avviaSistema
+```
+
+Internamente il launcher entra in `edge_node/` ed esegue:
+
+```bash
+python -m edge_stack.cli --config config/edge.yml
+```
+
+Questo avvia due processi coordinati:
+
+```text
+edge_receiver
+  -> resta in ascolto su http://0.0.0.0:8000
+  -> riceve campioni BLE dall'app Android
+  -> aggiorna data/raw/ble_samples.csv
+
+edge_runtime --loop
+  -> ogni 4 minuti legge tutte le sorgenti abilitate
+  -> Google Health / Pixel Watch 2
+  -> BLE gia' ricevuti dal receiver
+  -> Shelly/NILM se abilitato in futuro
+  -> aggiorna latest_window.csv e decision JSON
+```
+
+Il comando si ferma con `CTRL+C`.
+
+Durante la baseline:
+
+```bash
+./avviaSistema --append-baseline
+```
+
+Il file `config/edge.yml` decide quali sorgenti entrano in `latest_window.csv`.
+Per avere Watch e beacon insieme servono entrambe:
+
+```yaml
+google_health:
+  enabled: true
+  data_delay_minutes: 0
+
+ble:
+  enabled: true
+```
+
+Con `google_health.data_delay_minutes: 0`, il runtime usa la stessa finestra
+corrente da 4 minuti per Google Watch 2 e BLE. Se Google Health non ha ancora
+sincronizzato un valore, quel campo resta vuoto/`nan`, ma la decisione viene
+comunque prodotta senza ritardare artificialmente la finestra.
 
 ## Modello AI ibrido
 
