@@ -58,6 +58,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Semantic role of the generic model artifact.",
     )
     train_generic.add_argument("--contamination", type=float, default=0.05)
+    train_generic.add_argument(
+        "--include-features",
+        default="",
+        help="Optional comma-separated feature allowlist for training.",
+    )
+    train_generic.add_argument(
+        "--exclude-features",
+        default="",
+        help="Optional comma-separated feature blocklist for training.",
+    )
 
     infer = subparsers.add_parser("infer", help="Run inference on the latest real window")
     infer.add_argument("--model", required=True, help="Model artifact path")
@@ -111,6 +121,8 @@ def train_generic_model(args: argparse.Namespace) -> None:
         model_scope=args.model_kind,
         training_source=f"{args.model_kind}_dataset",
         contamination=args.contamination,
+        include_features=_parse_feature_list(args.include_features),
+        exclude_features=_parse_feature_list(args.exclude_features),
     )
     detector.save(args.output)
     print(
@@ -119,6 +131,7 @@ def train_generic_model(args: argparse.Namespace) -> None:
                 "status": "generic_trained",
                 "model_id": detector.metadata.patient_id,
                 "training_rows": detector.metadata.training_rows,
+                "feature_columns": detector.metadata.feature_columns,
                 "model_scope": detector.metadata.model_scope,
                 "training_source": detector.metadata.training_source,
                 "model": args.output,
@@ -188,6 +201,12 @@ def _technical_wearable_skip_payload(
             "wearable_signal": wearable_summary,
         },
     }
+
+
+def _parse_feature_list(value: str) -> list[str] | None:
+    """Converte una lista CLI separata da virgole in feature columns."""
+    items = [item.strip() for item in str(value or "").split(",") if item.strip()]
+    return items or None
 
 
 def main() -> None:

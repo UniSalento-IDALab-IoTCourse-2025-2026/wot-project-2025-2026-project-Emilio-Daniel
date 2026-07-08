@@ -5,7 +5,7 @@
 Useremo un approccio a tre modelli:
 
 - un modello generico spaziale/domestico, addestrato da CASAS;
-- un modello generico wearable/fisiologico, addestrato da WESAD/PAMAP2 o dataset equivalente;
+- un modello generico wearable/fisiologico, addestrato da fitbitdata/WESAD/PAMAP2 o dataset equivalente;
 - un modello personale, addestrato sulla baseline reale del paziente raccolta in casa.
 
 I modelli generici non descrivono la routine domestica individuale, ma permettono al
@@ -31,7 +31,7 @@ normale.
 4. Collegare BLE scanner per vettori di permanenza.
 5. Collegare Shelly EM o misuratore equivalente.
 6. Preparare `models/generic_spatial.pkl` da CASAS, se disponibile.
-7. Preparare `models/generic_wearable.pkl` da WESAD/PAMAP2, se disponibile.
+7. Preparare `models/generic_wearable.pkl` da fitbitdata/WESAD/PAMAP2 e dataset fisiologici equivalenti. Il converter fitbitdata usa anche `Health data.csv` e HuGCDN2014-OXI: dal primo teniamo di default `Status = 0`, dal secondo teniamo label `0` e SpO2 media almeno 92, cosi' il modello generico impara normalita e non eventi patologici. Nel generico attuale `hrv_rmssd` viene incluso, ma con clipping fisiologico sulla coda alta per evitare falsi allarmi quando la HRV reale Google Health e' alta.
 8. Raccogliere baseline silenziosa per circa 5/6 giorni, filtrata dal safety gate generico.
    Questa e' una baseline compatta per i tempi del progetto; una baseline piu' lunga
    sarebbe piu' robusta.

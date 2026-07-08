@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import pickle
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 from typing import Any, Union
 
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import IsolationForest
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
@@ -26,6 +28,57 @@ class ModelMetadata:
     training_rows: int
     model_scope: str = "personal"
     training_source: str = "patient_baseline"
+
+
+class PhysiologicalFeatureClipper(BaseEstimator, TransformerMixin):
+    """Limita code fisiologiche poco affidabili nei modelli generici.
+
+    Nei dataset pubblici wearable alcune feature hanno distribuzioni diverse da
+    quelle ottenute da Google Health. Per `hrv_rmssd`, in particolare, valori
+    molto alti possono essere segno di buona variabilita e non di rischio
+    clinico. Questo transformer taglia solo la coda alta configurata, evitando
+    falsi allarmi generici senza eliminare la feature dal modello.
+    """
+
+    def __init__(
+        self,
+        feature_columns: list[str],
+        upper_percentiles: dict[str, float] | None = None,
+    ):
+        """Inizializza le regole di clipping per nome feature."""
+        self.feature_columns = list(feature_columns)
+        self.upper_percentiles = dict(upper_percentiles or {})
+
+    def fit(self, X: Any, y: Any = None) -> "PhysiologicalFeatureClipper":
+        """Calcola le soglie percentile dai dati di training."""
+        values = self._to_array(X)
+        self.upper_bounds_: dict[int, float] = {}
+        for column, percentile in self.upper_percentiles.items():
+            if column not in self.feature_columns:
+                continue
+            index = self.feature_columns.index(column)
+            column_values = values[:, index]
+            column_values = column_values[np.isfinite(column_values)]
+            if column_values.size:
+                self.upper_bounds_[index] = float(np.percentile(column_values, percentile))
+        return self
+
+    def transform(self, X: Any) -> np.ndarray:
+        """Applica il clipping imparato mantenendo `nan` per l'imputer."""
+        values = self._to_array(X).copy()
+        for index, upper_bound in getattr(self, "upper_bounds_", {}).items():
+            values[:, index] = np.where(
+                np.isfinite(values[:, index]),
+                np.minimum(values[:, index], upper_bound),
+                values[:, index],
+            )
+        return values
+
+    def _to_array(self, X: Any) -> np.ndarray:
+        """Converte DataFrame o array in matrice float."""
+        if isinstance(X, pd.DataFrame):
+            return X.to_numpy(dtype=float)
+        return np.asarray(X, dtype=float)
 
 
 class EdgeAnomalyDetector:
@@ -49,6 +102,8 @@ class EdgeAnomalyDetector:
         include_all_patients: bool = False,
         model_scope: str = "personal",
         training_source: str = "patient_baseline",
+        include_features: list[str] | None = None,
+        exclude_features: list[str] | None = None,
     ) -> "EdgeAnomalyDetector":
         """Addestra un modello di anomaly detection sulla baseline del paziente.
 
@@ -71,8 +126,24 @@ class EdgeAnomalyDetector:
                 "longer baselines are better for production."
             )
 
-        pipeline = Pipeline(
-            steps=[
+        feature_columns = _select_training_feature_columns(
+            training_frame,
+            include_features=include_features,
+            exclude_features=exclude_features,
+        )
+        pipeline_steps: list[tuple[str, Any]] = []
+        if model_scope == "generic_wearable" and "hrv_rmssd" in feature_columns:
+            pipeline_steps.append(
+                (
+                    "physiology_clip",
+                    PhysiologicalFeatureClipper(
+                        feature_columns=feature_columns,
+                        upper_percentiles={"hrv_rmssd": 95.0},
+                    ),
+                )
+            )
+        pipeline_steps.extend(
+            [
                 ("imputer", SimpleImputer(strategy="median")),
                 ("scaler", StandardScaler()),
                 (
@@ -86,8 +157,8 @@ class EdgeAnomalyDetector:
                 ),
             ]
         )
-
-        features = select_features(training_frame)
+        pipeline = Pipeline(steps=pipeline_steps)
+        features = select_features(training_frame, feature_columns)
         pipeline.fit(features)
         decision_values = pipeline.decision_function(features)
         normal_anchor = float(np.percentile(decision_values, 50))
@@ -97,7 +168,7 @@ class EdgeAnomalyDetector:
 
         metadata = ModelMetadata(
             patient_id=str(patient_id),
-            feature_columns=FEATURE_COLUMNS,
+            feature_columns=feature_columns,
             contamination=contamination,
             normal_anchor=normal_anchor,
             severe_anchor=severe_anchor,
@@ -116,6 +187,8 @@ class EdgeAnomalyDetector:
         training_source: str = "external_or_multi_patient_dataset",
         contamination: float = 0.05,
         random_state: int = 42,
+        include_features: list[str] | None = None,
+        exclude_features: list[str] | None = None,
     ) -> "EdgeAnomalyDetector":
         """Addestra il modello generico su un dataset multiutente o clinico.
 
@@ -132,6 +205,8 @@ class EdgeAnomalyDetector:
             include_all_patients=True,
             model_scope=model_scope,
             training_source=training_source,
+            include_features=include_features,
+            exclude_features=exclude_features,
         )
 
     def predict_record(self, record: Union[pd.Series, dict[str, Any]]) -> InferenceResult:
@@ -234,3 +309,71 @@ def _patch_loaded_pipeline_compatibility(pipeline: Pipeline) -> None:
     fit_dtype = getattr(imputer, "_fit_dtype", None)
     if fit_dtype is not None:
         setattr(imputer, "_fill_dtype", fit_dtype)
+
+
+def _select_training_feature_columns(
+    frame: pd.DataFrame,
+    include_features: list[str] | None = None,
+    exclude_features: list[str] | None = None,
+) -> list[str]:
+    """Sceglie le feature con copertura sufficiente per il training.
+
+    I dataset pubblici raramente hanno tutte le colonne del nostro schema. Se
+    una colonna e' quasi sempre vuota, il modello rischia di trattare come
+    anomala la semplice presenza di quella feature nei dati reali. Per questo
+    vengono mantenute solo le colonne abbastanza popolate e con almeno due
+    valori distinti.
+    """
+    if frame.empty:
+        raise ValueError("Training dataset is empty")
+
+    row_count = int(frame.shape[0])
+    if row_count < 500:
+        min_observed = max(1, ceil(row_count * 0.01))
+    else:
+        min_observed = max(20, ceil(row_count * 0.01))
+
+    candidate_columns = _candidate_feature_columns(include_features, exclude_features)
+
+    selected: list[str] = []
+    for column in candidate_columns:
+        values = pd.to_numeric(frame[column], errors="coerce").replace(
+            [np.inf, -np.inf],
+            np.nan,
+        )
+        observed = int(values.notna().sum())
+        if observed < min_observed:
+            continue
+        if int(values.dropna().nunique()) < 2:
+            continue
+        selected.append(column)
+
+    if not selected:
+        raise ValueError(
+            "No usable feature columns found for training. "
+            "Check that the dataset has enough non-empty numeric values."
+        )
+    return selected
+
+
+def _candidate_feature_columns(
+    include_features: list[str] | None,
+    exclude_features: list[str] | None,
+) -> list[str]:
+    """Applica eventuali include/exclude manuali alle feature disponibili."""
+    valid = set(FEATURE_COLUMNS)
+    if include_features:
+        unknown = [column for column in include_features if column not in valid]
+        if unknown:
+            raise ValueError("Unknown include feature columns: " + ", ".join(unknown))
+        candidates = list(include_features)
+    else:
+        candidates = list(FEATURE_COLUMNS)
+
+    if exclude_features:
+        unknown = [column for column in exclude_features if column not in valid]
+        if unknown:
+            raise ValueError("Unknown exclude feature columns: " + ", ".join(unknown))
+        excluded = set(exclude_features)
+        candidates = [column for column in candidates if column not in excluded]
+    return candidates

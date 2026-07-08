@@ -7,6 +7,7 @@ from edge_datasets.casas_converter import (
     convert_casas_dataset,
     parse_include_patterns as parse_casas_include_patterns,
 )
+from edge_datasets.fitbitdata_converter import convert_fitbitdata_dataset
 from edge_datasets.merge import merge_feature_datasets, parse_input_paths
 from edge_datasets.pamap2_converter import (
     convert_pamap2_dataset,
@@ -193,6 +194,66 @@ def build_parser() -> argparse.ArgumentParser:
         help="WESAD label sampling frequency.",
     )
 
+    fitbitdata = subparsers.add_parser(
+        "fitbitdata",
+        help="Convert Fitbit-style public CSV datasets into wearable windows.",
+    )
+    fitbitdata.add_argument(
+        "--input-dir",
+        default="data/external/fitbitdata",
+        help="Directory containing Activity.csv, Sleep Health CSV and archive2.",
+    )
+    fitbitdata.add_argument(
+        "--output",
+        default="data/processed/generic_wearable_dataset_fitbitdata.csv",
+        help="Output CSV compatible with edge_ai train-generic.",
+    )
+    fitbitdata.add_argument(
+        "--window-minutes",
+        type=int,
+        default=4,
+        help="Aggregation window size used for synthetic training windows.",
+    )
+    fitbitdata.add_argument(
+        "--hrv-condition",
+        default="no stress",
+        help="Condition to keep from archive2 HRV labels. Use 'all' to keep every condition.",
+    )
+    fitbitdata.add_argument(
+        "--health-status",
+        default="0",
+        help="Status value to keep from Health data.csv. Default: 0. Use 'all' to keep every status.",
+    )
+    fitbitdata.add_argument(
+        "--skip-oxi",
+        action="store_true",
+        help="Skip HuGCDN2014-OXI MATLAB files if only CSV sources should be converted.",
+    )
+    fitbitdata.add_argument(
+        "--oxi-label",
+        type=int,
+        default=0,
+        help="HuGCDN2014-OXI minute label to keep. Default: 0, non-apnea/normal minutes.",
+    )
+    fitbitdata.add_argument(
+        "--oxi-min-spo2",
+        type=float,
+        default=92.0,
+        help="Minimum mean SpO2 accepted from HuGCDN2014-OXI normal windows.",
+    )
+    fitbitdata.add_argument(
+        "--max-output-rows",
+        type=int,
+        default=None,
+        help="Optional cap on output rows, useful for smoke tests.",
+    )
+    fitbitdata.add_argument(
+        "--hrv-chunksize",
+        type=int,
+        default=100_000,
+        help="Number of HRV rows read per pandas chunk.",
+    )
+
     merge = subparsers.add_parser(
         "merge",
         help="Merge already converted feature CSV files.",
@@ -255,6 +316,21 @@ def main() -> None:
             min_label_ratio=args.min_label_ratio,
             bvp_sampling_hz=args.bvp_sampling_hz,
             label_sampling_hz=args.label_sampling_hz,
+        )
+        print(json.dumps(summary.to_dict(), indent=2))
+        return
+    if args.command == "fitbitdata":
+        summary = convert_fitbitdata_dataset(
+            input_dir=args.input_dir,
+            output_csv=args.output,
+            window_minutes=args.window_minutes,
+            hrv_condition=args.hrv_condition,
+            health_status=args.health_status,
+            include_oxi=not args.skip_oxi,
+            oxi_label=args.oxi_label,
+            oxi_min_spo2=args.oxi_min_spo2,
+            max_output_rows=args.max_output_rows,
+            hrv_chunksize=args.hrv_chunksize,
         )
         print(json.dumps(summary.to_dict(), indent=2))
         return

@@ -51,13 +51,17 @@ def validate_feature_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return cleaned
 
 
-def select_features(frame: pd.DataFrame) -> pd.DataFrame:
+def select_features(
+    frame: pd.DataFrame,
+    columns: list[str] | tuple[str, ...] | None = None,
+) -> pd.DataFrame:
     """Seleziona solo le colonne numeriche usate dall'Isolation Forest.
 
     Le colonne di contesto, come paziente e timestamp, sono importanti per
     tracciare la finestra ma non devono entrare direttamente nel modello.
     """
-    return frame[FEATURE_COLUMNS].copy()
+    selected = list(columns) if columns is not None else FEATURE_COLUMNS
+    return frame[selected].copy()
 
 
 def latest_record(frame: pd.DataFrame) -> pd.Series:

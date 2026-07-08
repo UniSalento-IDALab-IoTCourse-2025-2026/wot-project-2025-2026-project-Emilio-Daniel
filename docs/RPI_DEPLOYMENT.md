@@ -96,7 +96,9 @@ python -m edge_ai.cli train-generic \
   --model-kind generic_spatial
 ```
 
-Il modello generico wearable si crea da WESAD/PAMAP2 o dataset wearable equivalente:
+Il modello generico wearable si crea dal dataset wearable unificato
+`generic_wearable_dataset.csv`, ottenuto unendo fitbitdata, WESAD, PAMAP2 e
+gli eventuali dataset fisiologici convertiti nello stesso schema:
 
 ```bash
 python -m edge_ai.cli train-generic \
@@ -105,6 +107,17 @@ python -m edge_ai.cli train-generic \
   --model-id generic-wearable \
   --model-kind generic_wearable
 ```
+
+Nel modello generico attuale `hrv_rmssd` e' incluso. Per evitare falsi allarmi,
+il training applica un clipping fisiologico sulla coda alta della HRV: una HRV
+molto alta non viene trattata automaticamente come rischio, mentre valori bassi
+o medi restano informativi.
+
+Nel dataset wearable aggiornato entrano anche `Health data.csv` e HuGCDN2014-OXI:
+il primo fornisce pulse/SpO2, il secondo RR/SpO2 da file MATLAB. Per addestrare
+la normalita generica usiamo `Status = 0`, label HuGCDN `0` e SpO2 media almeno
+92. Per leggere i `.mat` e' necessaria la dipendenza `scipy`, gia' presente in
+`requirements.txt`.
 
 Se uno dei due dataset generici manca, il relativo file puo' mancare: il runtime non
 si blocca e fonde solo i modelli disponibili.

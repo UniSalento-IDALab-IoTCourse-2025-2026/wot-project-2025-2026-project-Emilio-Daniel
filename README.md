@@ -123,6 +123,7 @@ edge_node/
   edge_datasets/
     cli.py              Conversione dataset pubblici nello schema edge
     casas_converter.py  Conversione CASAS in generic_spatial_dataset.csv
+    fitbitdata_converter.py Conversione dataset Fitbit-style in generic_wearable_dataset_fitbitdata.csv
     pamap2_converter.py Conversione PAMAP2 in generic_wearable_dataset_pamap2.csv
     wesad_converter.py  Conversione WESAD in generic_wearable_dataset_wesad.csv
     merge.py            Unione CSV convertiti nello schema feature ufficiale
@@ -215,8 +216,12 @@ L'app iOS si crea su Mac con Xcode usando i file in `companion_iOS_app/`.
   activity id, passi stimati e minuti sedentari.
 - Ho aggiunto il converter WESAD per creare finestre wearable da BVP/HRV,
   usando solo label normali e scartando stress/transitori.
-- Ho unito PAMAP2 e WESAD in `generic_wearable_dataset.csv`.
-- Ho addestrato `models/generic_wearable.pkl`, il modello generico wearable.
+- Ho aggiunto il converter `fitbitdata` per usare i dataset locali in
+  `data/external/fitbitdata`: HR/HRV, activity, sleep health, `Health data.csv`
+  e HuGCDN2014-OXI in formato MATLAB per SpO2/RR.
+- Ho unito fitbitdata, PAMAP2 e WESAD in `generic_wearable_dataset.csv`.
+- Ho riaddestrato `models/generic_wearable.pkl`: ora il generico wearable usa
+  `heart_rate_mean`, `heart_rate_std`, `hrv_rmssd` e `spo2_mean`.
 - Ho aggiornato la documentazione di deployment su Raspberry Pi.
 - Ho eseguito controlli di compilazione/import e test tecnici end-to-end della pipeline.
 
@@ -1241,6 +1246,31 @@ python -m edge_ai.cli train-generic \
 
 Training modello generico wearable:
 
+Prima si convertono i dataset Fitbit-style messi in `data/external/fitbitdata`:
+
+```bash
+python -m edge_datasets.cli fitbitdata \
+  --input-dir data/external/fitbitdata \
+  --output data/processed/generic_wearable_dataset_fitbitdata.csv \
+  --window-minutes 4 \
+  --hrv-condition "no stress" \
+  --health-status 0 \
+  --oxi-label 0 \
+  --oxi-min-spo2 92
+```
+
+Questo CSV usa:
+
+- `archive2/train.csv` e `archive2/test.csv`, se presenti, per `heart_rate_mean`,
+  `heart_rate_std` e `hrv_rmssd` con filtro sulla colonna `condition`;
+- in alternativa, `archive2/time_domain_features_train.csv` piu'
+  `archive2/heart_rate_non_linear_features_train.csv`;
+- `Activity.csv` per passi e minuti sedentari, scalati su finestre da 4 minuti;
+- `Sleep_health_and_lifestyle_dataset.csv` per heart rate, resting heart rate, sleep minutes e daily steps;
+- `Health data.csv` per pulse e SpO2, usando di default solo `Status = 0`;
+- `HuGCDN2014-OXI` per RR e SpO2 dai file MATLAB, usando di default solo label `0`
+  e finestre con SpO2 media almeno 92.
+
 Prima si converte PAMAP2 nello schema del progetto:
 
 ```bash
@@ -1279,7 +1309,7 @@ solo label normali:
 La label `2 = stress` e i transitori vengono scartati perche' il modello
 `IsolationForest` deve imparare la normalita.
 
-Poi uniamo PAMAP2 e WESAD in:
+Poi uniamo fitbitdata, PAMAP2 e WESAD in:
 
 ```text
 data/processed/generic_wearable_dataset.csv
@@ -1289,11 +1319,14 @@ con:
 
 ```bash
 python -m edge_datasets.cli merge \
-  --inputs data/processed/generic_wearable_dataset_pamap2.csv,data/processed/generic_wearable_dataset_wesad.csv \
+  --inputs data/processed/generic_wearable_dataset_fitbitdata.csv,data/processed/generic_wearable_dataset_pamap2.csv,data/processed/generic_wearable_dataset_wesad.csv \
   --output data/processed/generic_wearable_dataset.csv
 ```
 
-Poi addestriamo il modello wearable:
+Poi addestriamo il modello wearable. Il generico attuale usa anche `hrv_rmssd`,
+ma applica un clipping fisiologico sulla coda alta della HRV: una HRV molto alta
+non deve diventare automaticamente un falso allarme, mentre valori bassi o medi
+restano informativi per il modello.
 
 ```bash
 python -m edge_ai.cli train-generic \

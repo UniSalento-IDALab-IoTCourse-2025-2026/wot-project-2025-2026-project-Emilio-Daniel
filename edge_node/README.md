@@ -9,7 +9,7 @@ locali.
 edge_ai/        modelli generici/personale, fusione, debounce e CLI train/infer
 edge_auth/      setup OAuth Fitbit, token e refresh per Pixel Watch 2
 edge_baseline/  gestione fase baseline: start, status, finalize, train
-edge_datasets/  convertitori dataset pubblici CASAS/PAMAP2/WESAD
+edge_datasets/  convertitori dataset pubblici CASAS/fitbitdata/PAMAP2/WESAD
 edge_ingest/    aggregazione dati Fitbit, BLE e Shelly in finestre da 4 minuti
 edge_receiver/  receiver FastAPI per campioni BLE inviati dall'app Android
 edge_runtime/   ciclo edge: aggregazione, qualita, inferenza e decisione
@@ -172,7 +172,7 @@ Il sistema ora supporta tre modelli:
 
 ```text
 models/generic_spatial.pkl    modello generico spaziale/domestico, da CASAS
-models/generic_wearable.pkl   modello generico fisiologico/wearable, da WESAD/PAMAP2
+models/generic_wearable.pkl   modello generico fisiologico/wearable, da fitbitdata/WESAD/PAMAP2
 models/patient-001.pkl        modello personale creato dalla baseline reale
 ```
 
@@ -428,8 +428,9 @@ PAMAP2 contiene heart rate e activity id ad alta frequenza. Il converter produce
 - `wearable_present = 1`;
 - colonne spaziali, sonno, SpO2 e NILM vuote.
 
-Questo e' previsto per `generic_wearable.pkl`: WESAD/PAMAP2 completano la parte
-fisiologica/wearable, mentre CASAS resta dedicato alla parte spaziale/domestica.
+Questo e' previsto per `generic_wearable.pkl`: fitbitdata, WESAD e PAMAP2
+completano la parte fisiologica/wearable, mentre CASAS resta dedicato alla parte
+spaziale/domestica.
 
 Il converter WESAD crea invece finestre wearable da BVP/HRV del polso:
 
@@ -451,11 +452,38 @@ Di default vengono usate solo label WESAD normali:
 La label `2 = stress` e i transitori vengono scartati perche' il modello
 `IsolationForest` deve imparare la normalita, non considerare lo stress come routine.
 
-Dopo PAMAP2 e WESAD, i due CSV wearable si uniscono cosi':
+Il converter `fitbitdata` usa invece i dataset locali messi in
+`data/external/fitbitdata`:
+
+```bash
+python -m edge_datasets.cli fitbitdata \
+  --input-dir data/external/fitbitdata \
+  --output data/processed/generic_wearable_dataset_fitbitdata.csv \
+  --window-minutes 4 \
+  --hrv-condition "no stress" \
+  --health-status 0 \
+  --oxi-label 0 \
+  --oxi-min-spo2 92
+```
+
+Questo converter legge:
+
+- `archive2/train.csv` e `archive2/test.csv`, se presenti, per heart rate e HRV
+  con filtro diretto sulla colonna `condition`;
+- in alternativa, `archive2/time_domain_features_train.csv` piu'
+  `archive2/heart_rate_non_linear_features_train.csv` per tenere, di default,
+  solo la condizione `no stress`;
+- `Activity.csv` per passi e minuti sedentari;
+- `Sleep_health_and_lifestyle_dataset.csv` per heart rate, resting heart rate, sleep minutes e daily steps;
+- `Health data.csv` per pulse e SpO2, usando di default solo `Status = 0`;
+- `HuGCDN2014-OXI` per RR e SpO2 dai file MATLAB, usando di default solo label `0`
+  e finestre con SpO2 media almeno 92.
+
+Dopo fitbitdata, PAMAP2 e WESAD, i CSV wearable si uniscono cosi':
 
 ```bash
 python -m edge_datasets.cli merge \
-  --inputs data/processed/generic_wearable_dataset_pamap2.csv,data/processed/generic_wearable_dataset_wesad.csv \
+  --inputs data/processed/generic_wearable_dataset_fitbitdata.csv,data/processed/generic_wearable_dataset_pamap2.csv,data/processed/generic_wearable_dataset_wesad.csv \
   --output data/processed/generic_wearable_dataset.csv
 ```
 
@@ -471,9 +499,22 @@ python -m edge_ai.cli train-generic \
   --model-kind generic_spatial
 ```
 
-Modello generico wearable, da WESAD/PAMAP2 o dataset wearable equivalente:
+Modello generico wearable, da fitbitdata/WESAD/PAMAP2 o dataset wearable equivalente:
 
-Prima si converte PAMAP2:
+Prima si converte fitbitdata:
+
+```bash
+python -m edge_datasets.cli fitbitdata \
+  --input-dir data/external/fitbitdata \
+  --output data/processed/generic_wearable_dataset_fitbitdata.csv \
+  --window-minutes 4 \
+  --hrv-condition "no stress" \
+  --health-status 0 \
+  --oxi-label 0 \
+  --oxi-min-spo2 92
+```
+
+Poi si converte PAMAP2:
 
 ```bash
 python -m edge_datasets.cli pamap2 \
@@ -482,7 +523,7 @@ python -m edge_datasets.cli pamap2 \
   --window-minutes 4
 ```
 
-Poi uniamo PAMAP2 e WESAD in `data/processed/generic_wearable_dataset.csv`
+Poi uniamo fitbitdata, PAMAP2 e WESAD in `data/processed/generic_wearable_dataset.csv`
 e addestriamo:
 
 ```bash
@@ -492,6 +533,17 @@ python -m edge_ai.cli train-generic \
   --model-id generic-wearable \
   --model-kind generic_wearable
 ```
+
+Nota: `hrv_rmssd` ora entra nel modello generico wearable. Per evitare falsi
+allarmi, il training applica un clipping fisiologico sulla coda alta della HRV:
+una HRV molto alta non viene trattata automaticamente come rischio, mentre valori
+bassi o medi restano informativi.
+
+Con i dati attuali il modello generico wearable seleziona le feature realmente
+coperte in modo solido: `heart_rate_mean`, `heart_rate_std`, `hrv_rmssd` e
+`spo2_mean`.
+Le feature piu' rare, come sleep/steps/resting heart rate, restano nei CSV ma non
+vengono forzate nel generico se non hanno abbastanza copertura.
 
 Modello personale, dalla baseline reale del paziente:
 
