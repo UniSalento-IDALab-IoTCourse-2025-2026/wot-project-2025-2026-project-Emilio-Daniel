@@ -17,6 +17,7 @@ class FusionConfig:
     red_score: float = 85.0
     agreement_bonus: float = 5.0
     single_model_penalty: float = 10.0
+    unconfirmed_generic_max_score: float = 80.0
     disagreement_margin: float = 25.0
 
 
@@ -172,6 +173,11 @@ def _fuse_scores(
         model_name = high_models[0]
         high_score = scores[model_name]
         score = max(weighted_score, high_score - config.single_model_penalty)
+        if model_name.startswith("generic_"):
+            # Un solo modello generico puo' essere utile per triage iniziale,
+            # ma prima della baseline personale non deve generare da solo un
+            # rosso clinico quando gli altri modelli disponibili non confermano.
+            score = min(score, config.unconfirmed_generic_max_score)
         return (
             float(np.clip(score, 0.0, 100.0)),
             f"{model_name}_anomaly_only",

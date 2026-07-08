@@ -129,6 +129,22 @@ class AlertDebouncer:
                 evidence=self._decision_evidence(result),
             )
 
+        if result.anomaly_score >= self.config.yellow_score:
+            return TriageDecision(
+                patient_id=result.patient_id,
+                window_start=result.window_start,
+                window_end=result.window_end,
+                level="yellow",
+                should_publish=False,
+                anomaly_score=result.anomaly_score,
+                reasons=[
+                    "Current anomaly score exceeds attention threshold",
+                    "Waiting for repeated windows or model confirmation before publishing",
+                ],
+                model_label=result.model_label,
+                evidence=self._decision_evidence(result),
+            )
+
         return TriageDecision(
             patient_id=result.patient_id,
             window_start=result.window_start,
