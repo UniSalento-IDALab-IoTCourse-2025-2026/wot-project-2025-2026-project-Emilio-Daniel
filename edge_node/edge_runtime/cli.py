@@ -6,6 +6,7 @@ import os
 import time
 import warnings
 from datetime import datetime
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -22,10 +23,20 @@ from edge_ingest.config import load_config
 from edge_ingest.time_windows import parse_datetime, window_from_end
 from edge_quality.checks import evaluate_quality
 
-try:
-    from sklearn.exceptions import InconsistentVersionWarning
-except Exception:  # pragma: no cover - sklearn might be unavailable before setup.
-    InconsistentVersionWarning = None
+def _load_inconsistent_version_warning() -> type[Warning] | None:
+    """Carica il warning di scikit-learn senza dipendere da import statici."""
+    try:
+        exceptions_module = import_module("sklearn.exceptions")
+    except Exception:  # pragma: no cover - sklearn might be unavailable before setup.
+        return None
+
+    warning_class = getattr(exceptions_module, "InconsistentVersionWarning", None)
+    if isinstance(warning_class, type) and issubclass(warning_class, Warning):
+        return warning_class
+    return None
+
+
+InconsistentVersionWarning = _load_inconsistent_version_warning()
 
 # I modelli generici sono artefatti pickle e possono essere stati creati con una
 # versione diversa di scikit-learn. Durante i test locali il ciclo e' comunque

@@ -40,7 +40,7 @@ def has_wearable_core_signal(record: Any) -> bool:
 
 def _to_mapping(record: Any) -> dict[str, Any]:
     if isinstance(record, pd.Series):
-        return record.to_dict()
+        return {str(key): value for key, value in record.items()}
     if isinstance(record, dict):
         return record
     return dict(record)

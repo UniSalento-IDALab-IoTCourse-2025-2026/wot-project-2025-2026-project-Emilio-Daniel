@@ -151,13 +151,13 @@ edge_node/
   models/               Modelli generici e modelli paziente-specifici
   outputs/              Decisioni JSON prodotte dall'AI
 
-companion_Android_app/
-  app Android per scansione BLE/manual test e invio dati al Raspberry
+Applicazione IoT Companion/
+  companion_Android_app/
+    app Android per scansione BLE/manual test e invio dati al Raspberry
+  companion_iOS_app/
+    sorgenti Swift/SwiftUI preparati, ma per ora sospesi perche' useremo Android
 
-companion_iOS_app/
-  sorgenti Swift/SwiftUI preparati, ma per ora sospesi perche' useremo Android
-
-docs/
+Documenti/
   ANDROID_APP.md        Guida app Android, emulatore e APK
   BEACON_SETUP.md       Setup reale dei 3 BlueBeacon 01
   API_CONSTRAINTS.md    Vincoli reali Google/Fitbit e BLE
@@ -168,8 +168,10 @@ docs/
 ```
 
 Regola pratica: i comandi Python del Raspberry/AI vanno eseguiti entrando prima in
-`edge_node/`. L'app Android si apre da Android Studio selezionando `companion_Android_app/`.
-L'app iOS si crea su Mac con Xcode usando i file in `companion_iOS_app/`.
+`edge_node/`. L'app Android si apre da Android Studio selezionando
+`Applicazione IoT Companion/companion_Android_app/`.
+L'app iOS si crea su Mac con Xcode usando i file in
+`Applicazione IoT Companion/companion_iOS_app/`.
 
 ## Cosa e' stato fatto finora
 
@@ -199,11 +201,13 @@ L'app iOS si crea su Mac con Xcode usando i file in `companion_iOS_app/`.
   da `edge_node/data/raw/ble_samples.csv` e trasformarli in feature per il modello.
 - Ho aggiunto il receiver HTTP locale per Android: il telefono potra' inviare campioni BLE
   al Raspberry con `POST /ble/sample`.
-- Ho creato l'app Android `IoT Edge Companion` in `companion_Android_app/`, ora orientata
+- Ho creato l'app Android `IoT Edge Companion` in
+  `Applicazione IoT Companion/companion_Android_app/`, ora orientata
   al test BLE reale con telefono fisico e BlueBeacon.
 - Ho aggiunto il Foreground Service BLE nell'app Android, cosi' il monitoraggio puo'
   restare attivo in background con notifica persistente.
-- Ho riordinato il repository separando `edge_node/`, `companion_Android_app/` e `docs/`.
+- Ho riordinato il repository separando `edge_node/`,
+  `Applicazione IoT Companion/` e `Documenti/`.
 - Ho aggiunto `edge_runtime`, il comando unico che aggrega la finestra e fa inferenza
   automaticamente se trova un modello addestrato.
 - Ho aggiunto `edge_quality`, che controlla se i dati sono utilizzabili prima di salvarli
@@ -381,7 +385,7 @@ config/google_health_client.json
 La procedura completa di creazione API, OAuth Playground e refresh token e' in:
 
 ```text
-docs/GOOGLE_WATCH_SETUP.md
+Documenti/GOOGLE_WATCH_SETUP.md
 ```
 
 Da dentro `edge_node/`, i comandi principali sono:
@@ -463,7 +467,7 @@ Beacon 3 -> Bagno           -> bathroom
 
 L'app Android usera' una mappa `identificativo_beacon=stanza` per trasformare il beacon
 piu' vicino nella stanza corrente. Il formato consigliato per BlueBeacon e' `uuid-major-minor`.
-La guida operativa e' in `docs/BEACON_SETUP.md`.
+La guida operativa e' in `Documenti/BEACON_SETUP.md`.
 
 ### Cosa abbiamo fatto con Android
 
@@ -481,7 +485,7 @@ Abbiamo preparato:
 L'app Android e' gia' stata creata in:
 
 ```text
-companion_Android_app/
+Applicazione IoT Companion/companion_Android_app/
 ```
 
 La modalita principale e' BLE reale: su telefono Android fisico scansionera' i beacon e
@@ -497,7 +501,7 @@ attivo anche quando lo schermo e' spento o l'app non e' in primo piano.
 Abbiamo creato la cartella:
 
 ```text
-companion_iOS_app/
+Applicazione IoT Companion/companion_iOS_app/
 ```
 
 Dentro ci sono sorgenti Swift/SwiftUI da copiare in un progetto Xcode sul Mac.
@@ -590,7 +594,7 @@ Per provarla:
 python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --port 8000
 ```
 
-2. aprire `companion_Android_app/` in Android Studio;
+2. aprire `Applicazione IoT Companion/companion_Android_app/` in Android Studio;
 3. installare l'app su telefono Android fisico;
 4. usare come URL del receiver:
 
@@ -613,7 +617,7 @@ Per generare un APK:
 
 1. aprire Android Studio;
 2. `File -> Open`;
-3. selezionare la cartella `companion_Android_app`;
+3. selezionare la cartella `Applicazione IoT Companion/companion_Android_app`;
 4. attendere il sync Gradle;
 5. scegliere `Build -> Build Bundle(s) / APK(s) -> Build APK(s)`;
 6. al termine cliccare `locate` per trovare l'APK.
@@ -970,7 +974,7 @@ Tag BLE / dispositivo indossabile BLE
   -> dati di posizione indoor rispetto ai beacon
 ```
 
-Se useremo l'app Android `companion_Android_app`, sara' il telefono Android a scansionare i beacon
+Se useremo l'app Android `Applicazione IoT Companion/companion_Android_app`, sara' il telefono Android a scansionare i beacon
 e inviare al Raspberry la stanza stimata. Se invece useremo un vero braccialetto BLE/tag,
 dovremo assicurarci che il Raspberry riceva comunque righe nel formato:
 
@@ -1576,7 +1580,7 @@ salvato in `models/patient-001.pkl`, ma solo quando avremo dati reali sufficient
 
 ### 9. App Android
 
-Abbiamo creato l'app `IoT Edge Companion` dentro `companion_Android_app/`.
+Abbiamo creato l'app `IoT Edge Companion` dentro `Applicazione IoT Companion/companion_Android_app/`.
 
 L'app serve per due cose:
 
@@ -1596,7 +1600,7 @@ al receiver locale.
 Abbiamo creato la base dell'app iPhone dentro:
 
 ```text
-companion_iOS_app/
+Applicazione IoT Companion/companion_iOS_app/
 ```
 
 Questa cartella contiene i sorgenti Swift/SwiftUI e una guida per creare il progetto su

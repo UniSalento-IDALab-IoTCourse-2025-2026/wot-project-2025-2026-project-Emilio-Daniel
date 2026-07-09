@@ -1,0 +1,24 @@
+{
+  "include": [
+    "edge_node"
+  ],
+  "extraPaths": [
+    "edge_node"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "exclude": [
+    "**/__pycache__",
+    ".venv",
+    "Applicazione IoT Companion/**/build",
+    "Applicazione IoT Companion/**/.gradle",
+    "Applicazione IoT Companion/**/.idea"
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownArgumentType": false,
+  "pythonVersion": "3.11"
+}

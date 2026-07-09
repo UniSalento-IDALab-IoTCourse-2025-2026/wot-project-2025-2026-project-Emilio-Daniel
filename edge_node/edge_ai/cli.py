@@ -3,17 +3,29 @@ from __future__ import annotations
 import argparse
 import json
 import warnings
+from importlib import import_module
 from pathlib import Path
+from typing import Any
 
 from edge_ai.debounce import AlertDebouncer, decision_to_json
 from edge_ai.features import latest_record, load_feature_frame
 from edge_ai.model import EdgeAnomalyDetector
 from edge_ai.wearable_quality import wearable_signal_summary
 
-try:
-    from sklearn.exceptions import InconsistentVersionWarning
-except Exception:  # pragma: no cover - sklearn might be unavailable before setup.
-    InconsistentVersionWarning = None
+def _load_inconsistent_version_warning() -> type[Warning] | None:
+    """Carica il warning di scikit-learn senza creare falsi errori nell'IDE."""
+    try:
+        exceptions_module = import_module("sklearn.exceptions")
+    except Exception:  # pragma: no cover - sklearn might be unavailable before setup.
+        return None
+
+    warning_class = getattr(exceptions_module, "InconsistentVersionWarning", None)
+    if isinstance(warning_class, type) and issubclass(warning_class, Warning):
+        return warning_class
+    return None
+
+
+InconsistentVersionWarning = _load_inconsistent_version_warning()
 
 if InconsistentVersionWarning is not None:
     warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
@@ -180,7 +192,7 @@ def run_inference(args: argparse.Namespace) -> None:
 
 
 def _technical_wearable_skip_payload(
-    record: object,
+    record: Any,
     wearable_summary: dict[str, object],
 ) -> dict[str, object]:
     """Crea un output tecnico quando il wearable generico non ha input minimi."""

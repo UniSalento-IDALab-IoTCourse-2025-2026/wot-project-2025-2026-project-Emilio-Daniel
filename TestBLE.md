@@ -41,8 +41,8 @@ Controllare anche:
 
 ```text
 BlueBeaconMap.md
-docs/BEACON_SETUP.md
-companion_Android_app/README.md
+Documenti/BEACON_SETUP.md
+Applicazione IoT Companion/companion_Android_app/README.md
 ```
 
 ## 2. Pulizia prima del test

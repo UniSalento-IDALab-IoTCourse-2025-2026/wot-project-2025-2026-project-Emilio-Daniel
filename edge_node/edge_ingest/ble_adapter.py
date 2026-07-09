@@ -110,16 +110,16 @@ def _resolve_room_sequence(window: pd.DataFrame) -> pd.DataFrame:
     prepared["room_key"] = prepared["room"].astype(str).str.strip().str.lower()
 
     if "rssi" not in prepared.columns:
-        return prepared[["timestamp", "room_key"]].sort_values("timestamp")
+        return prepared.loc[:, ["timestamp", "room_key"]].sort_values(by=["timestamp"])
 
     prepared["rssi_value"] = pd.to_numeric(prepared["rssi"], errors="coerce")
     prepared = prepared.dropna(subset=["rssi_value"])
     if prepared.empty:
-        return pd.DataFrame(columns=["timestamp", "room_key"])
+        return pd.DataFrame(columns=pd.Index(["timestamp", "room_key"]))
 
     # Multiple fixed scanners can hear the same wearable tag. For each 30-second bucket,
     # keep the room with the strongest RSSI, which is the closest scanner.
     prepared["bucket"] = prepared["timestamp"].dt.floor("30s")
     strongest_indexes = prepared.groupby("bucket")["rssi_value"].idxmax()
-    resolved = prepared.loc[strongest_indexes].sort_values("timestamp")
+    resolved = prepared.loc[strongest_indexes].sort_values(by="timestamp")
     return resolved[["timestamp", "room_key"]]

@@ -25,7 +25,7 @@ direttamente su Mac. Xcode deve infatti configurare:
 ## File inclusi
 
 ```text
-companion_iOS_app/
+Applicazione IoT Companion/companion_iOS_app/
   README.md
   Info.plist
   Sources/
@@ -40,7 +40,7 @@ companion_iOS_app/
 
 ## Creazione progetto su Mac
 
-1. Copia la cartella `companion_iOS_app` sul Mac.
+1. Copia la cartella `Applicazione IoT Companion/companion_iOS_app` sul Mac.
 2. Apri Xcode.
 3. Seleziona `File > New > Project`.
 4. Scegli `iOS > App`.
@@ -61,7 +61,7 @@ Language: Swift
 8. Trascina dentro il progetto i file Swift presenti in:
 
 ```text
-companion_iOS_app/Sources/IoTEdgeCompanionIOS/
+Applicazione IoT Companion/companion_iOS_app/Sources/IoTEdgeCompanionIOS/
 ```
 
 Quando Xcode chiede come aggiungerli, seleziona:
@@ -195,4 +195,3 @@ iPhone fisico
 ```
 
 Poi, se i beacon scelti saranno iBeacon, conviene evolvere il modulo verso CoreLocation.
-

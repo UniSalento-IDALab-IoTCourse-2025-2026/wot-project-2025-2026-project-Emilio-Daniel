@@ -115,7 +115,8 @@ class EdgeAnomalyDetector:
         if include_all_patients:
             training_frame = frame.copy()
         else:
-            training_frame = frame[frame["patient_id"].astype(str) == str(patient_id)]
+            patient_mask = frame["patient_id"].astype(str) == str(patient_id)
+            training_frame = frame.loc[patient_mask].copy()
 
         if training_frame.empty:
             raise ValueError(f"No rows found for patient_id={patient_id}")
@@ -150,7 +151,7 @@ class EdgeAnomalyDetector:
                     "model",
                     IsolationForest(
                         n_estimators=200,
-                        contamination=contamination,
+                        contamination=contamination,  # type: ignore[arg-type]
                         random_state=random_state,
                         n_jobs=-1,
                     ),
@@ -337,10 +338,10 @@ def _select_training_feature_columns(
 
     selected: list[str] = []
     for column in candidate_columns:
-        values = pd.to_numeric(frame[column], errors="coerce").replace(
-            [np.inf, -np.inf],
-            np.nan,
-        )
+        values = pd.Series(
+            pd.to_numeric(frame[column], errors="coerce"),
+            dtype="float64",
+        ).replace([np.inf, -np.inf], np.nan)
         observed = int(values.notna().sum())
         if observed < min_observed:
             continue

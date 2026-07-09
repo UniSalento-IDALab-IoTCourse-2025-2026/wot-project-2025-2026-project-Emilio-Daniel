@@ -181,7 +181,11 @@ def _write_hrv_archive_rows(
         used_files += 1 + (1 if nonlinear_path.exists() else 0)
 
         usecols = ["uuid", "MEAN_RR", "SDRR", "RMSSD", "HR"]
-        for chunk in pd.read_csv(time_path, usecols=usecols, chunksize=chunksize):
+        for chunk in pd.read_csv(  # type: ignore[call-overload]
+            time_path,
+            usecols=usecols,  # type: ignore[reportArgumentType]
+            chunksize=chunksize,
+        ):
             if accepted_uuids is not None:
                 chunk = chunk[chunk["uuid"].astype(str).isin(accepted_uuids)]
             if chunk.empty:
@@ -252,7 +256,11 @@ def _write_labeled_hrv_file(
     usecols = ["MEAN_RR", "SDRR", "RMSSD", "HR", "condition"]
     condition = hrv_condition.strip().lower()
 
-    for chunk in pd.read_csv(path, usecols=usecols, chunksize=chunksize):
+    for chunk in pd.read_csv(  # type: ignore[call-overload]
+        path,
+        usecols=usecols,  # type: ignore[reportArgumentType]
+        chunksize=chunksize,
+    ):
         if condition not in {"", "all", "*"}:
             mask = chunk["condition"].astype(str).str.strip().str.lower() == condition
             chunk = chunk[mask]
@@ -287,9 +295,9 @@ def _load_accepted_hrv_uuids(
         return None
 
     accepted: set[str] = set()
-    for chunk in pd.read_csv(
+    for chunk in pd.read_csv(  # type: ignore[call-overload]
         nonlinear_path,
-        usecols=["uuid", "condition"],
+        usecols=["uuid", "condition"],  # type: ignore[reportArgumentType]
         chunksize=200_000,
     ):
         mask = chunk["condition"].astype(str).str.strip().str.lower() == condition
@@ -351,7 +359,7 @@ def _write_health_data_rows(
         frame = frame[frame["Status"].astype(str).str.strip().str.lower() == status_filter]
 
     output_rows = 0
-    for index, record in frame.iterrows():
+    for window_index, (_, record) in enumerate(frame.iterrows()):
         if max_rows is not None and output_rows >= max_rows:
             break
         pulse = _number(record.get("pulse"))
@@ -361,7 +369,7 @@ def _write_health_data_rows(
 
         row = _empty_row(
             patient_id="fitbitdata-health",
-            window_start=base_time + timedelta(minutes=int(index) * window_minutes),
+            window_start=base_time + timedelta(minutes=window_index * window_minutes),
             window_minutes=window_minutes,
         )
         row["heart_rate_mean"] = float(pulse)
@@ -496,7 +504,7 @@ def _write_activity_rows(
     for _, record in frame.iterrows():
         if max_rows is not None and output_rows >= max_rows:
             break
-        date = pd.to_datetime(record.get("Date"), errors="coerce")
+        date = pd.to_datetime(str(record.get("Date", "")), errors="coerce")
         if pd.isna(date):
             continue
         window_start = date.to_pydatetime().replace(tzinfo=timezone.utc)
@@ -534,10 +542,10 @@ def _write_sleep_health_rows(
     output_rows = 0
     windows_per_day = 24 * 60 / float(window_minutes)
 
-    for index, record in frame.iterrows():
+    for window_index, (_, record) in enumerate(frame.iterrows()):
         if max_rows is not None and output_rows >= max_rows:
             break
-        window_start = base_time + timedelta(minutes=index * window_minutes)
+        window_start = base_time + timedelta(minutes=window_index * window_minutes)
         row = _empty_row(
             patient_id=f"sleep-health-{record.get('Person ID')}",
             window_start=window_start,

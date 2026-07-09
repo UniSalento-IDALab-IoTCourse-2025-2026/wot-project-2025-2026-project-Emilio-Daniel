@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
-from numbers import Number
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Union, cast
 
 from edge_ai.schema import InferenceResult, TriageDecision
 
@@ -257,6 +256,7 @@ def _parse_optional_float(value: object) -> Union[float, None]:
             return float(stripped)
         except ValueError:
             return None
-    if isinstance(value, Number):
-        return float(value)
-    return None
+    try:
+        return float(cast(Any, value))
+    except (TypeError, ValueError):
+        return None

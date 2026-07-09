@@ -33,6 +33,16 @@ companion_iOS_app/**/build/
 companion_iOS_app/**/DerivedData/
 companion_iOS_app/**/*.xcuserdata/
 companion_iOS_app/**/*.xcuserstate
+Applicazione IoT Companion/companion_Android_app/.gradle/
+Applicazione IoT Companion/companion_Android_app/.idea/
+Applicazione IoT Companion/companion_Android_app/local.properties
+Applicazione IoT Companion/companion_Android_app/**/build/
+Applicazione IoT Companion/companion_Android_app/**/*.apk
+Applicazione IoT Companion/companion_Android_app/**/output-metadata.json
+Applicazione IoT Companion/companion_iOS_app/**/build/
+Applicazione IoT Companion/companion_iOS_app/**/DerivedData/
+Applicazione IoT Companion/companion_iOS_app/**/*.xcuserdata/
+Applicazione IoT Companion/companion_iOS_app/**/*.xcuserstate
 *.joblib
 *.pkl
 *.sqlite

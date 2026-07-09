@@ -551,7 +551,9 @@ def report_from_latest_window(
     frame = pd.read_csv(latest_window_csv)
     if frame.empty:
         raise ValueError(f"Latest window CSV is empty: {latest_window_csv}")
-    row = frame.sort_values("window_end").iloc[-1].to_dict()
+    latest = frame.sort_values(by="window_end").iloc[-1]
+    row: dict[str, Any] = {str(key): value for key, value in latest.items()}
     window_start = parse_timestamp(row["window_start"])
     window_end = parse_timestamp(row["window_end"])
-    return evaluate_quality(config, row, window_start, window_end)
+    report = evaluate_quality(config, row, window_start, window_end)
+    return report

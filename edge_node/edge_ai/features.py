@@ -61,7 +61,7 @@ def select_features(
     tracciare la finestra ma non devono entrare direttamente nel modello.
     """
     selected = list(columns) if columns is not None else FEATURE_COLUMNS
-    return frame[selected].copy()
+    return frame.loc[:, selected].copy()
 
 
 def latest_record(frame: pd.DataFrame) -> pd.Series:

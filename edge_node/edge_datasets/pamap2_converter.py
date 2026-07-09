@@ -53,7 +53,10 @@ class Pamap2WindowAggregate:
     ) -> None:
         """Aggiunge al totale finestra le statistiche calcolate su un chunk."""
         self.row_count += int(row_count)
-        valid_hr = pd.to_numeric(heart_rates, errors="coerce").dropna()
+        valid_hr = pd.Series(
+            pd.to_numeric(heart_rates, errors="coerce"),
+            dtype="float64",
+        ).dropna()
         if not valid_hr.empty:
             self.hr_count += int(valid_hr.shape[0])
             self.hr_sum += float(valid_hr.sum())
@@ -184,11 +187,11 @@ def _aggregate_file(
     input_rows = 0
     window_seconds = window_minutes * 60.0
 
-    for chunk in pd.read_csv(
+    for chunk in pd.read_csv(  # type: ignore[call-overload]
         source,
         sep=r"\s+",
         header=None,
-        usecols=[0, 1, 2],
+        usecols=[0, 1, 2],  # type: ignore[reportArgumentType]
         names=["time_s", "activity_id", "heart_rate"],
         na_values=["NaN"],
         chunksize=chunksize,

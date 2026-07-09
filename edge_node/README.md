@@ -86,7 +86,7 @@ il lookback sono specifici di Google Health: servono per compensare la sincroniz
 cloud del watch senza spostare indietro la finestra BLE.
 
 Fitbit resta supportato come adapter legacy, ma per il Pixel Watch 2 nuovo percorso e'
-Google Health. La procedura completa e' in `docs/GOOGLE_WATCH_SETUP.md`.
+Google Health. La procedura completa e' in `../Documenti/GOOGLE_WATCH_SETUP.md`.
 
 ## Receiver Android BLE
 

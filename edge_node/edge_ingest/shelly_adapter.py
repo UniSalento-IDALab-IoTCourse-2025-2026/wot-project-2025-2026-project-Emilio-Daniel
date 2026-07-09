@@ -50,7 +50,11 @@ class ShellyCsvAdapter:
         }
 
         if "power_w" in window.columns:
-            avg_power_w = float(pd.to_numeric(window["power_w"], errors="coerce").mean())
+            power_values = pd.Series(
+                pd.to_numeric(window["power_w"], errors="coerce"),
+                dtype="float64",
+            )
+            avg_power_w = float(power_values.mean())
             hours = (window_end - window_start).total_seconds() / 3600.0
             features["nilm_total_wh"] = max(0.0, avg_power_w * hours)
 
@@ -67,7 +71,10 @@ class ShellyCsvAdapter:
             )
 
         if "tv_active" in window.columns:
-            active = pd.to_numeric(window["tv_active"], errors="coerce").fillna(0)
+            active = pd.Series(
+                pd.to_numeric(window["tv_active"], errors="coerce"),
+                dtype="float64",
+            ).fillna(0.0)
             features["nilm_tv_minutes"] = float(active.sum())
 
         return features
