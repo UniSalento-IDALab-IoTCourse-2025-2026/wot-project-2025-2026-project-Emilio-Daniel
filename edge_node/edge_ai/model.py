@@ -219,7 +219,7 @@ class EdgeAnomalyDetector:
         come presenza e batteria del wearable.
         """
         row = pd.DataFrame([dict(record)])
-        features = row[self.metadata.feature_columns]
+        features = row.loc[:, self.metadata.feature_columns].copy()
         decision_value = float(self.pipeline.decision_function(features)[0])
         label = "outlier" if int(self.pipeline.predict(features)[0]) == -1 else "normal"
         anomaly_score = self._decision_to_score(decision_value)
@@ -316,7 +316,7 @@ class EdgeAnomalyDetector:
             if hasattr(imputer, "feature_names_in_"):
                 transformed_input = pd.DataFrame(
                     transformed,
-                    columns=self.metadata.feature_columns,
+                    columns=pd.Index(self.metadata.feature_columns),
                 )
             else:
                 transformed_input = transformed
