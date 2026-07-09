@@ -199,7 +199,12 @@ def _check_ble(
         )
         return
 
-    timestamps = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
+    timestamps = pd.to_datetime(
+        frame["timestamp"],
+        utc=True,
+        errors="coerce",
+        format="mixed",
+    )
     invalid_count = int(timestamps.isna().sum())
     metrics["ble_invalid_timestamps"] = invalid_count
     if invalid_count == len(frame):
@@ -478,7 +483,12 @@ def _check_shelly(
         )
         return
 
-    timestamps = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
+    timestamps = pd.to_datetime(
+        frame["timestamp"],
+        utc=True,
+        errors="coerce",
+        format="mixed",
+    )
     mask = (
         (timestamps >= pd.Timestamp(window_start))
         & (timestamps <= pd.Timestamp(window_end))
