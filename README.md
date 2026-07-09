@@ -752,7 +752,7 @@ vale solo quando sei gia' dentro `edge_node/`.
 
 ### Comando unico consigliato
 
-Questo e' il comando breve da usare normalmente dalla root del progetto:
+Questo è il comando breve da usare normalmente dalla root del progetto:
 
 ```powershell
 .\avviaSistema
