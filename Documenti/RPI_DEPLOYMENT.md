@@ -284,6 +284,24 @@ Durante i primi 5/6 giorni di baseline, usare invece:
 In produzione i collector reali scriveranno i campioni grezzi in `data/raw/`, poi
 `edge_runtime` usera' `edge_ingest` e `edge_ai` per produrre l'output finale.
 
+File raw principali da controllare:
+
+```text
+data/raw/ble_samples.csv
+data/raw/google_health_samples.csv
+data/raw/shelly_samples.csv
+```
+
+Per vedere le ultime righe dell'orologio:
+
+```powershell
+Import-Csv data\raw\google_health_samples.csv | Select-Object -Last 10 | ConvertTo-Json -Depth 4
+```
+
+Il file Google Health viene scritto a ogni ciclo runtime quando `google_health.enabled`
+e' `true`. E' utile per debug e storico: il modello continua a usare
+`data/processed/latest_window.csv`.
+
 ## Controllo qualita manuale
 
 ```bash

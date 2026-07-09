@@ -14,6 +14,26 @@ from edge_ingest.fitbit_adapter import FitbitAdapter
 from edge_ingest.google_health_adapter import GoogleHealthAdapter
 from edge_ingest.shelly_adapter import ShellyCsvAdapter
 
+GOOGLE_HEALTH_RAW_COLUMNS = [
+    "collected_at",
+    "patient_id",
+    "runtime_window_start",
+    "runtime_window_end",
+    "source_window_start",
+    "source_window_end",
+    "wearable_present",
+    "wearable_battery_pct",
+    "heart_rate_mean",
+    "heart_rate_std",
+    "resting_heart_rate",
+    "hrv_rmssd",
+    "spo2_mean",
+    "sleep_minutes",
+    "awake_minutes",
+    "steps",
+    "sedentary_minutes",
+]
+
 
 def build_feature_window(
     config: EdgeIngestConfig,
@@ -51,11 +71,21 @@ def build_feature_window(
         # `data_delay_minutes` resta disponibile solo come fallback esplicito se
         # in futuro il cloud Google dovesse sincronizzare con troppo ritardo.
         google_delay = timedelta(minutes=max(0, config.google_health.data_delay_minutes))
-        row.update(
-            GoogleHealthAdapter(config.google_health).collect_window(
-                window_start - google_delay,
-                window_end - google_delay,
-            )
+        google_source_start = window_start - google_delay
+        google_source_end = window_end - google_delay
+        google_features = GoogleHealthAdapter(config.google_health).collect_window(
+            google_source_start,
+            google_source_end,
+        )
+        row.update(google_features)
+        append_google_health_raw_row(
+            config.google_health.raw_csv,
+            patient_id=config.patient.patient_id,
+            runtime_window_start=window_start,
+            runtime_window_end=window_end,
+            source_window_start=google_source_start,
+            source_window_end=google_source_end,
+            features=google_features,
         )
     if config.ble.enabled:
         row.update(
@@ -100,6 +130,45 @@ def append_baseline_row(path: str | Path, row: dict[str, Any]) -> None:
         if not file_exists:
             writer.writeheader()
         writer.writerow(_ordered_row(row))
+
+
+def append_google_health_raw_row(
+    path: str | Path,
+    *,
+    patient_id: str,
+    runtime_window_start: datetime,
+    runtime_window_end: datetime,
+    source_window_start: datetime,
+    source_window_end: datetime,
+    features: dict[str, Any],
+) -> None:
+    """Accoda una riga raw-normalizzata con cio' che arriva da Google Health.
+
+    Il file raw BLE contiene campioni grezzi evento-per-evento. Google Health,
+    invece, viene letto via API gia' aggregata per finestra: salviamo quindi una
+    riga append-only per ogni ciclo runtime, prima che le feature vengano fuse
+    con BLE/Shelly nel `latest_window.csv`.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = target.exists() and target.stat().st_size > 0
+    raw_row = {
+        "collected_at": datetime.now().astimezone().isoformat(),
+        "patient_id": patient_id,
+        "runtime_window_start": runtime_window_start.isoformat(),
+        "runtime_window_end": runtime_window_end.isoformat(),
+        "source_window_start": source_window_start.isoformat(),
+        "source_window_end": source_window_end.isoformat(),
+    }
+    for column in GOOGLE_HEALTH_RAW_COLUMNS:
+        if column not in raw_row:
+            raw_row[column] = features.get(column, "")
+
+    with target.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=GOOGLE_HEALTH_RAW_COLUMNS)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(raw_row)
 
 
 def _ordered_row(row: dict[str, Any]) -> dict[str, Any]:

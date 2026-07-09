@@ -380,11 +380,14 @@ Output atteso:
 status: cycle_completed
 quality_status: ok
 decision_level: green/yellow/orange/red/technical
+google_health_samples_logged: true
+received_google_health_csv: data/raw/google_health_samples.csv
 ```
 
 File da controllare:
 
 ```text
+data/raw/google_health_samples.csv
 data/processed/latest_window.csv
 outputs/last-cycle.json
 outputs/last-quality-report.json
@@ -396,6 +399,24 @@ Per vedere rapidamente il CSV:
 ```powershell
 Import-Csv data\processed\latest_window.csv | ConvertTo-Json -Depth 4
 ```
+
+Per vedere lo storico raw-normalizzato raccolto dall'orologio:
+
+```powershell
+Import-Csv data\raw\google_health_samples.csv | Select-Object -Last 10 | ConvertTo-Json -Depth 4
+```
+
+`google_health_samples.csv` cresce a ogni ciclo runtime, come `ble_samples.csv`.
+Contiene una riga per finestra letta da Google Health, con timestamp raccolta, finestra
+runtime, finestra sorgente Google e feature wearable disponibili. `latest_window.csv`
+resta invece il file finale dell'ultima finestra, gia' fuso con BLE/Shelly.
+
+Nello status del runtime:
+
+- `google_health_enabled` dice se la sorgente orologio e' attiva da config;
+- `google_health_samples_logged` dice se il CSV raw dell'orologio e' stato scritto;
+- `received_google_health_csv` indica il file storico dell'orologio;
+- `google_health_available_features` elenca le feature wearable disponibili nella finestra.
 
 Per lasciarlo acceso come il receiver BLE, usare la modalita loop:
 

@@ -174,6 +174,19 @@ corrente da 4 minuti per Google Watch 2 e BLE. Se Google Health non ha ancora
 sincronizzato un valore, quel campo resta vuoto/`nan`, ma la decisione viene
 comunque prodotta senza ritardare artificialmente la finestra.
 
+Quando Google Health e' abilitato, ogni ciclo salva anche una riga storica in:
+
+```text
+data/raw/google_health_samples.csv
+```
+
+Questo file e' l'equivalente wearable di `data/raw/ble_samples.csv`: cresce nel tempo e
+serve per debug/storico dei dati raccolti dall'orologio. Per vedere le ultime righe:
+
+```powershell
+Import-Csv data\raw\google_health_samples.csv | Select-Object -Last 10 | ConvertTo-Json -Depth 4
+```
+
 ## Modello AI ibrido
 
 Il sistema ora supporta tre modelli:
@@ -280,6 +293,19 @@ legge i dati ricevuti in data/raw/
 -> salva outputs/last-quality-report.json
 -> salva outputs/last-cycle.json
 ```
+
+Nello status JSON del ciclo trovi anche la parte orologio:
+
+```text
+google_health_enabled
+google_health_samples_logged
+received_google_health_csv
+google_health_available_feature_count
+google_health_available_features
+```
+
+Questi campi sono l'equivalente wearable di `received_ble_csv`: confermano che Google
+Health e' attivo, che il raw CSV e' stato scritto e quali feature sono arrivate.
 
 Se nessun modello esiste ancora, il ciclo non fallisce: produce comunque
 `latest_window.csv` e segna `skipped_all_models_missing` in `outputs/last-cycle.json`.

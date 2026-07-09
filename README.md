@@ -814,6 +814,18 @@ contenere insieme dati biometrici del Google Watch 2 e permanenza nelle stanze.
 Se Google Health non ha ancora sincronizzato un valore, quel campo puo' restare
 vuoto/`nan`, ma il sistema non sposta piu' artificialmente la finestra nel passato.
 
+Come per il BLE, anche Google Watch ora ha uno storico raw append-only:
+
+```text
+data/raw/google_health_samples.csv
+```
+
+Per vedere le ultime righe raccolte dall'orologio:
+
+```powershell
+Import-Csv data\raw\google_health_samples.csv | Select-Object -Last 10 | ConvertTo-Json -Depth 4
+```
+
 Il comando resta attivo finche' non viene premuto `CTRL+C`. Durante la baseline:
 
 ```bash

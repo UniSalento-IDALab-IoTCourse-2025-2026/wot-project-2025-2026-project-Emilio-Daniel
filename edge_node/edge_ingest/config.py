@@ -60,6 +60,7 @@ class GoogleHealthConfig:
     enabled: bool = False
     token_file: Path = Path("config/google_health_token.json")
     client_file: Path = Path("config/google_health_client.json")
+    raw_csv: Path = Path("data/raw/google_health_samples.csv")
     api_base_url: str = "https://health.googleapis.com"
     data_delay_minutes: int = 0
     heart_rate_lookback_minutes: int = 30
@@ -199,6 +200,12 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
                 _section(payload, "google_health").get(
                     "client_file",
                     "config/google_health_client.json",
+                )
+            ),
+            raw_csv=Path(
+                _section(payload, "google_health").get(
+                    "raw_csv",
+                    "data/raw/google_health_samples.csv",
                 )
             ),
             api_base_url=str(
