@@ -42,8 +42,16 @@ def validate_feature_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
     cleaned = frame.copy()
     cleaned["patient_id"] = cleaned["patient_id"].astype(str)
-    cleaned["window_start"] = pd.to_datetime(cleaned["window_start"], utc=True)
-    cleaned["window_end"] = pd.to_datetime(cleaned["window_end"], utc=True)
+    cleaned["window_start"] = pd.to_datetime(
+        cleaned["window_start"],
+        utc=True,
+        format="mixed",
+    )
+    cleaned["window_end"] = pd.to_datetime(
+        cleaned["window_end"],
+        utc=True,
+        format="mixed",
+    )
 
     for column in FEATURE_COLUMNS:
         cleaned[column] = pd.to_numeric(cleaned[column], errors="coerce")

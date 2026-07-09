@@ -35,7 +35,15 @@ class ShellyCsvAdapter:
         if "timestamp" not in frame.columns:
             raise ValueError("Shelly CSV must contain a timestamp column")
 
-        frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+        frame["timestamp"] = pd.to_datetime(
+            frame["timestamp"],
+            utc=True,
+            errors="coerce",
+            format="mixed",
+        )
+        frame = frame.dropna(subset=["timestamp"])
+        if frame.empty:
+            return {}
         mask = (frame["timestamp"] >= window_start) & (frame["timestamp"] <= window_end)
         window = frame.loc[mask].sort_values("timestamp").copy()
         if window.empty:
