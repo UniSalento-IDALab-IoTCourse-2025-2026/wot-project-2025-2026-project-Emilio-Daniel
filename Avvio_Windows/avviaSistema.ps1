@@ -4,7 +4,7 @@ param(
 )
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectDir = (Resolve-Path (Join-Path $ScriptDir "..")).Path
+$ProjectDir = Split-Path -Parent $ScriptDir
 $EdgeDir = Join-Path $ProjectDir "edge_node"
 $ConfigFile = Join-Path $EdgeDir "config\edge.yml"
 $LocalPython = Join-Path $ProjectDir ".venv\Scripts\python.exe"
