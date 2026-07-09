@@ -147,3 +147,56 @@ beacon_id = identificativo iBeacon o MAC
 phone_id = telefono Android
 ```
 
+## Vedere se l'alert parte dai beacon
+
+Dopo aver ricevuto campioni BLE e aver lanciato il runtime:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT\edge_node
+python -m edge_runtime.cli --config config\edge.yml
+```
+
+controllare la decisione finale:
+
+```powershell
+Get-Content outputs\patient-001-decision.json
+```
+
+Nel JSON la parte Beacon/BLE corrisponde al modello spaziale:
+
+```text
+evidence.fusion.models.generic_spatial
+```
+
+Per vedere singolarmente perche' i beacon hanno alzato o abbassato lo score:
+
+```powershell
+$d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
+$d.evidence.fusion.models.generic_spatial.feature_explanation | ConvertTo-Json -Depth 8
+```
+
+Le feature principali da guardare sono:
+
+```text
+room_changes
+night_room_changes
+bedroom_minutes
+kitchen_minutes
+bathroom_minutes
+living_room_minutes
+longest_single_room_minutes
+```
+
+Se l'alert nasce solo dai beacon, nel JSON potrai vedere:
+
+```text
+model_label = generic_spatial_anomaly_only
+```
+
+Se invece beacon e orologio confermano insieme l'anomalia, la fusione puo' produrre:
+
+```text
+model_label = multi_model_agreement_orange
+model_label = multi_model_agreement_red
+```
+

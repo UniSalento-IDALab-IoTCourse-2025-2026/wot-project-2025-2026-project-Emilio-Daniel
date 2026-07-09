@@ -379,7 +379,7 @@ Output atteso:
 ```text
 status: cycle_completed
 quality_status: ok
-decision_level: green/yellow/red/technical
+decision_level: green/yellow/orange/red/technical
 ```
 
 File da controllare:
@@ -521,10 +521,21 @@ come outlier, perche' e' stato addestrato su dataset pubblici diversi dal pazien
 Per evitare falsi rossi troppo aggressivi abbiamo aggiunto queste protezioni:
 
 - se il wearable non ha segnali core sufficienti, il modello wearable viene saltato;
-- un'anomalia confermata solo da un modello generico viene limitata a livello attenzione;
-- il debounce puo' produrre `yellow` prima di pubblicare un alert forte;
+- un'anomalia confermata solo da un modello generico viene limitata sotto il rosso;
+- il debounce puo' produrre `yellow` o `orange` prima di pubblicare un alert forte;
 - la decisione finale mantiene `evidence.fusion`, cosi' si vede quale modello ha generato
   il sospetto.
+
+Scala attuale:
+
+```text
+0-35    green     routine compatibile
+35-65   yellow    attenzione lieve, dashboard si', alert no
+65-80   orange    anomalia importante, alert solo se confermata
+80-100  red       anomalia severa, alert immediato
+```
+
+`technical` resta separato e indica problemi di raccolta dati, non rischio clinico.
 
 Motivazione: prima della baseline personale vogliamo usare i modelli generici come aiuto,
 non come verita assoluta. Il modello personale del paziente servira' a rendere gli alert
@@ -568,6 +579,24 @@ Controllo ultima finestra:
 ```powershell
 Import-Csv data\processed\latest_window.csv | ConvertTo-Json -Depth 4
 ```
+
+Controllo decisione finale:
+
+```powershell
+Get-Content outputs\patient-001-decision.json
+```
+
+Vedere perche' il modello wearable/orologio ha alzato lo score:
+
+```powershell
+$d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
+$d.evidence.fusion.models.generic_wearable.feature_explanation | ConvertTo-Json -Depth 8
+```
+
+La sezione `top_features` mostra le feature piu' lontane dal training del modello, per
+esempio `heart_rate_mean`, `heart_rate_std`, `hrv_rmssd`, `spo2_mean`, `steps` o
+`sedentary_minutes`. Non e' una diagnosi clinica: e' una spiegazione tecnica del perche'
+il modello wearable considera quella finestra piu' o meno anomala.
 
 ## Riferimenti ufficiali
 

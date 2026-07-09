@@ -13,11 +13,12 @@ class FusionConfig:
     generic_spatial_weight: float = 0.30
     generic_wearable_weight: float = 0.30
     personal_weight: float = 0.40
-    yellow_score: float = 60.0
-    red_score: float = 85.0
+    yellow_score: float = 35.0
+    orange_score: float = 65.0
+    red_score: float = 80.0
     agreement_bonus: float = 5.0
     single_model_penalty: float = 10.0
-    unconfirmed_generic_max_score: float = 80.0
+    unconfirmed_generic_max_score: float = 79.9
     disagreement_margin: float = 25.0
 
 
@@ -148,8 +149,11 @@ def _fuse_scores(
     attenuato per ridurre falsi positivi nella fase iniziale.
     """
     scores = {name: float(result.anomaly_score) for name, result in results}
-    high_models = [
+    yellow_models = [
         name for name, score in scores.items() if score >= config.yellow_score
+    ]
+    orange_models = [
+        name for name, score in scores.items() if score >= config.orange_score
     ]
     red_models = [
         name for name, score in scores.items() if score >= config.red_score
@@ -162,15 +166,22 @@ def _fuse_scores(
             [f"Severe anomaly confirmed by {', '.join(red_models)}"],
         )
 
-    if len(high_models) >= 2:
+    if len(orange_models) >= 2:
+        return (
+            min(100.0, max(scores.values()) + config.agreement_bonus),
+            "multi_model_agreement_orange",
+            [f"Important anomaly confirmed by {', '.join(orange_models)}"],
+        )
+
+    if len(yellow_models) >= 2:
         return (
             min(100.0, max(scores.values()) + config.agreement_bonus),
             "multi_model_agreement_yellow",
-            [f"Anomaly confirmed by {', '.join(high_models)}"],
+            [f"Attention signal confirmed by {', '.join(yellow_models)}"],
         )
 
-    if len(high_models) == 1:
-        model_name = high_models[0]
+    if len(yellow_models) == 1:
+        model_name = yellow_models[0]
         high_score = scores[model_name]
         score = max(weighted_score, high_score - config.single_model_penalty)
         if model_name.startswith("generic_"):
@@ -223,9 +234,13 @@ def _result_summary(result: InferenceResult | None) -> dict[str, Any]:
     """
     if result is None:
         return {"available": False}
-    return {
+    summary = {
         "available": True,
         "score": round(float(result.anomaly_score), 3),
         "label": result.model_label,
         "decision_value": round(float(result.model_decision_value), 6),
     }
+    explanation = result.context.get("feature_explanation")
+    if isinstance(explanation, dict):
+        summary["feature_explanation"] = explanation
+    return summary

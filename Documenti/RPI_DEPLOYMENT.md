@@ -223,6 +223,46 @@ BLE raw CSV
 Questa modalita e' utile su Windows e su Raspberry quando vogliamo vedere nel terminale
 ogni ciclo completato senza schedulatore esterno.
 
+La decisione AI usa questi livelli:
+
+```text
+0-35    green     normale
+35-65   yellow    attenzione lieve, visibile ma non pubblicata come alert
+65-80   orange    anomalia importante, pubblicata se confermata dal debounce
+80-100  red       anomalia severa, pubblicata subito
+```
+
+`technical` resta separato dai colori clinici e indica problemi di sensori, token o dati.
+
+Per capire quale sorgente sta spingendo la decisione:
+
+```bash
+cat outputs/patient-001-decision.json
+```
+
+Su Windows/PowerShell, i comandi piu' leggibili sono:
+
+```powershell
+$d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
+```
+
+Per vedere il perche' lato Google Watch / wearable:
+
+```powershell
+$d.evidence.fusion.models.generic_wearable.feature_explanation | ConvertTo-Json -Depth 8
+```
+
+Per vedere il perche' lato Beacon / BLE:
+
+```powershell
+$d.evidence.fusion.models.generic_spatial.feature_explanation | ConvertTo-Json -Depth 8
+```
+
+`generic_wearable` spiega feature come battito, HRV, SpO2, passi e minuti sedentari.
+`generic_spatial` spiega feature come cambi stanza e minuti nelle stanze. Entrambe le
+spiegazioni sono tecniche: indicano quali feature sono piu' lontane dal training, non una
+diagnosi clinica.
+
 Il ciclo esegue anche controlli qualita sui dati. Se `--append-baseline` e' attivo ma il
 report qualita ha stato `error`, la finestra non viene aggiunta a
 `data/processed/baseline.csv`.
