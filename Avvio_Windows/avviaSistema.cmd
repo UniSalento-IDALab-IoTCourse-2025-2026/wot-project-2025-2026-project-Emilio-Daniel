@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-for %%I in ("%~dp0..") do set "PROJECT_DIR=%%~fI\"
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_DIR=%%~fI\"
 set "EDGE_DIR=%PROJECT_DIR%edge_node"
 set "CONFIG_FILE=%EDGE_DIR%\config\edge.yml"
 set "PYTHON_EXE=%PROJECT_DIR%.venv\Scripts\python.exe"
