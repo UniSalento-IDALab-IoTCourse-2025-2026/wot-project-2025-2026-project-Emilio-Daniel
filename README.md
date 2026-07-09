@@ -226,9 +226,18 @@ L'app iOS si crea su Mac con Xcode usando i file in
   e HuGCDN2014-OXI in formato MATLAB per SpO2/RR.
 - Ho unito fitbitdata, PAMAP2 e WESAD in `generic_wearable_dataset.csv`.
 - Ho riaddestrato `models/generic_wearable.pkl`: ora il generico wearable usa
-  `heart_rate_mean`, `heart_rate_std` e `spo2_mean`. `hrv_rmssd` resta nei dati
-  ma viene escluso dal modello generico per evitare falsi score dovuti a scale
-  diverse tra dataset pubblici e Google Health.
+  `heart_rate_mean`, `heart_rate_std`, `hrv_rmssd`, `spo2_mean`, `steps` e
+  `sedentary_minutes`. HRV ha peso moderato: valori alti/sani non generano
+  allarme, valori molto bassi possono produrre attenzione pre-baseline.
+- Nel modello generico wearable, `spo2_mean` viene trattata con una regola
+  clinica semplice: valori sani/alti vengono normalizzati, mentre valori bassi
+  restano informativi. Cosi' una SpO2 pari a 99-100 non genera falsi allarmi.
+- Ho creato nella radice `Dataset_Modelli_Generali/` due dataset sintetici
+  controllati da 300000 righe ciascuno:
+  `generic_spatial_synthetic_300k.csv` e `generic_wearable_synthetic_300k.csv`.
+  Servono a calibrare i modelli generici con valori normali/standard e pesi
+  ragionati: battito molto alto a riposo pesa piu' di una SpO2 lievemente bassa,
+  HRV bassa pesa in modo intermedio e HRV alta/sana non genera falsi allarmi.
 - Ho aggiornato la documentazione di deployment su Raspberry Pi.
 - Ho eseguito controlli di compilazione/import e test tecnici end-to-end della pipeline.
 
@@ -1366,10 +1375,10 @@ python -m edge_datasets.cli merge \
   --output data/processed/generic_wearable_dataset.csv
 ```
 
-Poi addestriamo il modello wearable. Il generico attuale esclude `hrv_rmssd`,
-perche' la HRV dei dataset pubblici e quella letta da Google Health possono
-avere scale molto diverse. Il dato rimane nel CSV, ma non entra nel modello
-generico installabile sul Raspberry.
+Poi addestriamo il modello wearable. Il generico attuale include `hrv_rmssd`
+usando il dataset sintetico controllato: HRV alta/sana viene normalizzata e non
+genera allarme, mentre HRV molto bassa puo' contribuire allo score prima della
+baseline personale.
 
 ```bash
 python -m edge_ai.cli train-generic \

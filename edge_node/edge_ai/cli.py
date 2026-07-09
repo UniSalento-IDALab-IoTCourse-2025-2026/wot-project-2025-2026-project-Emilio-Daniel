@@ -128,8 +128,6 @@ def train_generic_model(args: argparse.Namespace) -> None:
     """
     frame = load_feature_frame(args.input)
     exclude_features = _parse_feature_list(args.exclude_features)
-    if args.model_kind == "generic_wearable" and exclude_features is None:
-        exclude_features = ["hrv_rmssd"]
 
     detector = EdgeAnomalyDetector.train_generic(
         frame=frame,

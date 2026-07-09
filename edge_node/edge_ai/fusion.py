@@ -19,6 +19,7 @@ class FusionConfig:
     agreement_bonus: float = 5.0
     single_model_penalty: float = 10.0
     normal_label_max_score: float = 34.9
+    normal_label_alert_floor: float = 60.0
     unconfirmed_generic_max_score: float = 79.9
     disagreement_margin: float = 25.0
 
@@ -151,7 +152,7 @@ def _fuse_scores(
     """
     scores = {name: float(result.anomaly_score) for name, result in results}
     normal_models = [
-        name for name, result in results if _is_normal_model_result(result)
+        name for name, result in results if _is_normal_model_result(result, config)
     ]
     if len(normal_models) == len(results):
         return (
@@ -163,19 +164,19 @@ def _fuse_scores(
     yellow_models = [
         name
         for name, result in results
-        if not _is_normal_model_result(result)
+        if not _is_normal_model_result(result, config)
         and scores[name] >= config.yellow_score
     ]
     orange_models = [
         name
         for name, result in results
-        if not _is_normal_model_result(result)
+        if not _is_normal_model_result(result, config)
         and scores[name] >= config.orange_score
     ]
     red_models = [
         name
         for name, result in results
-        if not _is_normal_model_result(result)
+        if not _is_normal_model_result(result, config)
         and scores[name] >= config.red_score
     ]
 
@@ -232,7 +233,7 @@ def _fuse_scores(
     )
 
 
-def _is_normal_model_result(result: InferenceResult) -> bool:
+def _is_normal_model_result(result: InferenceResult, config: FusionConfig) -> bool:
     """Riconosce quando un modello non sta dichiarando una vera anomalia.
 
     Lo score e' utile per ordinare il rischio, ma i modelli generici possono
@@ -240,7 +241,8 @@ def _is_normal_model_result(result: InferenceResult) -> bool:
     falsi gialli, la fusione considera confermata una anomalia solo quando la
     label del modello non e' normale.
     """
-    return str(result.model_label).strip().lower() in {"normal", "inlier"}
+    label_is_normal = str(result.model_label).strip().lower() in {"normal", "inlier"}
+    return label_is_normal and float(result.anomaly_score) < config.normal_label_alert_floor
 
 
 def _base_result(results: list[tuple[str, InferenceResult]]) -> InferenceResult:

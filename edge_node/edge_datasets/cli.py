@@ -13,6 +13,7 @@ from edge_datasets.pamap2_converter import (
     convert_pamap2_dataset,
     parse_include_patterns as parse_pamap2_include_patterns,
 )
+from edge_datasets.synthetic_generic import generate_synthetic_generic_datasets
 from edge_datasets.wesad_converter import (
     convert_wesad_dataset,
     parse_include_patterns as parse_wesad_include_patterns,
@@ -268,6 +269,34 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Output CSV path.",
     )
+
+    synthetic = subparsers.add_parser(
+        "synthetic-generic",
+        help="Generate controlled synthetic generic datasets for model calibration.",
+    )
+    synthetic.add_argument(
+        "--output-dir",
+        default="../Dataset_Modelli_Generali",
+        help="Directory where the two synthetic CSV files will be written.",
+    )
+    synthetic.add_argument(
+        "--rows",
+        type=int,
+        default=300_000,
+        help="Number of rows per generated dataset.",
+    )
+    synthetic.add_argument(
+        "--seed",
+        type=int,
+        default=20260709,
+        help="Deterministic random seed.",
+    )
+    synthetic.add_argument(
+        "--window-minutes",
+        type=int,
+        default=4,
+        help="Synthetic window size in minutes.",
+    )
     return parser
 
 
@@ -338,6 +367,15 @@ def main() -> None:
         summary = merge_feature_datasets(
             inputs=parse_input_paths(args.inputs),
             output_csv=args.output,
+        )
+        print(json.dumps(summary.to_dict(), indent=2))
+        return
+    if args.command == "synthetic-generic":
+        summary = generate_synthetic_generic_datasets(
+            output_dir=args.output_dir,
+            rows=args.rows,
+            seed=args.seed,
+            window_minutes=args.window_minutes,
         )
         print(json.dumps(summary.to_dict(), indent=2))
         return

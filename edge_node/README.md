@@ -233,9 +233,10 @@ $d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
 $d.evidence.fusion.models.generic_spatial.feature_explanation | ConvertTo-Json -Depth 8
 ```
 
-`generic_wearable` guarda feature come battito e SpO2. Per scelta progettuale
-non usa `hrv_rmssd`, perche' nei dataset pubblici e in Google Health questo
-valore puo' avere scale diverse e generare falsi score alti.
+`generic_wearable` guarda feature come battito, HRV, SpO2, passi e minuti
+sedentari. L'HRV viene inclusa solo con dataset sintetici controllati e peso
+moderato: HRV alta/sana non genera allarme, mentre HRV molto bassa puo'
+produrre attenzione prima della baseline personale.
 `generic_spatial` guarda room changes e minuti nelle stanze.
 
 Durante la baseline i modelli generici vengono usati anche come filtro di sicurezza:
@@ -587,10 +588,60 @@ python -m edge_ai.cli train-generic \
   --model-kind generic_wearable
 ```
 
-Nota: `hrv_rmssd` viene escluso automaticamente dal modello generico wearable.
-Il valore resta nel CSV e potra' essere usato in futuro dal modello personale,
-ma il generico installabile su Raspberry usa solo feature piu' confrontabili tra
-dataset pubblici e dati Google Health reali.
+Nota: `hrv_rmssd` viene incluso nel modello generico wearable quando si usa il
+dataset sintetico controllato. Non viene trattato come feature dominante: valori
+alti/sani vengono normalizzati, valori molto bassi possono aumentare lo score.
+Inoltre `spo2_mean` viene normalizzata quando e' in fascia sana/alta: il
+generico wearable deve reagire a SpO2 basse, non a valori 99-100 che non sono
+preoccupanti.
+
+### Dataset sintetici controllati per i modelli generici
+
+Per stabilizzare i modelli generici prima della baseline personale, abbiamo
+aggiunto un generatore di dataset sintetici controllati. Questi CSV non sono
+dataset clinici reali: descrivono finestre normali/standard utili a calibrare
+il comportamento tecnico dei modelli.
+
+```bash
+python -m edge_datasets.cli synthetic-generic \
+  --output-dir ../Dataset_Modelli_Generali \
+  --rows 300000 \
+  --seed 20260709
+```
+
+Il comando genera:
+
+```text
+Dataset_Modelli_Generali/generic_spatial_synthetic_300k.csv
+Dataset_Modelli_Generali/generic_wearable_synthetic_300k.csv
+```
+
+Training spatial sintetico:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input ../Dataset_Modelli_Generali/generic_spatial_synthetic_300k.csv \
+  --output models/generic_spatial.pkl \
+  --model-id generic-spatial \
+  --model-kind generic_spatial \
+  --include-features room_changes,night_room_changes,bedroom_minutes,kitchen_minutes,bathroom_minutes,living_room_minutes,longest_single_room_minutes
+```
+
+Training wearable sintetico:
+
+```bash
+python -m edge_ai.cli train-generic \
+  --input ../Dataset_Modelli_Generali/generic_wearable_synthetic_300k.csv \
+  --output models/generic_wearable.pkl \
+  --model-id generic-wearable \
+  --model-kind generic_wearable \
+  --include-features heart_rate_mean,heart_rate_std,hrv_rmssd,spo2_mean,steps,sedentary_minutes
+```
+
+Nel generico wearable, HRV e' incluso con peso moderato. Inoltre il modello
+applica pesi e calibrazioni leggere: battito molto alto a riposo pesa piu' di
+una SpO2 al 92%, HRV bassa pesa in modo intermedio, mentre SpO2 sana/alta e HRV
+alta/sana non generano anomalia.
 
 Con i dati attuali il modello generico wearable seleziona le feature realmente
 coperte in modo solido: `heart_rate_mean`, `heart_rate_std`, `hrv_rmssd` e
