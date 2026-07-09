@@ -73,7 +73,6 @@ class BleCsvAdapter:
         timestamps = list(room_sequence["timestamp"])
         rooms = list(room_sequence["room_key"])
         durations_by_room: dict[str, float] = {}
-        longest_single_room = 0.0
 
         for index, current_time in enumerate(timestamps):
             next_time = timestamps[index + 1] if index + 1 < len(timestamps) else window_end
@@ -82,7 +81,6 @@ class BleCsvAdapter:
                 continue
             room = rooms[index]
             durations_by_room[room] = durations_by_room.get(room, 0.0) + minutes
-            longest_single_room = max(longest_single_room, minutes)
 
         for room, minutes in durations_by_room.items():
             feature_name = ROOM_FEATURES.get(room)
@@ -90,6 +88,7 @@ class BleCsvAdapter:
                 features[feature_name] += minutes
 
         changes = sum(1 for before, after in zip(rooms, rooms[1:]) if before != after)
+        longest_single_room = _longest_continuous_room_minutes(timestamps, rooms, window_end)
         features["room_changes"] = float(changes)
         local_start = window_start.astimezone(ZoneInfo(self.timezone_name))
         local_end = window_end.astimezone(ZoneInfo(self.timezone_name))
@@ -97,6 +96,38 @@ class BleCsvAdapter:
             features["night_room_changes"] = float(changes)
         features["longest_single_room_minutes"] = longest_single_room
         return features
+
+
+def _longest_continuous_room_minutes(
+    timestamps: list[pd.Timestamp],
+    rooms: list[str],
+    window_end: datetime,
+) -> float:
+    """Calcola la permanenza continua piu' lunga nella stessa stanza.
+
+    I campioni BLE arrivano ogni pochi secondi: il valore cercato non e' il
+    massimo intervallo tra due campioni, ma la somma degli intervalli consecutivi
+    finche' la stanza stimata rimane uguale.
+    """
+    longest = 0.0
+    current_run = 0.0
+    previous_room: str | None = None
+
+    for index, current_time in enumerate(timestamps):
+        next_time = timestamps[index + 1] if index + 1 < len(timestamps) else window_end
+        minutes = max(0.0, (next_time - current_time).total_seconds() / 60.0)
+        if isnan(minutes):
+            continue
+
+        room = rooms[index]
+        if previous_room is None or room == previous_room:
+            current_run += minutes
+        else:
+            longest = max(longest, current_run)
+            current_run = minutes
+        previous_room = room
+
+    return max(longest, current_run)
 
 
 def _resolve_room_sequence(window: pd.DataFrame) -> pd.DataFrame:

@@ -18,6 +18,7 @@ class FusionConfig:
     red_score: float = 80.0
     agreement_bonus: float = 5.0
     single_model_penalty: float = 10.0
+    normal_label_max_score: float = 34.9
     unconfirmed_generic_max_score: float = 79.9
     disagreement_margin: float = 25.0
 
@@ -149,14 +150,33 @@ def _fuse_scores(
     attenuato per ridurre falsi positivi nella fase iniziale.
     """
     scores = {name: float(result.anomaly_score) for name, result in results}
+    normal_models = [
+        name for name, result in results if _is_normal_model_result(result)
+    ]
+    if len(normal_models) == len(results):
+        return (
+            float(np.clip(weighted_score, 0.0, config.normal_label_max_score)),
+            "agreement_normal",
+            ["Available models report routine-compatible behavior"],
+        )
+
     yellow_models = [
-        name for name, score in scores.items() if score >= config.yellow_score
+        name
+        for name, result in results
+        if not _is_normal_model_result(result)
+        and scores[name] >= config.yellow_score
     ]
     orange_models = [
-        name for name, score in scores.items() if score >= config.orange_score
+        name
+        for name, result in results
+        if not _is_normal_model_result(result)
+        and scores[name] >= config.orange_score
     ]
     red_models = [
-        name for name, score in scores.items() if score >= config.red_score
+        name
+        for name, result in results
+        if not _is_normal_model_result(result)
+        and scores[name] >= config.red_score
     ]
 
     if len(red_models) >= 2:
@@ -210,6 +230,17 @@ def _fuse_scores(
         "agreement_normal",
         ["Available models report routine-compatible behavior"],
     )
+
+
+def _is_normal_model_result(result: InferenceResult) -> bool:
+    """Riconosce quando un modello non sta dichiarando una vera anomalia.
+
+    Lo score e' utile per ordinare il rischio, ma i modelli generici possono
+    produrre punteggi intermedi pur restando nella classe `normal`. Per evitare
+    falsi gialli, la fusione considera confermata una anomalia solo quando la
+    label del modello non e' normale.
+    """
+    return str(result.model_label).strip().lower() in {"normal", "inlier"}
 
 
 def _base_result(results: list[tuple[str, InferenceResult]]) -> InferenceResult:
