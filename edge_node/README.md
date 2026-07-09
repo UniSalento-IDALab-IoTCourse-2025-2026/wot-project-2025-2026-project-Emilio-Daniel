@@ -293,6 +293,19 @@ legge i dati ricevuti in data/raw/
 -> salva outputs/last-cycle.json
 ```
 
+Nello status JSON del ciclo trovi anche la parte orologio:
+
+```text
+google_health_enabled
+google_health_samples_logged
+received_google_health_csv
+google_health_available_feature_count
+google_health_available_features
+```
+
+Questi campi sono l'equivalente wearable di `received_ble_csv`: confermano che Google
+Health e' attivo, che il raw CSV e' stato scritto e quali feature sono arrivate.
+
 Se nessun modello esiste ancora, il ciclo non fallisce: produce comunque
 `latest_window.csv` e segna `skipped_all_models_missing` in `outputs/last-cycle.json`.
 

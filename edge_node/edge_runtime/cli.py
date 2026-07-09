@@ -357,6 +357,24 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "ble_samples_collected": len(ble_samples),
         "received_ble_csv": str(config.ble.raw_csv),
+        "google_health_enabled": config.google_health.enabled,
+        "google_health_samples_logged": (
+            bool(config.google_health.enabled)
+            and config.google_health.raw_csv.exists()
+        ),
+        "received_google_health_csv": (
+            str(config.google_health.raw_csv)
+            if config.google_health.enabled
+            else None
+        ),
+        "google_health_available_feature_count": quality_payload.get(
+            "metrics",
+            {},
+        ).get("wearable_cloud_available_feature_count"),
+        "google_health_available_features": quality_payload.get(
+            "metrics",
+            {},
+        ).get("wearable_cloud_available_features"),
         "quality_status": quality_report.status,
         "quality_usable_for_training": quality_report.usable_for_training,
         "quality_issue_count": len(quality_report.issues),
