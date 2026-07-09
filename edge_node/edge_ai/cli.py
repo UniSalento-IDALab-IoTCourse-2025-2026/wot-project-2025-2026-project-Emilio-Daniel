@@ -127,6 +127,10 @@ def train_generic_model(args: argparse.Namespace) -> None:
     inferenza reale.
     """
     frame = load_feature_frame(args.input)
+    exclude_features = _parse_feature_list(args.exclude_features)
+    if args.model_kind == "generic_wearable" and exclude_features is None:
+        exclude_features = ["hrv_rmssd"]
+
     detector = EdgeAnomalyDetector.train_generic(
         frame=frame,
         model_id=args.model_id,
@@ -134,7 +138,7 @@ def train_generic_model(args: argparse.Namespace) -> None:
         training_source=f"{args.model_kind}_dataset",
         contamination=args.contamination,
         include_features=_parse_feature_list(args.include_features),
-        exclude_features=_parse_feature_list(args.exclude_features),
+        exclude_features=exclude_features,
     )
     detector.save(args.output)
     print(

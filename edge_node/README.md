@@ -246,7 +246,9 @@ $d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
 $d.evidence.fusion.models.generic_spatial.feature_explanation | ConvertTo-Json -Depth 8
 ```
 
-`generic_wearable` guarda feature come battito, HRV, SpO2, passi e sedentary minutes.
+`generic_wearable` guarda feature come battito e SpO2. Per scelta progettuale
+non usa `hrv_rmssd`, perche' nei dataset pubblici e in Google Health questo
+valore puo' avere scale diverse e generare falsi score alti.
 `generic_spatial` guarda room changes e minuti nelle stanze.
 
 Durante la baseline i modelli generici vengono usati anche come filtro di sicurezza:
@@ -598,10 +600,10 @@ python -m edge_ai.cli train-generic \
   --model-kind generic_wearable
 ```
 
-Nota: `hrv_rmssd` ora entra nel modello generico wearable. Per evitare falsi
-allarmi, il training applica un clipping fisiologico sulla coda alta della HRV:
-una HRV molto alta non viene trattata automaticamente come rischio, mentre valori
-bassi o medi restano informativi.
+Nota: `hrv_rmssd` viene escluso automaticamente dal modello generico wearable.
+Il valore resta nel CSV e potra' essere usato in futuro dal modello personale,
+ma il generico installabile su Raspberry usa solo feature piu' confrontabili tra
+dataset pubblici e dati Google Health reali.
 
 Con i dati attuali il modello generico wearable seleziona le feature realmente
 coperte in modo solido: `heart_rate_mean`, `heart_rate_std`, `hrv_rmssd` e

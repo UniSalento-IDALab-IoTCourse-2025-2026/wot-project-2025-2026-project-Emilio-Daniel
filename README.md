@@ -226,7 +226,9 @@ L'app iOS si crea su Mac con Xcode usando i file in
   e HuGCDN2014-OXI in formato MATLAB per SpO2/RR.
 - Ho unito fitbitdata, PAMAP2 e WESAD in `generic_wearable_dataset.csv`.
 - Ho riaddestrato `models/generic_wearable.pkl`: ora il generico wearable usa
-  `heart_rate_mean`, `heart_rate_std`, `hrv_rmssd` e `spo2_mean`.
+  `heart_rate_mean`, `heart_rate_std` e `spo2_mean`. `hrv_rmssd` resta nei dati
+  ma viene escluso dal modello generico per evitare falsi score dovuti a scale
+  diverse tra dataset pubblici e Google Health.
 - Ho aggiornato la documentazione di deployment su Raspberry Pi.
 - Ho eseguito controlli di compilazione/import e test tecnici end-to-end della pipeline.
 
@@ -1376,10 +1378,10 @@ python -m edge_datasets.cli merge \
   --output data/processed/generic_wearable_dataset.csv
 ```
 
-Poi addestriamo il modello wearable. Il generico attuale usa anche `hrv_rmssd`,
-ma applica un clipping fisiologico sulla coda alta della HRV: una HRV molto alta
-non deve diventare automaticamente un falso allarme, mentre valori bassi o medi
-restano informativi per il modello.
+Poi addestriamo il modello wearable. Il generico attuale esclude `hrv_rmssd`,
+perche' la HRV dei dataset pubblici e quella letta da Google Health possono
+avere scale molto diverse. Il dato rimane nel CSV, ma non entra nel modello
+generico installabile sul Raspberry.
 
 ```bash
 python -m edge_ai.cli train-generic \
