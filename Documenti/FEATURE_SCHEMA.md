@@ -16,6 +16,21 @@ Il campo `level` non sta nel CSV delle feature, ma nel JSON decisione. La scala 
 `green` sotto 35, `yellow` da 35, `orange` da 65, `red` da 80. `technical` e' separato
 e indica problemi di raccolta dati o device.
 
+## File raw e file processati
+
+I file in `data/raw/` sono storici append-only delle sorgenti:
+
+| File | Contenuto |
+| --- | --- |
+| `data/raw/ble_samples.csv` | campioni BLE ricevuti dall'app/receiver |
+| `data/raw/google_health_samples.csv` | righe raccolte da Google Health per ogni finestra runtime |
+| `data/raw/shelly_samples.csv` | eventuali campioni energetici Shelly/NILM |
+
+`data/raw/google_health_samples.csv` non sostituisce `latest_window.csv`: serve a
+debuggare e storicizzare cosa e' arrivato dall'orologio a ogni ciclo. Il modello continua
+a leggere `data/processed/latest_window.csv`, che contiene la finestra finale gia' fusa
+con BLE, Google Health e altre sorgenti.
+
 ## Colonne di contesto
 
 | Colonna | Tipo | Origine |

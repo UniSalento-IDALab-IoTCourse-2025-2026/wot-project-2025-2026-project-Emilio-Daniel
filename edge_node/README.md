@@ -174,6 +174,19 @@ corrente da 4 minuti per Google Watch 2 e BLE. Se Google Health non ha ancora
 sincronizzato un valore, quel campo resta vuoto/`nan`, ma la decisione viene
 comunque prodotta senza ritardare artificialmente la finestra.
 
+Quando Google Health e' abilitato, ogni ciclo salva anche una riga storica in:
+
+```text
+data/raw/google_health_samples.csv
+```
+
+Questo file e' l'equivalente wearable di `data/raw/ble_samples.csv`: cresce nel tempo e
+serve per debug/storico dei dati raccolti dall'orologio. Per vedere le ultime righe:
+
+```powershell
+Import-Csv data\raw\google_health_samples.csv | Select-Object -Last 10 | ConvertTo-Json -Depth 4
+```
+
 ## Modello AI ibrido
 
 Il sistema ora supporta tre modelli:

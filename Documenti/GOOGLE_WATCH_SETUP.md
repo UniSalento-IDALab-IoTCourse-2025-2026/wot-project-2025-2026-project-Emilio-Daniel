@@ -385,6 +385,7 @@ decision_level: green/yellow/orange/red/technical
 File da controllare:
 
 ```text
+data/raw/google_health_samples.csv
 data/processed/latest_window.csv
 outputs/last-cycle.json
 outputs/last-quality-report.json
@@ -396,6 +397,17 @@ Per vedere rapidamente il CSV:
 ```powershell
 Import-Csv data\processed\latest_window.csv | ConvertTo-Json -Depth 4
 ```
+
+Per vedere lo storico raw-normalizzato raccolto dall'orologio:
+
+```powershell
+Import-Csv data\raw\google_health_samples.csv | Select-Object -Last 10 | ConvertTo-Json -Depth 4
+```
+
+`google_health_samples.csv` cresce a ogni ciclo runtime, come `ble_samples.csv`.
+Contiene una riga per finestra letta da Google Health, con timestamp raccolta, finestra
+runtime, finestra sorgente Google e feature wearable disponibili. `latest_window.csv`
+resta invece il file finale dell'ultima finestra, gia' fuso con BLE/Shelly.
 
 Per lasciarlo acceso come il receiver BLE, usare la modalita loop:
 
