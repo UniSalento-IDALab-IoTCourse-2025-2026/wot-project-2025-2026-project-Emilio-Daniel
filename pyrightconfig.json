@@ -1,9 +1,13 @@
 {
   "include": [
-    "edge_node"
+    "edge_node",
+    "cloud/backend/app",
+    "cloud/backend/tests",
+    "cloud/backend/scripts"
   ],
   "extraPaths": [
-    "edge_node"
+    "edge_node",
+    "cloud/backend"
   ],
   "venvPath": ".",
   "venv": ".venv",

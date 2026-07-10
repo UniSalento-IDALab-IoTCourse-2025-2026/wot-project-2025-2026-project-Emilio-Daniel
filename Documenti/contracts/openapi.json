@@ -1,0 +1,239 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "IoT Monitoring Cloud Backend",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Liveness probe",
+        "description": "Return whether the backend process is alive.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Readiness probe",
+        "description": "Return dependencies expected by the next integration steps.",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Ready Ready Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/status": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth module status",
+        "description": "Placeholder endpoint for the D7 authentication module.",
+        "operationId": "auth_status_auth_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Auth Status Auth Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/patients/status": {
+      "get": {
+        "tags": [
+          "patients"
+        ],
+        "summary": "Patients module status",
+        "description": "Placeholder endpoint for patient registry and assignments.",
+        "operationId": "patients_status_patients_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Patients Status Patients Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/telemetry/status": {
+      "get": {
+        "tags": [
+          "telemetry"
+        ],
+        "summary": "Telemetry module status",
+        "description": "Placeholder endpoint for windows, decisions and sensor data.",
+        "operationId": "telemetry_status_telemetry_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Telemetry Status Telemetry Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts/status": {
+      "get": {
+        "tags": [
+          "alerts"
+        ],
+        "summary": "Alerts module status",
+        "description": "Placeholder endpoint for clinical, behavioral and technical alerts.",
+        "operationId": "alerts_status_alerts_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Alerts Status Alerts Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/status": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Tasks module status",
+        "description": "Placeholder endpoint for cognitive tests and patient tasks.",
+        "operationId": "tasks_status_tasks_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Tasks Status Tasks Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/status": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Notifications module status",
+        "description": "Placeholder endpoint for push notifications and delivery state.",
+        "operationId": "notifications_status_notifications_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Notifications Status Notifications Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realtime/status": {
+      "get": {
+        "tags": [
+          "realtime"
+        ],
+        "summary": "Realtime module status",
+        "description": "Placeholder endpoint for future WebSocket connection state.",
+        "operationId": "realtime_status_realtime_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Realtime Status Realtime Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

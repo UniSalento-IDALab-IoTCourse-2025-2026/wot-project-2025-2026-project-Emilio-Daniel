@@ -11,6 +11,7 @@ rompere l'integrazione.
 ```text
 API_CONTRACT.md       Endpoint REST, WebSocket, errori e regole payload
 MQTT_CONTRACT.md      Topic MQTT, QoS, sicurezza e payload Edge
+openapi.json          OpenAPI generato dal backend FastAPI
 examples/            Esempi JSON condivisi
 schemas/             Spazio per JSON Schema/OpenAPI, se necessari
 ```

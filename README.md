@@ -87,6 +87,7 @@ edge_node/outputs/patient-001-decision.json
 Script/avvio/avviaSistema                    Launcher breve per Raspberry/Linux
 Script/avvio/avviaSistema.cmd        Launcher breve per Windows
 Script/avvio/avviaSistema.ps1        Launcher PowerShell alternativo
+Script/test/test_mqtt_local.ps1      Test automatico locale MQTT/TLS/WSS
 
 edge_node/
   requirements.txt      Dipendenze Python del Raspberry/edge node
@@ -152,6 +153,29 @@ edge_node/
   models/               Modelli generici e modelli paziente-specifici
   outputs/              Decisioni JSON prodotte dall'AI
 
+cloud/
+  docker-compose.yml     Stack Docker Compose `progetto-iot`
+
+  mqtt/
+    mosquitto.conf       Broker Mosquitto con MQTT, TLS e WSS
+    aclfile              ACL per Edge, backend e client test
+    passwd.example       Utenti MQTT di esempio, senza password reali
+    certs/               Certificati locali ignorati da Git
+    data/                Persistence locale Mosquitto ignorata da Git
+    log/                 Log locali Mosquitto ignorati da Git
+
+  backend/
+    app/
+      main.py            Backend FastAPI unico
+      api/routes/        Moduli auth, patients, telemetry, alerts, tasks, realtime
+      core/              Config, errori centralizzati e log JSON
+      db/                SQLAlchemy models e sessione database
+      mqtt/              Spazio per subscriber MQTT D4
+    alembic/             Migrazioni versionate PostgreSQL
+    scripts/             Utility backend, inclusa esportazione OpenAPI
+    tests/               Test automatici backend e schema DB
+    requirements.txt     Dipendenze backend Cloud
+
 Applicazione IoT Companion/
   companion_Android_app/
     app Android per scansione BLE/manual test e invio dati al Raspberry
@@ -159,14 +183,25 @@ Applicazione IoT Companion/
     sorgenti Swift/SwiftUI preparati, ma per ora sospesi perche' useremo Android
 
 Documenti/
-  ANDROID_APP.md        Guida app Android, emulatore e APK
-  BEACON_SETUP.md       Setup reale dei 3 BlueBeacon 01
-  API_CONSTRAINTS.md    Vincoli reali Google/Fitbit e BLE
-  GOOGLE_WATCH_SETUP.md Procedura Pixel Watch 2 / Google Health API
-  FEATURE_SCHEMA.md     Schema dataset reale
-  DASHBOARD_ARCHITECTURE.md Panoramica dashboard medico/paziente, MQTT e WebSocket
-  REAL_DATA_PLAN.md     Piano raccolta dati reali
-  RPI_DEPLOYMENT.md     Setup Raspberry Pi
+  Generale/
+    ANDROID_APP.md        Guida app Android, emulatore e APK
+    BEACON_SETUP.md       Setup reale dei 3 BlueBeacon 01
+    API_CONSTRAINTS.md    Vincoli reali Google/Fitbit e BLE
+    GOOGLE_WATCH_SETUP.md Procedura Pixel Watch 2 / Google Health API
+    FEATURE_SCHEMA.md     Schema dataset reale
+    DASHBOARD_ARCHITECTURE.md Panoramica dashboard medico/paziente, MQTT e WebSocket
+    REAL_DATA_PLAN.md     Piano raccolta dati reali
+    RPI_DEPLOYMENT.md     Setup Raspberry Pi
+    CompitiDivisi.md      Checklist Daniel/Emilio
+  Daniel/
+    D1.md                 Broker MQTT Cloud
+    D2.md                 Struttura backend FastAPI
+    D3.md                 Database PostgreSQL
+  contracts/
+    API_CONTRACT.md       Contratto API REST/WebSocket
+    MQTT_CONTRACT.md      Contratto topic e payload MQTT
+    openapi.json          OpenAPI generato dal backend FastAPI
+    examples/             Esempi JSON condivisi
 ```
 
 Regola pratica: i comandi Python del Raspberry/AI vanno eseguiti entrando prima in
@@ -210,6 +245,13 @@ L'app iOS si crea su Mac con Xcode usando i file in
   restare attivo in background con notifica persistente.
 - Ho riordinato il repository separando `edge_node/`,
   `Applicazione IoT Companion/` e `Documenti/`.
+- Ho aggiunto `cloud/mqtt` con Mosquitto in Docker, ACL per paziente, utenti separati,
+  MQTT locale, MQTT/TLS, WSS, Last Will e retained policy.
+- Ho aggiunto `cloud/backend`, backend FastAPI unico e modulare con endpoint health,
+  readiness, OpenAPI, errori centralizzati, log JSON e test automatici.
+- Ho aggiunto PostgreSQL nello stack Docker Compose `progetto-iot`, modelli SQLAlchemy,
+  migrazioni Alembic, schema iniziale D3, deduplicazione `message_id` e procedure
+  backup/restore.
 - Ho aggiunto `edge_runtime`, il comando unico che aggrega la finestra e fa inferenza
   automaticamente se trova un modello addestrato.
 - Ho aggiunto `edge_quality`, che controlla se i dati sono utilizzabili prima di salvarli
@@ -759,8 +801,39 @@ Push      -> backend verso app paziente
 REST API  -> storico, dettagli paziente e report
 ```
 
-Per ora non conviene partire con microservizi separati: e' meglio un backend unico ma
-modulare, con MQTT subscriber, API REST, WebSocket e database.
+Stato Cloud attuale:
+
+```text
+Raspberry/Edge
+      |
+      | MQTT / MQTT-TLS
+      v
+cloud/mqtt
+  Mosquitto
+  - ACL per paziente
+  - Last Will
+  - retained solo stato corrente
+      |
+      | D4, prossimo passo: subscriber MQTT
+      v
+cloud/backend
+  FastAPI unico e modulare
+  - health / ready
+  - OpenAPI
+  - errori centralizzati
+  - log JSON
+      |
+      v
+PostgreSQL
+  - pazienti, utenti, Edge device
+  - finestre, decisioni, alert
+  - task, risultati, notifiche
+  - deduplicazione message_id
+```
+
+Per ora non conviene partire con microservizi separati: abbiamo scelto un backend unico
+ma modulare, con moduli separati per auth, patients, telemetry, alerts, tasks,
+notifications, realtime e il futuro subscriber MQTT.
 
 L'app paziente non serve solo a raccogliere BLE: puo' mostrare stato giornaliero,
 promemoria, esercizi, notifiche e test cognitivi inviati dal medico. La dashboard medico
@@ -1457,16 +1530,19 @@ python -m edge_baseline.cli --config config/edge.yml status
 
 ## Prossimi step
 
-1. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
-2. Configurare la mappa reale dei 3 BlueBeacon nell'app Android.
-3. Creare le credenziali Google Health OAuth reali e salvare il consenso account.
-4. Preparare `edge_node/config/edge.yml` reale per Raspberry Pi 5.
-5. Spostare repository, modelli generici e configurazione sul Raspberry.
-6. Avviare raccolta baseline reale.
-7. Addestrare `models/patient-001.pkl`.
-8. Usare runtime con generici + personale + fusione.
-9. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
-10. Collegare output JSON al backend/dashboard.
+1. Emilio: implementare publisher MQTT sull'Edge/Raspberry usando i contratti in
+   `Documenti/contracts/MQTT_CONTRACT.md`.
+2. Daniel: implementare D4, subscriber MQTT backend e ingestione nel database.
+3. Collegare `last-cycle.json`, `latest_window.csv` e `patient-001-decision.json` ai
+   topic MQTT definitivi.
+4. Implementare D5, API REST reali per dashboard e app.
+5. Implementare D6, WebSocket realtime backend -> dashboard.
+6. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
+7. Configurare la mappa reale dei 3 BlueBeacon nell'app Android.
+8. Preparare `edge_node/config/edge.yml` reale per Raspberry Pi 5.
+9. Spostare repository, modelli generici e configurazione sul Raspberry.
+10. Avviare raccolta baseline reale e addestrare `models/patient-001.pkl`.
+11. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
 
 ## Stato attuale del progetto
 
@@ -1704,19 +1780,81 @@ misurazione consumi. Il codice e' pronto a leggere dati da:
 data/raw/shelly_samples.csv
 ```
 
-### 12. Documentazione
+### 12. Broker MQTT Cloud
+
+Abbiamo creato il broker MQTT locale/Cloud in:
+
+```text
+cloud/mqtt/
+```
+
+Il broker usa Mosquitto in Docker e supporta:
+
+- MQTT locale su `1883`;
+- MQTT/TLS su `8883`;
+- MQTT over WSS su `9001`;
+- utenti separati per Edge, backend e test;
+- ACL per impedire a un Raspberry di pubblicare su pazienti diversi;
+- Last Will per rilevare disconnessioni anomale;
+- retained message solo per stato corrente.
+
+Il test automatico e':
+
+```powershell
+.\Script\test\test_mqtt_local.ps1
+```
+
+### 13. Backend FastAPI
+
+Abbiamo creato il backend Cloud in:
+
+```text
+cloud/backend/
+```
+
+Il backend e' unico ma modulare. Per ora espone:
+
+- `GET /health`;
+- `GET /ready`;
+- `GET /docs`;
+- `GET /openapi.json`;
+- moduli placeholder per auth, patients, telemetry, alerts, tasks, notifications e realtime;
+- errori centralizzati;
+- log JSON;
+- export OpenAPI in `Documenti/contracts/openapi.json`.
+
+### 14. Database PostgreSQL
+
+Abbiamo aggiunto PostgreSQL nello stack Docker Compose `progetto-iot`.
+
+Il database e' gestito dal backend con:
+
+- SQLAlchemy per i modelli Python;
+- Alembic per migrazioni versionate;
+- migration iniziale `20260710_0001`;
+- tabelle per utenti, pazienti, Edge device, finestre, decisioni, alert, task,
+  risultati, notifiche e stati sensori/app;
+- vincoli `message_id` per deduplicare messaggi MQTT;
+- indici su paziente, timestamp, livello e stato;
+- procedura backup/restore.
+
+### 15. Documentazione
 
 Abbiamo documentato architettura, comandi, deployment Raspberry, schema feature e vincoli
 reali delle API.
 
 Il README deve rimanere il punto principale da leggere per capire lo stato del progetto.
 
-### 13. Cosa manca ancora
+### 16. Cosa manca ancora
 
-Mancano ancora i collegamenti reali con hardware:
+Mancano ancora:
 
 - beacon BLE fisici nelle stanze;
 - Raspberry Pi reale;
 - credenziali Google Health OAuth reali e consenso account;
 - eventuale Shelly o alternativa per consumi;
-- backend/dashboard finale.
+- publisher MQTT sull'Edge;
+- subscriber MQTT backend e ingestione nel database;
+- API reali per dashboard/app;
+- WebSocket realtime;
+- dashboard medico e dashboard/app paziente finali.

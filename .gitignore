@@ -6,6 +6,7 @@ venv/
 .env.*
 .DS_Store
 desktop.ini
+.pytest_cache/
 edge_node/config/edge.yml
 edge_node/config/fitbit_token.json
 edge_node/config/fitbit_client.json
@@ -68,6 +69,8 @@ cloud/mqtt/data/*
 !cloud/mqtt/data/.gitkeep
 cloud/mqtt/log/*
 !cloud/mqtt/log/.gitkeep
+cloud/backups/*
+!cloud/backups/.gitkeep
 
 # Dataset generati localmente per addestramento/calibrazione.
 # Si rigenerano quando servono e non devono appesantire GitHub.

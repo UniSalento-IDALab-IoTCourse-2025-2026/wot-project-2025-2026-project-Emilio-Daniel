@@ -185,7 +185,7 @@ system_status_updated
 - [ ] Emilio prepara payload anonimizzati da `patient-001-decision.json`.
 - [ ] Emilio prepara una riga JSON equivalente a `latest_window.csv`.
 - [ ] Emilio prepara esempi green, yellow, orange, red e technical.
-- [ ] Daniel prepara il file OpenAPI prodotto dal backend.
+- [x] Daniel prepara il file OpenAPI prodotto dal backend.
 - [x] Daniel prepara esempi di task, risultato test, alert e acknowledgement.
 - [x] I file condivisi vengono salvati in `Documenti/contracts/examples/`.
 
@@ -363,29 +363,29 @@ minimi e verificabili.
 
 ### D2. Struttura del backend FastAPI
 
-- [ ] Creare un backend modulare unico, senza microservizi separati.
-- [ ] Separare moduli auth, patients, telemetry, alerts, tasks, notifications e realtime.
-- [ ] Configurare variabili d'ambiente e validazione della configurazione.
-- [ ] Esporre endpoint health e readiness.
-- [ ] Generare documentazione OpenAPI.
-- [ ] Aggiungere gestione centralizzata degli errori.
-- [ ] Aggiungere log strutturati senza dati sensibili.
-- [ ] Aggiungere test automatici eseguibili senza broker Cloud reale.
+- [x] Creare un backend modulare unico, senza microservizi separati.
+- [x] Separare moduli auth, patients, telemetry, alerts, tasks, notifications e realtime.
+- [x] Configurare variabili d'ambiente e validazione della configurazione.
+- [x] Esporre endpoint health e readiness.
+- [x] Generare documentazione OpenAPI.
+- [x] Aggiungere gestione centralizzata degli errori.
+- [x] Aggiungere log strutturati senza dati sensibili.
+- [x] Aggiungere test automatici eseguibili senza broker Cloud reale.
 
 ### D3. Database PostgreSQL
 
-- [ ] Configurare PostgreSQL e migrazioni versionate.
-- [ ] Creare tabella `users` con ruoli e credenziali protette.
-- [ ] Creare tabelle `patients`, `doctors`, `caregivers` e relative associazioni.
-- [ ] Creare tabella `edge_devices` con ultimo contatto e stato.
-- [ ] Creare tabelle `edge_cycles` e `feature_windows`.
-- [ ] Creare tabelle `decisions`, `alerts` e `alert_events`.
-- [ ] Creare tabelle `sensor_status` e `patient_app_status`.
-- [ ] Creare tabelle `tasks`, `task_results` e `notifications`.
-- [ ] Aggiungere indici su patient_id, timestamp, level e status.
-- [ ] Conservare `message_id` con vincolo univoco per la deduplicazione.
-- [ ] Stabilire retention e cancellazione dei dati di prova.
-- [ ] Preparare backup e ripristino del database.
+- [x] Configurare PostgreSQL e migrazioni versionate.
+- [x] Creare tabella `users` con ruoli e credenziali protette.
+- [x] Creare tabelle `patients`, `doctors`, `caregivers` e relative associazioni.
+- [x] Creare tabella `edge_devices` con ultimo contatto e stato.
+- [x] Creare tabelle `edge_cycles` e `feature_windows`.
+- [x] Creare tabelle `decisions`, `alerts` e `alert_events`.
+- [x] Creare tabelle `sensor_status` e `patient_app_status`.
+- [x] Creare tabelle `tasks`, `task_results` e `notifications`.
+- [x] Aggiungere indici su patient_id, timestamp, level e status.
+- [x] Conservare `message_id` con vincolo univoco per la deduplicazione.
+- [x] Stabilire retention e cancellazione dei dati di prova.
+- [x] Preparare backup e ripristino del database.
 
 ### D4. Subscriber MQTT e ingestione
 
