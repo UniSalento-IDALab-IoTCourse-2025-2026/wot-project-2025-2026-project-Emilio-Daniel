@@ -155,7 +155,7 @@ Disattiva risparmio energetico per questa app
 
 1. Aprire Android Studio.
 2. `File -> Open`.
-3. Selezionare la cartella `companion_Android_app`.
+3. Selezionare la cartella `Applicazione IoT Companion/companion_Android_app`.
 4. Attendere il sync Gradle.
 5. Collegare un telefono Android fisico.
 6. Premere `Run`.
@@ -173,7 +173,7 @@ Da Android Studio:
 Il file debug viene generato qui:
 
 ```text
-companion_Android_app/app/build/outputs/apk/debug/app-debug.apk
+Applicazione IoT Companion/companion_Android_app/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Per una versione firmata:

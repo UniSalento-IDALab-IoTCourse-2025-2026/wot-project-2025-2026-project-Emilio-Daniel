@@ -66,19 +66,19 @@ ble:
 La versione Windows dei launcher e' nella cartella:
 
 ```text
-Avvio_Windows/
+Script/avvio/
 ```
 
 Da PowerShell, dalla root del progetto:
 
 ```powershell
-.\Avvio_Windows\avviaSistema.cmd
+.\Script\avvio\avviaSistema.cmd
 ```
 
 Alternativa PowerShell esplicita:
 
 ```powershell
-.\Avvio_Windows\avviaSistema.ps1
+.\Script\avvio\avviaSistema.ps1
 ```
 
 Se serve avviare senza launcher, il comando tecnico equivalente e':
@@ -99,20 +99,20 @@ CTRL+C
 La versione Raspberry/Linux del launcher e' nella cartella:
 
 ```text
-Avvio/
+Script/avvio/
 ```
 
 Da terminale, dalla root del progetto:
 
 ```bash
-./Avvio/avviaSistema
+./Script/avvio/avviaSistema
 ```
 
 Se il file non fosse eseguibile:
 
 ```bash
-chmod +x Avvio/avviaSistema
-./Avvio/avviaSistema
+chmod +x Script/avvio/avviaSistema
+./Script/avvio/avviaSistema
 ```
 
 Se serve avviare senza launcher, il comando tecnico equivalente e':
@@ -136,13 +136,13 @@ avviamo lo stesso sistema in modalita' baseline.
 Su Windows:
 
 ```powershell
-.\Avvio_Windows\avviaSistema.cmd --append-baseline
+.\Script\avvio\avviaSistema.cmd --append-baseline
 ```
 
 Su Raspberry Pi:
 
 ```bash
-./Avvio/avviaSistema --append-baseline
+./Script/avvio/avviaSistema --append-baseline
 ```
 
 In questa modalita' ogni finestra valida viene aggiunta a:

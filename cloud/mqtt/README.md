@@ -197,7 +197,7 @@ Dopo aver creato `passwd` e avviato il broker:
 
 ```powershell
 cd C:\Users\Daniel\Desktop\ProgettoIoT
-.\cloud\mqtt\test_mqtt_local.ps1
+.\Script\test\test_mqtt_local.ps1
 ```
 
 Il test verifica:

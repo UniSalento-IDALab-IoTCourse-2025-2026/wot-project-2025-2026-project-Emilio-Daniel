@@ -6,8 +6,20 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Push-Location $PSScriptRoot\..
+$ProjectDir = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$CloudDir = Join-Path $ProjectDir "cloud"
+
+Push-Location $CloudDir
 try {
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    docker compose up -d mqtt *> $null
+    $composeExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorActionPreference
+    if ($composeExitCode -ne 0) {
+        throw "Unable to start MQTT service with docker compose."
+    }
+
     Write-Host "Test 1 - edge publish allowed on patient-001"
     $allowedMessage = '{"schema_version":1,"message_id":"script-allowed-001","event_type":"edge_cycle_completed","patient_id":"patient-001","edge_id":"edge-rpi5-001","timestamp":"2026-07-10T10:00:00Z","payload":{"online":true}}'
     docker compose exec -T mqtt mosquitto_pub `

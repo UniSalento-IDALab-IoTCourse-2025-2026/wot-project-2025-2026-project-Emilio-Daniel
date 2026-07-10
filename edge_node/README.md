@@ -111,20 +111,20 @@ data/raw/ble_samples.csv
 Normalmente dalla root del progetto usiamo il launcher breve:
 
 ```powershell
-.\Avvio_Windows\avviaSistema.ps1
+.\Script\avvio\avviaSistema.ps1
 ```
 
 Su Windows, se PowerShell non lo esegue senza estensione:
 
 ```powershell
-.\Avvio_Windows\avviaSistema.cmd
+.\Script\avvio\avviaSistema.cmd
 ```
 
 Sul Raspberry Pi:
 
 ```bash
-chmod +x Avvio/avviaSistema
-./Avvio/avviaSistema
+chmod +x Script/avvio/avviaSistema
+./Script/avvio/avviaSistema
 ```
 
 Internamente il launcher entra in `edge_node/` ed esegue:
@@ -322,7 +322,7 @@ produrre triage mentre raccoglie i dati personali:
 python -m edge_runtime.cli --config config/edge.example.yml --loop --auto-baseline --auto-train-baseline
 ```
 
-Nel funzionamento normale non lo lanciamo a mano: ci pensa `./Avvio/avviaSistema`, che
+Nel funzionamento normale non lo lanciamo a mano: ci pensa `./Script/avvio/avviaSistema`, che
 passa automaticamente questi argomenti al runtime.
 
 Se i dati non superano i controlli qualita, il runtime non appende la riga a
@@ -383,7 +383,7 @@ sistema continua a raccogliere senza creare un modello personale debole.
 Avvio baseline automatico:
 
 ```bash
-./Avvio/avviaSistema
+./Script/avvio/avviaSistema
 ```
 
 Questo crea:

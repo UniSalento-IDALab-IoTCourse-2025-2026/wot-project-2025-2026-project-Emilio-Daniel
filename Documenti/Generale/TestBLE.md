@@ -477,20 +477,20 @@ Quando vogliamo far partire insieme receiver Android BLE e runtime Google Health
 usiamo il comando breve dalla root del progetto:
 
 ```powershell
-.\avviaSistema
+.\Script\avvio\avviaSistema
 ```
 
 Se PowerShell non lo esegue senza estensione:
 
 ```powershell
-.\avviaSistema.cmd
+.\Script\avvio\avviaSistema.cmd
 ```
 
 Sul Raspberry Pi:
 
 ```bash
-chmod +x avviaSistema
-./avviaSistema
+chmod +x Script/avvio/avviaSistema
+./Script/avvio/avviaSistema
 ```
 
 Questo comando avvia nello stesso terminale:
@@ -534,5 +534,5 @@ l'intera analisi.
 Durante la baseline il comando diventa:
 
 ```powershell
-.\avviaSistema --append-baseline
+.\Script\avvio\avviaSistema --append-baseline
 ```

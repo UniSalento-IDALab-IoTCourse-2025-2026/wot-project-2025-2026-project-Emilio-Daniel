@@ -3,7 +3,7 @@
 L'app Android del progetto si trova in:
 
 ```text
-companion_app/
+Applicazione IoT Companion/companion_app/
 ```
 
 Nome app:
@@ -106,7 +106,7 @@ python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --po
 ```
 
 2. Aprire Android Studio.
-3. Aprire la cartella `companion_app`.
+3. Aprire la cartella `Applicazione IoT Companion/companion_app`.
 4. Avviare un emulatore.
 5. Nell'app usare:
 
@@ -303,7 +303,7 @@ Beacon veri
 Da Android Studio:
 
 1. `File -> Open`.
-2. Selezionare `companion_app`.
+2. Selezionare `Applicazione IoT Companion/companion_app`.
 3. Attendere il sync Gradle.
 4. `Build -> Build Bundle(s) / APK(s) -> Build APK(s)`.
 5. Cliccare `locate` quando Android Studio ha finito.

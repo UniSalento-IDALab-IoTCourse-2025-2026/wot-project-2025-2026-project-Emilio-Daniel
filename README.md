@@ -84,9 +84,9 @@ edge_node/outputs/patient-001-decision.json
 ## Struttura
 
 ```text
-Avvio/avviaSistema                    Launcher breve per Raspberry/Linux
-Avvio_Windows/avviaSistema.cmd        Launcher breve per Windows
-Avvio_Windows/avviaSistema.ps1        Launcher PowerShell alternativo
+Script/avvio/avviaSistema                    Launcher breve per Raspberry/Linux
+Script/avvio/avviaSistema.cmd        Launcher breve per Windows
+Script/avvio/avviaSistema.ps1        Launcher PowerShell alternativo
 
 edge_node/
   requirements.txt      Dipendenze Python del Raspberry/edge node
@@ -789,25 +789,25 @@ vale solo quando sei gia' dentro `edge_node/`.
 Questo è il comando breve da usare normalmente dalla root del progetto:
 
 ```powershell
-.\Avvio_Windows\avviaSistema.ps1
+.\Script\avvio\avviaSistema.ps1
 ```
 
 Su Windows, se PowerShell non esegue lo script senza estensione, usa:
 
 ```powershell
-.\Avvio_Windows\avviaSistema.cmd
+.\Script\avvio\avviaSistema.cmd
 ```
 
 Sul Raspberry Pi, dopo il clone, la prima volta rendi eseguibile lo script:
 
 ```bash
-chmod +x Avvio/avviaSistema
+chmod +x Script/avvio/avviaSistema
 ```
 
 Poi avvii tutto con:
 
 ```bash
-./Avvio/avviaSistema
+./Script/avvio/avviaSistema
 ```
 
 Il launcher entra automaticamente in `edge_node/`, sceglie il Python giusto e
@@ -933,7 +933,7 @@ Quando hardware reale e dati veri sono pronti, la baseline parte automaticamente
 con il comando unico:
 
 ```bash
-./Avvio/avviaSistema
+./Script/avvio/avviaSistema
 ```
 
 Per il progetto useremo una baseline da 7 giorni. Una baseline piu' lunga, ad
@@ -1169,7 +1169,7 @@ e' accettabile come baseline dimostrativa reale, pur essendo meno robusta di una
 baseline clinica piu' lunga.
 
 ```bash
-./Avvio/avviaSistema
+./Script/avvio/avviaSistema
 ```
 
 Questo avvia receiver, runtime continuo e crea automaticamente lo stato:
@@ -1436,7 +1436,7 @@ python -m edge_ai.cli infer \
 Avvio unico reale:
 
 ```bash
-./Avvio/avviaSistema
+./Script/avvio/avviaSistema
 ```
 
 Questo comando:
