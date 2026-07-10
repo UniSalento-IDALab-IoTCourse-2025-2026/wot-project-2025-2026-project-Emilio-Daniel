@@ -21,4 +21,6 @@ else
 fi
 
 cd "$EDGE_DIR"
+echo "Avvio sistema IoT: receiver + runtime + baseline automatica 7 giorni."
+echo "Se il modello personale esiste gia, verra usato automaticamente."
 exec "$PYTHON_EXE" -m edge_stack.cli --config config/edge.yml "$@"

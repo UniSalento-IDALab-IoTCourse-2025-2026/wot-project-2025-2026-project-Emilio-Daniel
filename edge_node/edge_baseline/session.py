@@ -11,7 +11,8 @@ from edge_ingest.config import EdgeIngestConfig
 
 
 DEFAULT_BASELINE_STATE = Path("data/state/baseline-session.json")
-DEFAULT_DAYS = 6
+DEFAULT_DAYS = 7
+DEFAULT_MIN_TRAINING_WINDOWS = 1000
 
 
 @dataclass
@@ -80,6 +81,7 @@ def start_session(
         notes=[
             "Collect only real routine data.",
             "Windows with quality status error are not appended by default.",
+            f"Train only after at least {DEFAULT_MIN_TRAINING_WINDOWS} accepted windows.",
         ],
     )
     save_session(session, state)
@@ -188,6 +190,7 @@ def session_status_payload(
     expected_windows = _expected_windows(elapsed_days, config.window.minutes)
     completion_by_time = min(1.0, elapsed_days / max(1, session.planned_days))
 
+    baseline_row_count = count_baseline_rows(session.baseline_csv)
     payload = session.to_dict()
     payload.update(
         {
@@ -198,11 +201,12 @@ def session_status_payload(
             "accepted_ratio": _ratio(session.accepted_windows, expected_windows),
             "rejected_ratio": _ratio(session.rejected_windows, max(1, session.total_cycles)),
             "completion_by_time_pct": round(completion_by_time * 100.0, 2),
-            "baseline_row_count": count_baseline_rows(session.baseline_csv),
+            "baseline_row_count": baseline_row_count,
+            "min_training_windows": DEFAULT_MIN_TRAINING_WINDOWS,
             "ready_for_training": (
                 session.status == "collecting"
                 and now >= target_end
-                and count_baseline_rows(session.baseline_csv) >= 50
+                and baseline_row_count >= DEFAULT_MIN_TRAINING_WINDOWS
                 and session.quality_error_cycles == 0
             ),
         }

@@ -111,20 +111,20 @@ data/raw/ble_samples.csv
 Normalmente dalla root del progetto usiamo il launcher breve:
 
 ```powershell
-.\avviaSistema
+.\Avvio_Windows\avviaSistema.ps1
 ```
 
 Su Windows, se PowerShell non lo esegue senza estensione:
 
 ```powershell
-.\avviaSistema.cmd
+.\Avvio_Windows\avviaSistema.cmd
 ```
 
 Sul Raspberry Pi:
 
 ```bash
-chmod +x avviaSistema
-./avviaSistema
+chmod +x Avvio/avviaSistema
+./Avvio/avviaSistema
 ```
 
 Internamente il launcher entra in `edge_node/` ed esegue:
@@ -147,15 +147,16 @@ edge_runtime --loop
   -> BLE gia' ricevuti dal receiver
   -> Shelly/NILM se abilitato in futuro
   -> aggiorna latest_window.csv e decision JSON
+  -> se manca il modello personale, gestisce la baseline automatica
 ```
 
 Il comando si ferma con `CTRL+C`.
 
-Durante la baseline:
-
-```bash
-./avviaSistema --append-baseline
-```
+La baseline non richiede piu' un comando separato: se `models/patient-001.pkl`
+non esiste, `avviaSistema` crea automaticamente la sessione baseline, raccoglie
+finestre valide per 7 giorni e addestra il modello personale appena la baseline
+e' completata. Se il modello personale esiste gia', viene usato subito nella
+fusion.
 
 Il file `config/edge.yml` decide quali sorgenti entrano in `latest_window.csv`.
 Per avere Watch e beacon insieme servono entrambe:
@@ -198,7 +199,8 @@ models/patient-001.pkl        modello personale creato dalla baseline reale
 ```
 
 I due modelli generici servono nei primi giorni, quando non abbiamo ancora abbastanza
-dati del paziente. Il modello personale viene creato dopo la baseline da 5/6 giorni.
+dati del paziente. Il modello personale viene creato automaticamente dopo la
+baseline da 7 giorni.
 Quando piu' modelli sono presenti, `edge_runtime` li esegue e produce una decisione
 fusa:
 
@@ -317,8 +319,11 @@ Durante la baseline, se almeno un modello generico e' disponibile, il runtime co
 produrre triage mentre raccoglie i dati personali:
 
 ```bash
-python -m edge_runtime.cli --config config/edge.example.yml --append-baseline
+python -m edge_runtime.cli --config config/edge.example.yml --loop --auto-baseline --auto-train-baseline
 ```
+
+Nel funzionamento normale non lo lanciamo a mano: ci pensa `./Avvio/avviaSistema`, che
+passa automaticamente questi argomenti al runtime.
 
 Se i dati non superano i controlli qualita, il runtime non appende la riga a
 `data/processed/baseline.csv` e scrive `baseline_skipped_reason: quality_error`.
@@ -368,13 +373,17 @@ ci interessa proprio come possibile comportamento da analizzare.
 La baseline e' la raccolta della routine reale del paziente. Non va fatta con dati
 simulati: parte solo quando Raspberry, app Android/beacon e sorgenti reali sono pronti.
 
-Per i tempi del progetto useremo una baseline compatta da 5/6 giorni. Una baseline piu'
-lunga sarebbe migliore, ma questa scelta ci permette di addestrare comunque su dati reali.
+Per il funzionamento automatico useremo una baseline da 7 giorni. Con finestre da
+4 minuti il sistema puo' raccogliere fino a 2520 finestre reali. Una baseline piu'
+lunga sarebbe migliore in produzione, ma 7 giorni sono un compromesso pratico per
+il progetto. Il training automatico richiede comunque almeno 1000 finestre valide:
+se il Raspberry resta spento troppo a lungo o molte finestre vengono scartate, il
+sistema continua a raccogliere senza creare un modello personale debole.
 
-Avvio baseline:
+Avvio baseline automatico:
 
 ```bash
-python -m edge_baseline.cli --config config/edge.yml start --days 6
+./Avvio/avviaSistema
 ```
 
 Questo crea:
@@ -383,11 +392,8 @@ Questo crea:
 data/state/baseline-session.json
 ```
 
-Durante la baseline il cron deve lanciare:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml --append-baseline
-```
+Durante la baseline il runtime lanciato da `avviaSistema` continua a girare ogni
+4 minuti.
 
 Ogni ciclo:
 
@@ -404,12 +410,8 @@ Controllare avanzamento:
 python -m edge_baseline.cli --config config/edge.yml status
 ```
 
-Dopo circa 6 giorni, quando lo status indica che la baseline e' pronta:
-
-```bash
-python -m edge_baseline.cli --config config/edge.yml finalize
-python -m edge_baseline.cli --config config/edge.yml train
-```
+Dopo 7 giorni, se ci sono almeno 1000 finestre valide, il runtime addestra
+automaticamente il modello personale.
 
 Il modello viene salvato in:
 
@@ -419,6 +421,14 @@ models/patient-001.pkl
 
 Da questo momento il runtime usera' i due generici e `models/patient-001.pkl`, se
 gli artefatti sono presenti.
+
+Con il modello personale presente, la fusion usa questi pesi:
+
+```text
+modello personale: 70%
+generico spaziale: 15%
+generico wearable: 15%
+```
 
 ## Aggregazione dati
 

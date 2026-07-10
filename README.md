@@ -83,9 +83,9 @@ edge_node/outputs/patient-001-decision.json
 ## Struttura
 
 ```text
-avviaSistema       Launcher breve per Raspberry/Linux
-avviaSistema.cmd   Launcher breve per Windows
-avviaSistema.ps1   Launcher PowerShell alternativo
+Avvio/avviaSistema                    Launcher breve per Raspberry/Linux
+Avvio_Windows/avviaSistema.cmd        Launcher breve per Windows
+Avvio_Windows/avviaSistema.ps1        Launcher PowerShell alternativo
 
 edge_node/
   requirements.txt      Dipendenze Python del Raspberry/edge node
@@ -212,8 +212,8 @@ L'app iOS si crea su Mac con Xcode usando i file in
   automaticamente se trova un modello addestrato.
 - Ho aggiunto `edge_quality`, che controlla se i dati sono utilizzabili prima di salvarli
   nella baseline o addestrare il modello.
-- Ho aggiunto `edge_baseline`, che gestisce start, raccolta 6 giorni, status e training
-  del modello paziente-specifico.
+- Ho aggiunto `edge_baseline`, che gestisce stato, raccolta 7 giorni e training
+  automatico del modello paziente-specifico.
 - Ho aggiunto il comando che genera `edge_node/data/processed/latest_window.csv`.
 - Ho aggiunto `edge_datasets`, partendo dal converter CASAS per creare
   `generic_spatial_dataset.csv`.
@@ -262,7 +262,7 @@ il Raspberry Pi, dovremo collegare una sorgente alla volta:
 2. BLE tramite telefono Android come scanner mobile dei beacon nelle stanze.
 3. Shelly tramite lettura HTTP dei consumi.
 
-Dopo il collegamento, il Raspberry raccogliera' dati veri per circa 5/6 giorni.
+Dopo il collegamento, il Raspberry raccogliera' dati veri per circa 7 giorni.
 Durante questi giorni, se avremo gia' `models/generic_spatial.pkl` e/o
 `models/generic_wearable.pkl`, il sistema potra' usare i modelli generici come
 riferimento iniziale. I dati raccolti formeranno poi la baseline personale del
@@ -284,7 +284,7 @@ models/patient-001.pkl
   modello personale addestrato dalla baseline reale raccolta in casa
 ```
 
-Durante i primi 5/6 giorni:
+Durante i primi 7 giorni:
 
 ```text
 dati reali ogni 4 minuti
@@ -755,25 +755,25 @@ vale solo quando sei gia' dentro `edge_node/`.
 Questo è il comando breve da usare normalmente dalla root del progetto:
 
 ```powershell
-.\avviaSistema
+.\Avvio_Windows\avviaSistema.ps1
 ```
 
 Su Windows, se PowerShell non esegue lo script senza estensione, usa:
 
 ```powershell
-.\avviaSistema.cmd
+.\Avvio_Windows\avviaSistema.cmd
 ```
 
 Sul Raspberry Pi, dopo il clone, la prima volta rendi eseguibile lo script:
 
 ```bash
-chmod +x avviaSistema
+chmod +x Avvio/avviaSistema
 ```
 
 Poi avvii tutto con:
 
 ```bash
-./avviaSistema
+./Avvio/avviaSistema
 ```
 
 Il launcher entra automaticamente in `edge_node/`, sceglie il Python giusto e
@@ -826,17 +826,11 @@ Per vedere le ultime righe raccolte dall'orologio:
 Import-Csv data\raw\google_health_samples.csv | Select-Object -Last 10 | ConvertTo-Json -Depth 4
 ```
 
-Il comando resta attivo finche' non viene premuto `CTRL+C`. Durante la baseline:
-
-```bash
-./avviaSistema --append-baseline
-```
-
-Su Windows, la stessa baseline si avvia con:
-
-```powershell
-.\avviaSistema --append-baseline
-```
+Il comando resta attivo finche' non viene premuto `CTRL+C`. La baseline personale
+e' automatica: se `models/patient-001.pkl` non esiste, `avviaSistema` crea da solo
+`data/state/baseline-session.json`, raccoglie finestre valide per 7 giorni e poi
+addestra automaticamente il modello personale. Se il modello personale esiste gia',
+il sistema lo usa subito e non riapre la baseline.
 
 Se invece vogliamo fare un solo ciclo manuale, senza tenere acceso anche il receiver,
 si puo' ancora usare:
@@ -863,7 +857,7 @@ legge i dati gia' ricevuti in data/raw/
 Se nessun modello esiste ancora, non fallisce: aggiorna la finestra e scrive nello stato
 `skipped_all_models_missing`.
 
-Con `--append-baseline`, il runtime appende anche la finestra a
+In modalita baseline automatica, il runtime appende anche la finestra a
 `data/processed/baseline.csv`, ma solo se i controlli qualita non trovano errori.
 Se i dati sono rotti o incompleti, il ciclo scrive
 `baseline_skipped_reason: quality_error` e non sporca la baseline.
@@ -872,6 +866,20 @@ produrre comunque una decisione basata sui modelli disponibili.
 Se un modello generico segnala una finestra sospetta, il ciclo scrive
 `baseline_skipped_reason: generic_safety_gate` e non usa quella finestra per addestrare
 la normalita personale.
+
+Dopo 7 giorni, se ci sono almeno 1000 finestre accettate, il runtime genera:
+
+```text
+models/patient-001.pkl
+```
+
+Da quel ciclo in poi la fusion usa i pesi:
+
+```text
+modello personale: 70%
+generico spaziale: 15%
+generico wearable: 15%
+```
 
 Controllo qualita manuale sull'ultima finestra:
 
@@ -887,21 +895,16 @@ outputs/last-quality-report.json
 
 ### Fase baseline
 
-Quando avremo hardware reale e dati veri, la baseline si avvia cosi':
-
-Nota: per vincoli di tempo useremo una baseline compatta da 5/6 giorni. Una baseline
-piu' lunga, ad esempio 14 giorni, sarebbe piu' rappresentativa; nel progetto va dichiarato
-che il training e' basato su una finestra ridotta ma reale.
+Quando hardware reale e dati veri sono pronti, la baseline parte automaticamente
+con il comando unico:
 
 ```bash
-python -m edge_baseline.cli --config config/edge.yml start --days 6
+./Avvio/avviaSistema
 ```
 
-Durante i 6 giorni il cron/systemd deve eseguire:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml --append-baseline
-```
+Per il progetto useremo una baseline da 7 giorni. Una baseline piu' lunga, ad
+esempio 14 giorni, sarebbe piu' rappresentativa; nel progetto va dichiarato che
+il training e' basato su una finestra ridotta ma reale.
 
 Il runtime aggiunge una finestra a `data/processed/baseline.csv` solo se i controlli
 qualita non hanno errori. Lo stato della raccolta viene salvato in:
@@ -916,12 +919,10 @@ Per vedere avanzamento, finestre accettate/rifiutate e prontezza al training:
 python -m edge_baseline.cli --config config/edge.yml status
 ```
 
-Dopo circa 6 giorni:
-
-```bash
-python -m edge_baseline.cli --config config/edge.yml finalize
-python -m edge_baseline.cli --config config/edge.yml train
-```
+Dopo circa 7 giorni, se ci sono almeno 1000 finestre valide, il runtime addestra
+automaticamente il modello personale. Se il Raspberry e' rimasto spento troppo a
+lungo o i dati validi sono meno di 1000, la baseline resta in attesa e il sistema
+continua a raccogliere senza creare un modello debole.
 
 Il modello viene salvato in `models/patient-001.pkl`.
 
@@ -1125,37 +1126,25 @@ python -m edge_ai.cli train-generic \
 Questi modelli non rappresentano il singolo paziente: servono come base iniziale mentre
 il Raspberry raccoglie la baseline personale.
 
-#### 6. Avviare baseline reale di 6 giorni
+#### 6. Avviare baseline reale automatica di 7 giorni
 
 Quando beacon, braccialetto/wearable e Raspberry sono stabili:
 
-Per il progetto useremo 6 giorni perche' non abbiamo 14 giorni disponibili. Questo e'
-accettabile come baseline dimostrativa reale, pur essendo meno robusta di una baseline
-clinica piu' lunga.
+Per il progetto useremo 7 giorni perche' non abbiamo 14 giorni disponibili. Questo
+e' accettabile come baseline dimostrativa reale, pur essendo meno robusta di una
+baseline clinica piu' lunga.
 
 ```bash
-python -m edge_baseline.cli --config config/edge.yml start --days 6
+./Avvio/avviaSistema
 ```
 
-Questo crea lo stato:
+Questo avvia receiver, runtime continuo e crea automaticamente lo stato:
 
 ```text
 data/state/baseline-session.json
 ```
 
-Durante i 6 giorni il Raspberry deve eseguire ogni 4 minuti:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml --append-baseline
-```
-
-Esempio cron sul Raspberry:
-
-```cron
-*/4 * * * * cd /home/pi/progetto-iot/edge_node && . ../.venv/bin/activate && python -m edge_runtime.cli --config config/edge.yml --append-baseline
-```
-
-Questo comando:
+Il comando:
 
 ```text
 legge i dati grezzi
@@ -1176,7 +1165,7 @@ data/processed/baseline.csv
 
 #### 7. Controllare ogni giorno la baseline
 
-Durante i 6 giorni controlleremo:
+Durante i 7 giorni controlleremo:
 
 ```bash
 python -m edge_baseline.cli --config config/edge.yml status
@@ -1195,20 +1184,18 @@ accepted_windows
 rejected_windows
 quality_error_cycles
 baseline_row_count
+min_training_windows
 ready_for_training
 ```
 
 Se `rejected_windows` o `quality_error_cycles` crescono troppo, non addestriamo ancora:
 prima correggiamo il problema dei dati.
 
-#### 8. Chiudere baseline e addestrare
+#### 8. Chiusura baseline e training automatico
 
-Dopo circa 6 giorni, quando lo status indica che la baseline e' pronta:
-
-```bash
-python -m edge_baseline.cli --config config/edge.yml finalize
-python -m edge_baseline.cli --config config/edge.yml train
-```
+Dopo circa 7 giorni, quando la baseline e' pronta, `avviaSistema` addestra
+automaticamente `models/patient-001.pkl`. I comandi manuali
+`edge_baseline finalize/train` restano disponibili solo per debug tecnico.
 
 Il training usa:
 
@@ -1412,25 +1399,26 @@ python -m edge_ai.cli infer \
 
 ## Flusso sul Raspberry Pi
 
-Durante la raccolta baseline:
+Avvio unico reale:
 
 ```bash
-python -m edge_baseline.cli --config config/edge.yml start --days 6
-python -m edge_runtime.cli --config config/edge.yml --append-baseline
+./Avvio/avviaSistema
 ```
 
-Dopo circa 5/6 giorni:
+Questo comando:
+
+```text
+-> avvia receiver Android/BLE
+-> avvia runtime ogni 4 minuti
+-> se manca il modello personale, avvia baseline 7 giorni
+-> dopo 7 giorni addestra models/patient-001.pkl
+-> quando il modello personale esiste, usa fusion 70/15/15
+```
+
+Per vedere lo stato baseline:
 
 ```bash
 python -m edge_baseline.cli --config config/edge.yml status
-python -m edge_baseline.cli --config config/edge.yml finalize
-python -m edge_baseline.cli --config config/edge.yml train
-```
-
-Durante il funzionamento normale:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml
 ```
 
 ## Prossimi step
@@ -1622,11 +1610,10 @@ Questo modulo serve a gestire la raccolta reale della routine del paziente:
 
 ```text
 start baseline
--> raccolta per 6 giorni
+-> raccolta per 7 giorni
 -> controllo qualita a ogni finestra
 -> conteggio finestre accettate/rifiutate
--> finalize
--> training modello
+-> training automatico modello
 ```
 
 Lo stato viene salvato in `data/state/baseline-session.json`. Il modello finale viene

@@ -10,9 +10,9 @@ from edge_ai.schema import InferenceResult
 
 @dataclass(frozen=True)
 class FusionConfig:
-    generic_spatial_weight: float = 0.30
-    generic_wearable_weight: float = 0.30
-    personal_weight: float = 0.40
+    generic_spatial_weight: float = 0.15
+    generic_wearable_weight: float = 0.15
+    personal_weight: float = 0.70
     yellow_score: float = 35.0
     orange_score: float = 65.0
     red_score: float = 80.0

@@ -32,7 +32,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--append-baseline",
         action="store_true",
-        help="Run runtime loop in baseline collection mode.",
+        help="Force runtime loop in baseline collection mode.",
+    )
+    parser.add_argument(
+        "--disable-auto-baseline",
+        action="store_true",
+        help="Do not start or train the personal baseline automatically.",
+    )
+    parser.add_argument(
+        "--baseline-days",
+        type=int,
+        default=7,
+        help="Automatic baseline duration in days. Defaults to 7.",
+    )
+    parser.add_argument(
+        "--baseline-contamination",
+        type=float,
+        default=0.05,
+        help="Isolation Forest contamination for automatic personal training.",
     )
     return parser
 
@@ -70,6 +87,17 @@ def main() -> None:
     ]
     if args.append_baseline:
         runtime_command.append("--append-baseline")
+    if not args.disable_auto_baseline:
+        runtime_command.extend(
+            [
+                "--auto-baseline",
+                "--auto-train-baseline",
+                "--baseline-days",
+                str(max(1, args.baseline_days)),
+                "--baseline-contamination",
+                str(args.baseline_contamination),
+            ]
+        )
     runtime = _start_process("runtime", runtime_command)
 
     try:
@@ -88,8 +116,13 @@ def _print_startup_summary(args: argparse.Namespace) -> None:
     _log(f"Config: {args.config}")
     _log(f"Receiver: http://{args.host}:{args.port}")
     _log(f"Runtime loop: ogni {max(1, args.interval_seconds)} secondi")
+    if args.disable_auto_baseline:
+        _log("Baseline automatica: disattivata")
+    else:
+        _log(f"Baseline automatica: attiva, durata {max(1, args.baseline_days)} giorni")
+        _log("Training automatico modello personale: attivo")
     if args.append_baseline:
-        _log("Modalita baseline: attiva")
+        _log("Append baseline forzato: attivo")
     _log("Premi CTRL+C per fermare tutto")
 
 

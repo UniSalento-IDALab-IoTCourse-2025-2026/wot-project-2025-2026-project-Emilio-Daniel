@@ -23,6 +23,8 @@ if (Test-Path $LocalPython) {
 
 Push-Location $EdgeDir
 try {
+    Write-Host "Avvio sistema IoT: receiver + runtime + baseline automatica 7 giorni."
+    Write-Host "Se il modello personale esiste gia, verra usato automaticamente."
     & $PythonExe -m edge_stack.cli --config "config\edge.yml" @ExtraArgs
     exit $LASTEXITCODE
 } finally {

@@ -5,14 +5,22 @@ import json
 import os
 import time
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from edge_ai.debounce import AlertDebouncer, decision_to_json
-from edge_baseline.session import DEFAULT_BASELINE_STATE, update_session_from_cycle
+from edge_baseline.session import (
+    DEFAULT_BASELINE_STATE,
+    DEFAULT_MIN_TRAINING_WINDOWS,
+    load_session,
+    save_session,
+    session_status_payload,
+    start_session,
+    update_session_from_cycle,
+)
 from edge_ingest.aggregator import (
     append_baseline_row,
     build_feature_window,
@@ -80,6 +88,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--append-baseline",
         action="store_true",
         help="Append the generated window to the baseline CSV.",
+    )
+    parser.add_argument(
+        "--auto-baseline",
+        action="store_true",
+        help=(
+            "Automatically start baseline collection when the personal model "
+            "does not exist."
+        ),
+    )
+    parser.add_argument(
+        "--baseline-days",
+        type=int,
+        default=7,
+        help="Planned automatic baseline duration in days. Defaults to 7.",
+    )
+    parser.add_argument(
+        "--auto-train-baseline",
+        action="store_true",
+        help="Train the personal model automatically when baseline is complete.",
+    )
+    parser.add_argument(
+        "--baseline-contamination",
+        type=float,
+        default=0.05,
+        help="Isolation Forest contamination used for automatic personal training.",
     )
     parser.add_argument(
         "--force-baseline-append",
@@ -188,7 +221,8 @@ def run_loop(args: argparse.Namespace) -> None:
     interval = max(1, int(args.interval_seconds))
     _log_info(
         "Edge runtime loop started "
-        f"(config={args.config}, interval={interval}s, append_baseline={args.append_baseline})"
+        f"(config={args.config}, interval={interval}s, "
+        f"append_baseline={args.append_baseline}, auto_baseline={args.auto_baseline})"
     )
     _log_info("Press CTRL+C to quit")
 
@@ -253,6 +287,21 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     """
     config = load_config(args.config)
     patient_id = config.patient.patient_id
+    generic_spatial_model_path = _generic_spatial_model_path(args, config)
+    generic_wearable_model_path = (
+        Path(args.generic_wearable_model)
+        if args.generic_wearable_model
+        else Path(config.ai.generic_wearable_model)
+    )
+    personal_model_path = _personal_model_path(args, config, patient_id)
+    auto_baseline_session = None
+    if args.auto_baseline:
+        auto_baseline_session = _ensure_auto_baseline_session(
+            config=config,
+            state_path=args.baseline_state,
+            days=args.baseline_days,
+            personal_model_path=personal_model_path,
+        )
 
     ble_samples = []
     if args.collect_ble:
@@ -269,18 +318,16 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     if args.quality_output:
         _write_json(Path(args.quality_output), quality_payload)
 
-    generic_spatial_model_path = _generic_spatial_model_path(args, config)
-    generic_wearable_model_path = (
-        Path(args.generic_wearable_model)
-        if args.generic_wearable_model
-        else Path(config.ai.generic_wearable_model)
+    append_baseline_requested = args.append_baseline or (
+        args.auto_baseline
+        and auto_baseline_session is not None
+        and auto_baseline_session.status == "collecting"
+        and not personal_model_path.exists()
     )
-    personal_model_path = _personal_model_path(args, config, patient_id)
-
     baseline_appended = False
     baseline_skipped_reason = None
     baseline_gate_payload: dict[str, Any] | None = None
-    if args.append_baseline and quality_report.usable_for_training:
+    if append_baseline_requested and quality_report.usable_for_training:
         baseline_gate_payload = _run_baseline_safety_gate(
             config=config,
             generic_model_paths={
@@ -297,11 +344,11 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
             baseline_appended = True
             if baseline_gate_blocked:
                 baseline_skipped_reason = "forced_despite_generic_safety_gate"
-    elif args.append_baseline and args.force_baseline_append:
+    elif append_baseline_requested and args.force_baseline_append:
         append_baseline_row(config.paths.baseline_csv, row)
         baseline_appended = True
         baseline_skipped_reason = "forced_despite_quality_errors"
-    elif args.append_baseline:
+    elif append_baseline_requested:
         baseline_skipped_reason = "quality_error"
 
     state_path = (
@@ -349,6 +396,7 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "window_end_local": _to_local_iso(row["window_end"], config.window.timezone),
         "latest_window_csv": str(config.paths.latest_window_csv),
         "baseline_appended": baseline_appended,
+        "baseline_auto_enabled": bool(args.auto_baseline),
         "baseline_csv": str(config.paths.baseline_csv) if baseline_appended else None,
         "baseline_skipped_reason": baseline_skipped_reason,
         "baseline_gate": baseline_gate_payload,
@@ -409,6 +457,22 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         status["baseline_session_accepted_windows"] = baseline_session.accepted_windows
         status["baseline_session_rejected_windows"] = baseline_session.rejected_windows
         status["baseline_session_state"] = str(args.baseline_state)
+
+    auto_train_payload = None
+    if args.auto_baseline and args.auto_train_baseline:
+        auto_train_payload = _maybe_train_personal_model_from_baseline(
+            config=config,
+            state_path=args.baseline_state,
+            personal_model_path=personal_model_path,
+            contamination=args.baseline_contamination,
+        )
+        status["baseline_auto_train"] = auto_train_payload
+        if auto_train_payload.get("trained"):
+            status["personal_model_exists"] = personal_model_path.exists()
+            status["baseline_session_status"] = "trained"
+            status["baseline_session_accepted_windows"] = auto_train_payload.get(
+                "training_rows"
+            )
 
     if args.status_output:
         _write_json(Path(args.status_output), status)
@@ -475,6 +539,146 @@ def _run_inference(
     )
     _write_json(decision_output, payload)
     return payload
+
+
+def _ensure_auto_baseline_session(
+    config: Any,
+    state_path: str | Path,
+    days: int,
+    personal_model_path: Path,
+) -> Any | None:
+    """Avvia automaticamente la baseline se il modello personale manca.
+
+    Il paziente non deve lanciare comandi manuali. Al primo avvio reale, se
+    `models/<patient_id>.pkl` non esiste, viene creato lo stato baseline e il
+    runtime iniziera' ad appendere solo finestre di qualita valida.
+    """
+    if personal_model_path.exists():
+        return None
+
+    state = Path(state_path)
+    if not state.exists():
+        return start_session(
+            config=config,
+            state_path=state,
+            days=max(1, int(days)),
+            model_output=personal_model_path,
+            reset=False,
+        )
+
+    session = load_session(state)
+    if session.patient_id != config.patient.patient_id:
+        return None
+    if session.status in {"collecting", "ready_for_training", "trained"}:
+        return session
+    return None
+
+
+def _maybe_train_personal_model_from_baseline(
+    config: Any,
+    state_path: str | Path,
+    personal_model_path: Path,
+    contamination: float,
+) -> dict[str, Any]:
+    """Addestra automaticamente il modello personale quando la baseline e' pronta.
+
+    La baseline automatica usa solo le righe gia' accettate in `baseline.csv`.
+    Eventuali finestre scartate per qualita o safety gate non entrano nel
+    training, quindi qualche ciclo rifiutato non blocca l'intera procedura.
+    """
+    payload: dict[str, Any] = {
+        "enabled": True,
+        "trained": False,
+        "model": str(personal_model_path),
+    }
+    if personal_model_path.exists():
+        payload["reason"] = "personal_model_already_exists"
+        return payload
+
+    state = Path(state_path)
+    if not state.exists():
+        payload["reason"] = "baseline_session_missing"
+        return payload
+
+    session = load_session(state)
+    if session.patient_id != config.patient.patient_id:
+        payload["reason"] = "baseline_patient_mismatch"
+        return payload
+
+    status_payload = session_status_payload(config, state)
+    row_count = int(status_payload.get("baseline_row_count", 0))
+    min_training_windows = int(
+        status_payload.get("min_training_windows", DEFAULT_MIN_TRAINING_WINDOWS)
+    )
+    ready_by_time = _baseline_time_completed(status_payload)
+    ready_for_training = (
+        row_count >= min_training_windows
+        and (
+            bool(status_payload.get("ready_for_training"))
+            or session.status in {"ready_for_training", "trained"}
+            or (session.status == "collecting" and ready_by_time)
+        )
+    )
+    payload.update(
+        {
+            "session_status": session.status,
+            "baseline_row_count": row_count,
+            "min_training_windows": min_training_windows,
+            "ready_by_time": ready_by_time,
+            "target_end_at": session.target_end_at,
+        }
+    )
+    if not ready_for_training:
+        payload["reason"] = "baseline_not_ready"
+        return payload
+
+    from edge_ai.features import load_feature_frame
+    from edge_ai.model import EdgeAnomalyDetector
+
+    try:
+        frame = load_feature_frame(session.baseline_csv)
+        detector = EdgeAnomalyDetector.train(
+            frame=frame,
+            patient_id=session.patient_id,
+            contamination=contamination,
+        )
+        detector.save(personal_model_path)
+    except Exception as exc:
+        payload.update(
+            {
+                "reason": "automatic_training_failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+        )
+        return payload
+
+    session.status = "trained"
+    if session.finalized_at is None:
+        session.finalized_at = datetime.now(timezone.utc).isoformat()
+    session.notes.append(
+        f"Automatic personal model trained with {detector.metadata.training_rows} windows."
+    )
+    save_session(session, state)
+
+    payload.update(
+        {
+            "trained": True,
+            "reason": "baseline_completed_and_model_trained",
+            "training_rows": detector.metadata.training_rows,
+            "feature_columns": detector.metadata.feature_columns,
+        }
+    )
+    return payload
+
+
+def _baseline_time_completed(status_payload: dict[str, Any]) -> bool:
+    """Ritorna True quando la durata pianificata della baseline e' conclusa."""
+    try:
+        remaining_days = float(status_payload.get("remaining_days", 1.0))
+    except (TypeError, ValueError):
+        return False
+    return remaining_days <= 0.0
 
 
 def _run_baseline_safety_gate(
