@@ -1,29 +1,32 @@
-# Dashboard e architettura app medico/paziente
+# Dashboard e architettura app medico, caregiver e paziente
 
 Questo documento descrive la scelta consigliata per la parte dashboard del progetto:
-app paziente, dashboard medico, comunicazione MQTT/WebSocket e ruolo del Raspberry Pi 5.
+app paziente, app caregiver, dashboard medico, comunicazione MQTT/WebSocket, backend
+Cloud e ruolo del Raspberry Pi 5.
 
 L'obiettivo e' avere una panoramica chiara prima di iniziare a implementare frontend e
 backend.
 
 ## Decisione principale
 
-Le due dashboard/app non devono essere uguali.
+Le tre interfacce non devono essere uguali.
 
 La scelta consigliata e':
 
 ```text
 Paziente -> app mobile Android
+Caregiver -> app mobile Android/iOS
 Medico   -> dashboard web
 ```
 
-Motivo: paziente e medico hanno bisogni diversi.
+Motivo: paziente, caregiver e medico hanno bisogni e responsabilita' diversi.
 
 Il paziente deve avere un'app mobile semplice ma utile: non solo raccolta dati, ma anche
 dashboard personale, promemoria, notifiche, esercizi e test cognitivi richiesti dal
 medico. Il medico invece ha bisogno di una dashboard web piu' ricca, con grafici,
 storico, alert, stato sensori, spiegazione AI e strumenti per inviare attivita o test al
-paziente.
+paziente. Il caregiver deve ricevere informazioni sintetiche e operative, senza dati
+clinici grezzi o spiegazioni tecniche del modello.
 
 ## Ruolo corretto dell'app paziente
 
@@ -190,6 +193,133 @@ Backend -> Push notification -> App paziente
 
 Su Android il canale tipico e' Firebase Cloud Messaging, o un servizio equivalente. Il
 push serve per avvisare il paziente anche quando l'app non e' aperta.
+
+## Passaggio dall'ambiente locale all'infrastruttura Cloud-Broker
+
+Il funzionamento interno del Raspberry Pi 5 rimane invariato: acquisizione dei dati,
+aggregazione della finestra di quattro minuti, controllo qualita', inferenza AI, fusione
+dei modelli e generazione della decisione JSON. La comunicazione Cloud viene aggiunta
+dopo questo flusso e non sostituisce il funzionamento locale dell'Edge Node.
+
+Al termine di ogni ciclo, un client MQTT sul Raspberry pubblica i dati necessari verso
+un broker remoto. Il Raspberry continua quindi a funzionare anche se la connessione
+Internet non e' disponibile; i messaggi non inviati dovranno essere accodati localmente
+e ritrasmessi al ripristino della rete.
+
+```text
+Sensori e Google Health
+-> Raspberry Pi 5
+-> aggregazione e inferenza locale
+-> JSON/CSV locali
+-> MQTT publisher
+-> Broker MQTT Cloud
+-> Backend e client autorizzati
+```
+
+Il broker MQTT puo' essere Mosquitto installato su una VPS oppure un servizio gestito,
+come HiveMQ Cloud o AWS IoT Core. Il broker non esegue la logica clinica: autentica i
+client, riceve i messaggi e li distribuisce ai subscriber autorizzati. In questo modo il
+Raspberry pubblica ogni evento una sola volta e non deve collegarsi separatamente a ogni
+dashboard.
+
+Il backend, sviluppabile con FastAPI, opera anche come client MQTT. Si iscrive ai topic
+dei pazienti, valida i payload ricevuti, salva telemetria e decisioni nel database,
+gestisce utenti e permessi ed espone API REST e WebSocket alle applicazioni. Quando
+riceve un evento critico, puo' inoltre inviare una notifica push tramite Firebase Cloud
+Messaging anche se l'app mobile e' chiusa.
+
+Il canale raccomandato per la dashboard medico e':
+
+```text
+Raspberry -> MQTT/TLS -> Broker -> Backend -> WebSocket/WSS -> Dashboard medico
+```
+
+Questa soluzione evita di distribuire nel browser credenziali MQTT con permessi ampi e
+mantiene nel backend autorizzazione, tracciamento e trasformazione dei dati. MQTT over
+WebSockets e' comunque tecnicamente utilizzabile per collegare direttamente una web app
+al broker, ad esempio in un prototipo. In tal caso servono TLS, credenziali temporanee e
+ACL che consentano a ogni utente di leggere esclusivamente i topic autorizzati.
+
+## Topic MQTT e comunicazione bidirezionale
+
+Una struttura coerente dei topic permette di separare telemetria, allarmi, stato dei
+sensori e comandi. Una proposta iniziale e':
+
+```text
+iot/patients/patient-001/edge/status
+iot/patients/patient-001/telemetry/window
+iot/patients/patient-001/telemetry/decision
+iot/patients/patient-001/alerts/critical
+iot/patients/patient-001/sensors/watch
+iot/patients/patient-001/sensors/ble
+iot/patients/patient-001/commands/task
+iot/patients/patient-001/commands/ack
+```
+
+I topic `telemetry` e `alerts` viaggiano principalmente dal Raspberry al Cloud. I topic
+`commands` permettono la comunicazione inversa, ad esempio per registrare la presa in
+carico di un allarme o notificare la disponibilita' di un nuovo task. I comandi clinici
+devono comunque essere creati e autorizzati dal backend, che conserva il relativo log.
+
+Ogni payload dovrebbe includere almeno:
+
+```text
+schema_version
+message_id
+patient_id
+edge_id
+timestamp_utc
+event_type
+payload
+```
+
+`message_id` consente al backend di riconoscere eventuali duplicati prodotti da una
+ritrasmissione MQTT. `schema_version` permette di aggiornare in futuro il formato senza
+rompere i client gia' installati.
+
+## Dashboard caregiver
+
+L'app caregiver ha un ruolo diverso sia dall'app paziente sia dalla dashboard medico.
+Deve mostrare informazioni sintetiche, comprensibili e orientate all'azione:
+
+```text
+stato generale a semaforo
+ultimo aggiornamento del sistema
+eventuali richieste di assistenza
+problemi tecnici: watch scarico, telefono offline, monitoraggio interrotto
+promemoria terapeutici o operativi
+allarmi severi gia' validati dal sistema
+stato di presa in carico dell'allarme
+```
+
+Non deve mostrare dati fisiologici grezzi, dettagli diagnostici o feature AI difficili da
+interpretare. Quando l'app e' aperta puo' ricevere aggiornamenti tramite WebSocket o un
+client MQTT con permessi limitati. Quando e' chiusa o in background riceve notifiche push
+generate dal backend.
+
+Anche l'app paziente segue lo stesso principio di connettivita': aggiornamenti live in
+foreground e push notification in background. La scansione BLE locale resta invece
+gestita dal Foreground Service Android e continua indipendentemente dal collegamento al
+Cloud.
+
+## Flusso di un evento critico
+
+Il flusso completo di un allarme severo e della sua presa in carico e':
+
+```text
+1. L'Edge AI calcola una decisione red con should_publish=true.
+2. Il Raspberry salva il JSON localmente e pubblica l'evento via MQTT/TLS.
+3. Il broker consegna il messaggio al backend e agli eventuali client autorizzati.
+4. Il backend valida e salva l'evento nel database.
+5. La dashboard medico riceve l'aggiornamento tramite WebSocket/WSS.
+6. Il backend invia una notifica push urgente al caregiver.
+7. Il medico o il caregiver prende in carico l'evento.
+8. Il backend registra l'acknowledgement e aggiorna tutti i client connessi.
+```
+
+La presa in carico deve contenere almeno utente, ruolo, data e ora. Non elimina
+l'allarme: ne cambia lo stato da `new` a `acknowledged` e successivamente, quando
+previsto, a `resolved`. Questo mantiene una traccia verificabile delle azioni eseguite.
 
 ## Microservizi: si o no?
 
@@ -760,11 +890,12 @@ Scelta consigliata:
 
 ```text
 App paziente: Android mobile
+App caregiver: Android/iOS mobile
 Dashboard medico: web app
 BLE: localizzazione indoor
 MQTT: Raspberry -> backend
 WebSocket: backend -> dashboard realtime
-Push notification: backend -> app paziente
+Push notification: backend -> app paziente e caregiver
 REST API: dashboard/app -> backend
 Microservizi: non subito, backend modulare unico
 ```
