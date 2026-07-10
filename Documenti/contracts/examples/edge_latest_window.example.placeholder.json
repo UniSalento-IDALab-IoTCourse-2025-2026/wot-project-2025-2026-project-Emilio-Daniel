@@ -1,0 +1,5 @@
+{
+  "todo": "Emilio deve sostituire questo placeholder con una riga JSON equivalente a data/processed/latest_window.csv",
+  "expected_owner": "Emilio",
+  "schema_version": 1
+}

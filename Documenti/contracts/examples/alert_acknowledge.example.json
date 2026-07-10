@@ -1,0 +1,8 @@
+{
+  "alert_id": "alert-001",
+  "status": "acknowledged",
+  "acknowledged_by": "user-doctor-001",
+  "acknowledged_role": "doctor",
+  "acknowledged_at": "2026-07-10T10:15:00Z",
+  "note": "Alert preso in carico per verifica."
+}

@@ -1,0 +1,22 @@
+{
+  "type": "check_in",
+  "priority": "normal",
+  "expires_at": "2026-07-10T18:00:00Z",
+  "title": "Controllo benessere",
+  "instructions": "Rispondi a queste brevi domande.",
+  "payload": {
+    "questions": [
+      {
+        "id": "q1",
+        "type": "single_choice",
+        "text": "Come ti senti adesso?",
+        "options": ["bene", "cosi_cosi", "male"]
+      },
+      {
+        "id": "q2",
+        "type": "boolean",
+        "text": "Hai avuto capogiri?"
+      }
+    ]
+  }
+}

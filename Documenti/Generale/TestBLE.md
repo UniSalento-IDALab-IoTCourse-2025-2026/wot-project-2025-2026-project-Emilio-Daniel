@@ -41,7 +41,7 @@ Controllare anche:
 
 ```text
 BlueBeaconMap.md
-Documenti/BEACON_SETUP.md
+BEACON_SETUP.md
 Applicazione IoT Companion/companion_Android_app/README.md
 ```
 

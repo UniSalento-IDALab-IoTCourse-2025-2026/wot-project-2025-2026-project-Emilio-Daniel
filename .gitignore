@@ -60,6 +60,15 @@ edge_node/outputs/*
 !edge_node/models/.gitkeep
 !edge_node/outputs/.gitkeep
 
+# Segreti e certificati MQTT/Cloud generati localmente.
+cloud/mqtt/passwd
+cloud/mqtt/certs/*
+!cloud/mqtt/certs/.gitkeep
+cloud/mqtt/data/*
+!cloud/mqtt/data/.gitkeep
+cloud/mqtt/log/*
+!cloud/mqtt/log/.gitkeep
+
 # Dataset generati localmente per addestramento/calibrazione.
 # Si rigenerano quando servono e non devono appesantire GitHub.
 Dataset_Modelli_Generali/

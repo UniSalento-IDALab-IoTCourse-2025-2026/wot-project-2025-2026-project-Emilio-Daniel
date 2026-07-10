@@ -1,7 +1,7 @@
 # Compiti divisi tra Emilio e Daniel
 
 Questo documento trasforma l'architettura descritta in
-`Documenti/DASHBOARD_ARCHITECTURE.md` in un piano di lavoro concreto. La divisione e'
+`DASHBOARD_ARCHITECTURE.md` in un piano di lavoro concreto. La divisione e'
 pensata per permettere a Emilio e Daniel di procedere in parallelo, usando contratti e
 dati di prova condivisi fino al momento dell'integrazione.
 
@@ -16,6 +16,50 @@ dati di prova condivisi fino al momento dell'integrazione.
 7. Ordine di lavoro parallelo
 8. Criteri di completamento
 9. Attivita' successive alla prima versione
+
+## Come usare questa checklist
+
+Questo file viene usato come piano operativo. Ogni punto resta con `[ ]` finche' non
+esiste un risultato verificabile. Quando il punto e' completato, si cambia in `[x]`.
+
+Regola pratica:
+
+```text
+[ ] = da fare
+[x] = completato e verificato
+```
+
+Non segnare un punto come completato solo perche' e' stato iniziato. Prima devono esserci
+file, codice, configurazione, test o documentazione che dimostrano il completamento.
+
+Quando un punto di Daniel dipende da un output di Emilio, Daniel puo' preparare struttura,
+mock e contratti, ma il punto resta aperto finche' l'integrazione con l'output reale non
+e' verificata.
+
+Esempio:
+
+```text
+Emilio prepara payload reali Edge
+Daniel prepara schema/API/backend usando mock
+Punto completato solo quando payload reale e schema backend combaciano
+```
+
+Ordine consigliato per Daniel:
+
+```text
+1. Contratti condivisi
+2. Backend FastAPI base
+3. Database PostgreSQL
+4. Broker MQTT
+5. Subscriber MQTT
+6. API REST
+7. WebSocket
+8. Auth/ruoli
+9. Alert
+10. Task/test paziente
+11. Push notification
+12. Deployment
+```
 
 ## 1. Obiettivo della prima versione
 
@@ -73,15 +117,15 @@ API e MQTT definitivi. Dopo l'approvazione, entrambi possono lavorare con mock l
 
 ### 3.1 Regole comuni
 
-- [ ] Usare sempre `patient_id` come identificatore del paziente.
-- [ ] Aggiungere un `edge_id` per distinguere i Raspberry installati.
-- [ ] Usare timestamp ISO 8601 in UTC nei messaggi e convertire l'orario solo nella UI.
-- [ ] Aggiungere `schema_version` a ogni payload MQTT.
-- [ ] Aggiungere `message_id` univoco per deduplicare le ritrasmissioni.
-- [ ] Non inviare token OAuth, password o segreti nei payload.
-- [ ] Distinguere `event_type` da `level` e da `should_publish`.
-- [ ] Conservare i valori mancanti come `null`, non come stringhe `"nan"`.
-- [ ] Stabilire un formato di errore API comune con `code`, `message` e `details`.
+- [x] Usare sempre `patient_id` come identificatore del paziente.
+- [x] Aggiungere un `edge_id` per distinguere i Raspberry installati.
+- [x] Usare timestamp ISO 8601 in UTC nei messaggi e convertire l'orario solo nella UI.
+- [x] Aggiungere `schema_version` a ogni payload MQTT.
+- [x] Aggiungere `message_id` univoco per deduplicare le ritrasmissioni.
+- [x] Non inviare token OAuth, password o segreti nei payload.
+- [x] Distinguere `event_type` da `level` e da `should_publish`.
+- [x] Conservare i valori mancanti come `null`, non come stringhe `"nan"`.
+- [x] Stabilire un formato di errore API comune con `code`, `message` e `details`.
 
 ### 3.2 Topic MQTT condivisi
 
@@ -142,8 +186,8 @@ system_status_updated
 - [ ] Emilio prepara una riga JSON equivalente a `latest_window.csv`.
 - [ ] Emilio prepara esempi green, yellow, orange, red e technical.
 - [ ] Daniel prepara il file OpenAPI prodotto dal backend.
-- [ ] Daniel prepara esempi di task, risultato test, alert e acknowledgement.
-- [ ] I file condivisi vengono salvati in `Documenti/contracts/examples/`.
+- [x] Daniel prepara esempi di task, risultato test, alert e acknowledgement.
+- [x] I file condivisi vengono salvati in `Documenti/contracts/examples/`.
 
 ## 4. Compiti di Emilio
 
@@ -302,17 +346,17 @@ interfacce di Emilio.
 
 ### D1. Broker MQTT Cloud
 
-- [ ] Scegliere tra Mosquitto su VPS e servizio MQTT gestito.
-- [ ] Configurare listener MQTT protetto da TLS.
-- [ ] Configurare eventuale listener MQTT over WebSockets protetto da WSS.
-- [ ] Creare credenziali separate per Edge Node, backend e client di test.
-- [ ] Definire ACL per impedire l'accesso ai topic di altri pazienti.
-- [ ] Consentire al Raspberry di pubblicare soltanto sui propri topic.
-- [ ] Consentire al backend di leggere gli eventi e pubblicare comandi autorizzati.
-- [ ] Configurare retained message solo per stato corrente, non per tutti gli alert.
-- [ ] Configurare persistenza, limiti dei messaggi e log essenziali.
-- [ ] Provare connessione, disconnessione e Last Will del Raspberry simulato.
-- [ ] Documentare rinnovo certificati e revoca delle credenziali.
+- [x] Scegliere tra Mosquitto su VPS e servizio MQTT gestito.
+- [x] Configurare listener MQTT protetto da TLS.
+- [x] Configurare eventuale listener MQTT over WebSockets protetto da WSS.
+- [x] Creare credenziali separate per Edge Node, backend e client di test.
+- [x] Definire ACL per impedire l'accesso ai topic di altri pazienti.
+- [x] Consentire al Raspberry di pubblicare soltanto sui propri topic.
+- [x] Consentire al backend di leggere gli eventi e pubblicare comandi autorizzati.
+- [x] Configurare retained message solo per stato corrente, non per tutti gli alert.
+- [x] Configurare persistenza, limiti dei messaggi e log essenziali.
+- [x] Provare connessione, disconnessione e Last Will del Raspberry simulato.
+- [x] Documentare rinnovo certificati e revoca delle credenziali.
 
 Output: un endpoint MQTT/TLS raggiungibile dal Raspberry e dal backend con permessi
 minimi e verificabili.

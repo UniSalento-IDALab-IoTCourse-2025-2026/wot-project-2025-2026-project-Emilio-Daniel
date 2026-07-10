@@ -1,7 +1,7 @@
 # Raspberry Pi Deployment Notes
 
 Questa repo e' pensata per essere copiata sul Raspberry Pi 5 senza cambiare codice del modello.
-Sul Pi collegheremo gli adapter reali che produrranno il CSV/JSON conforme a `Documenti/FEATURE_SCHEMA.md`.
+Sul Pi collegheremo gli adapter reali che produrranno il CSV/JSON conforme a `FEATURE_SCHEMA.md`.
 
 ## Setup base
 
@@ -24,7 +24,7 @@ OAuth.
 Per nuove credenziali usiamo Google Health API. La procedura completa e' in:
 
 ```text
-Documenti/GOOGLE_WATCH_SETUP.md
+GOOGLE_WATCH_SETUP.md
 ```
 
 Sul Raspberry devono essere presenti questi file locali:

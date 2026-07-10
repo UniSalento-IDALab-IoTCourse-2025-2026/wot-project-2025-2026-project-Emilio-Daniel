@@ -1,0 +1,22 @@
+# ACL template for Mosquitto.
+#
+# Replace patient ids and usernames when creating real credentials.
+
+user edge_patient_001
+topic write iot/patients/patient-001/edge/status
+topic write iot/patients/patient-001/telemetry/window
+topic write iot/patients/patient-001/telemetry/decision
+topic write iot/patients/patient-001/alerts/critical
+topic write iot/patients/patient-001/sensors/watch
+topic write iot/patients/patient-001/sensors/ble
+topic read iot/patients/patient-001/commands/#
+
+user backend
+topic read iot/patients/+/edge/status
+topic read iot/patients/+/telemetry/#
+topic read iot/patients/+/alerts/#
+topic read iot/patients/+/sensors/#
+topic write iot/patients/+/commands/#
+
+user mqtt_test
+topic readwrite iot/patients/patient-001/#

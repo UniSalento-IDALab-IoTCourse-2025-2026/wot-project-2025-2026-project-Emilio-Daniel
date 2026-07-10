@@ -1,0 +1,5 @@
+{
+  "todo": "Emilio deve sostituire questo placeholder con un payload anonimizzato da outputs/patient-001-decision.json",
+  "expected_owner": "Emilio",
+  "schema_version": 1
+}

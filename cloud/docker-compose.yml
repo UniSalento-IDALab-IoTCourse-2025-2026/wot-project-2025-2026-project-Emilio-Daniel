@@ -1,0 +1,16 @@
+services:
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    container_name: iot-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "8883:8883"
+      - "9001:9001"
+    volumes:
+      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mqtt/aclfile:/mosquitto/config/aclfile:ro
+      - ./mqtt/passwd:/mosquitto/config/passwd:ro
+      - ./mqtt/certs:/mosquitto/certs:ro
+      - ./mqtt/data:/mosquitto/data
+      - ./mqtt/log:/mosquitto/log

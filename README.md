@@ -429,7 +429,7 @@ config/google_health_client.json
 La procedura completa di creazione API, OAuth Playground e refresh token e' in:
 
 ```text
-Documenti/GOOGLE_WATCH_SETUP.md
+Documenti/Generale/GOOGLE_WATCH_SETUP.md
 ```
 
 Da dentro `edge_node/`, i comandi principali sono:
@@ -511,7 +511,7 @@ Beacon 3 -> Bagno           -> bathroom
 
 L'app Android usera' una mappa `identificativo_beacon=stanza` per trasformare il beacon
 piu' vicino nella stanza corrente. Il formato consigliato per BlueBeacon e' `uuid-major-minor`.
-La guida operativa e' in `Documenti/BEACON_SETUP.md`.
+La guida operativa e' in `Documenti/Generale/BEACON_SETUP.md`.
 
 ### Cosa abbiamo fatto con Android
 
@@ -769,7 +769,7 @@ puo' inviare questi task quando vede dati sospetti o vuole fare un controllo a d
 La panoramica completa e' in:
 
 ```text
-Documenti/DASHBOARD_ARCHITECTURE.md
+Documenti/Generale/DASHBOARD_ARCHITECTURE.md
 ```
 
 ## Comandi principali

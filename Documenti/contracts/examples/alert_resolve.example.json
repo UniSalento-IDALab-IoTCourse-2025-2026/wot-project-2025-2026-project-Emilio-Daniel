@@ -1,0 +1,8 @@
+{
+  "alert_id": "alert-001",
+  "status": "resolved",
+  "resolved_by": "user-doctor-001",
+  "resolved_role": "doctor",
+  "resolved_at": "2026-07-10T10:45:00Z",
+  "resolution_note": "Controllo completato, nessuna azione ulteriore richiesta."
+}

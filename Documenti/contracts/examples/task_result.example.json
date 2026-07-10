@@ -1,0 +1,23 @@
+{
+  "task_id": "task-001",
+  "patient_id": "patient-001",
+  "started_at": "2026-07-10T10:05:00Z",
+  "completed_at": "2026-07-10T10:07:10Z",
+  "answers": [
+    {
+      "question_id": "q1",
+      "value": "bene"
+    },
+    {
+      "question_id": "q2",
+      "value": false
+    }
+  ],
+  "score": null,
+  "duration_seconds": 130,
+  "device_info": {
+    "platform": "android",
+    "app_version": "1.0.0",
+    "device_id": "android-demo-001"
+  }
+}

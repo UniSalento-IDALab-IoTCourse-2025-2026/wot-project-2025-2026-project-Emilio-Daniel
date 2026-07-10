@@ -1,0 +1,7 @@
+# Do not use this file as the real password file.
+# Generate cloud/mqtt/passwd locally with mosquitto_passwd.
+#
+# Example users:
+# edge_patient_001
+# backend
+# mqtt_test
