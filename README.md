@@ -38,6 +38,7 @@ tutti gli score disponibili e produce una decisione fusa.
   - [Test app Android con beacon reali](#test-app-android-con-beacon-reali)
   - [Rendere l'app installabile su Android](#rendere-lapp-installabile-su-android)
 - [Shelly / NILM](#shelly--nilm)
+- [Dashboard e backend](#dashboard-e-backend)
 - [Comandi principali](#comandi-principali)
   - [Comando unico consigliato](#comando-unico-consigliato)
   - [Fase baseline](#fase-baseline)
@@ -163,6 +164,7 @@ Documenti/
   API_CONSTRAINTS.md    Vincoli reali Google/Fitbit e BLE
   GOOGLE_WATCH_SETUP.md Procedura Pixel Watch 2 / Google Health API
   FEATURE_SCHEMA.md     Schema dataset reale
+  DASHBOARD_ARCHITECTURE.md Panoramica dashboard medico/paziente, MQTT e WebSocket
   REAL_DATA_PLAN.md     Piano raccolta dati reali
   RPI_DEPLOYMENT.md     Setup Raspberry Pi
 ```
@@ -737,6 +739,38 @@ Feature prodotte:
 - `nilm_tv_minutes`;
 - `nilm_coffee_events`;
 - `nilm_stove_events`.
+
+## Dashboard e backend
+
+La fase successiva prevede due interfacce diverse:
+
+```text
+Paziente -> app mobile Android con dashboard semplice, notifiche, esercizi e test
+Medico   -> dashboard web clinico-operativa
+```
+
+La scelta consigliata e' usare:
+
+```text
+BLE       -> localizzazione indoor paziente
+MQTT      -> Raspberry Pi verso backend
+WebSocket -> backend verso dashboard medico realtime
+Push      -> backend verso app paziente
+REST API  -> storico, dettagli paziente e report
+```
+
+Per ora non conviene partire con microservizi separati: e' meglio un backend unico ma
+modulare, con MQTT subscriber, API REST, WebSocket e database.
+
+L'app paziente non serve solo a raccogliere BLE: puo' mostrare stato giornaliero,
+promemoria, esercizi, notifiche e test cognitivi inviati dal medico. La dashboard medico
+puo' inviare questi task quando vede dati sospetti o vuole fare un controllo a distanza.
+
+La panoramica completa e' in:
+
+```text
+Documenti/DASHBOARD_ARCHITECTURE.md
+```
 
 ## Comandi principali
 
