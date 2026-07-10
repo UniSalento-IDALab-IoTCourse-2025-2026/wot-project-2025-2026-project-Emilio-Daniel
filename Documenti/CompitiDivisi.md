@@ -1,0 +1,582 @@
+# Compiti divisi tra Emilio e Daniel
+
+Questo documento trasforma l'architettura descritta in
+`Documenti/DASHBOARD_ARCHITECTURE.md` in un piano di lavoro concreto. La divisione e'
+pensata per permettere a Emilio e Daniel di procedere in parallelo, usando contratti e
+dati di prova condivisi fino al momento dell'integrazione.
+
+## Indice
+
+1. Obiettivo della prima versione
+2. Divisione generale delle responsabilita'
+3. Contratti da fissare prima dello sviluppo
+4. Compiti di Emilio
+5. Compiti di Daniel
+6. Attivita' condivise di integrazione
+7. Ordine di lavoro parallelo
+8. Criteri di completamento
+9. Attivita' successive alla prima versione
+
+## 1. Obiettivo della prima versione
+
+La prima versione completa deve realizzare questo flusso:
+
+```text
+Beacon + Google Health
+-> Raspberry Pi 5
+-> finestra aggregata ogni 4 minuti
+-> inferenza AI e decisione locale
+-> pubblicazione MQTT protetta da TLS
+-> backend Cloud
+-> database
+-> dashboard medico via REST e WebSocket
+-> notifiche e task verso app paziente/caregiver
+```
+
+La versione e' completa quando consente di:
+
+- mantenere operativo l'Edge Node anche senza connessione Internet;
+- pubblicare sul Cloud cicli, finestre, decisioni, alert e stato dei sensori;
+- salvare lo storico senza duplicare i messaggi;
+- mostrare al medico dati correnti, storico, spiegazione AI e stato tecnico;
+- inviare un task o test al paziente;
+- ricevere il risultato del task nell'applicazione medico;
+- notificare al caregiver un allarme importante;
+- registrare chi ha preso in carico e risolto un allarme;
+- separare chiaramente problemi tecnici e segnali comportamentali.
+
+## 2. Divisione generale delle responsabilita'
+
+| Area | Responsabile principale | Risultato atteso |
+|---|---|---|
+| Edge Node e publisher MQTT | Emilio | Il Raspberry pubblica dati affidabili e continua a funzionare offline |
+| Dashboard medico web | Emilio | Interfaccia clinica completa, collegata a REST e WebSocket |
+| App Android paziente | Emilio | BLE, stato monitoraggio, notifiche, task e invio risultati |
+| Interfaccia caregiver | Emilio | Stato sintetico, notifiche e presa in carico |
+| Broker MQTT e sicurezza topic | Daniel | Broker TLS con utenti e ACL separate |
+| Backend Cloud FastAPI | Daniel | API, WebSocket, subscriber MQTT e logica applicativa |
+| Database PostgreSQL | Daniel | Persistenza di pazienti, finestre, decisioni, alert e task |
+| Autenticazione e ruoli | Daniel | Accesso separato per medico, paziente, caregiver ed Edge Node |
+| Notifiche push | Daniel | Invio FCM per task, problemi tecnici e alert importanti |
+| Deployment Cloud | Daniel | Backend, broker e database avviabili automaticamente |
+| Test end-to-end e documentazione finale | Entrambi | Flusso verificato dal Beacon fino alla dashboard |
+
+Le responsabilita' principali indicano chi modifica e approva quella parte. L'altro
+componente del gruppo puo' fare review e test, ma evita di cambiare direttamente gli
+stessi file durante lo sviluppo ordinario.
+
+## 3. Contratti da fissare prima dello sviluppo
+
+Questa fase richiede poche ore e impedisce che frontend, backend ed Edge usino formati
+diversi. Emilio prepara esempi derivati dai file reali; Daniel li trasforma nei contratti
+API e MQTT definitivi. Dopo l'approvazione, entrambi possono lavorare con mock locali.
+
+### 3.1 Regole comuni
+
+- [ ] Usare sempre `patient_id` come identificatore del paziente.
+- [ ] Aggiungere un `edge_id` per distinguere i Raspberry installati.
+- [ ] Usare timestamp ISO 8601 in UTC nei messaggi e convertire l'orario solo nella UI.
+- [ ] Aggiungere `schema_version` a ogni payload MQTT.
+- [ ] Aggiungere `message_id` univoco per deduplicare le ritrasmissioni.
+- [ ] Non inviare token OAuth, password o segreti nei payload.
+- [ ] Distinguere `event_type` da `level` e da `should_publish`.
+- [ ] Conservare i valori mancanti come `null`, non come stringhe `"nan"`.
+- [ ] Stabilire un formato di errore API comune con `code`, `message` e `details`.
+
+### 3.2 Topic MQTT condivisi
+
+```text
+iot/patients/{patient_id}/edge/status
+iot/patients/{patient_id}/telemetry/window
+iot/patients/{patient_id}/telemetry/decision
+iot/patients/{patient_id}/alerts/critical
+iot/patients/{patient_id}/sensors/watch
+iot/patients/{patient_id}/sensors/ble
+iot/patients/{patient_id}/commands/task
+iot/patients/{patient_id}/commands/ack
+```
+
+Per la prima versione, i topic `commands` possono essere pubblicati dal backend. Il
+Raspberry deve ricevere soltanto i comandi che riguardano davvero il funzionamento Edge;
+i task destinati all'app paziente rimangono gestiti dal backend e dalle notifiche push.
+
+### 3.3 API minime condivise
+
+```text
+POST   /api/v1/auth/login
+GET    /api/v1/patients
+GET    /api/v1/patients/{patient_id}/current
+GET    /api/v1/patients/{patient_id}/windows
+GET    /api/v1/patients/{patient_id}/decisions
+GET    /api/v1/patients/{patient_id}/alerts
+PATCH  /api/v1/alerts/{alert_id}/acknowledge
+PATCH  /api/v1/alerts/{alert_id}/resolve
+POST   /api/v1/patients/{patient_id}/tasks
+GET    /api/v1/patients/{patient_id}/tasks
+POST   /api/v1/tasks/{task_id}/results
+POST   /api/v1/devices/push-token
+POST   /api/v1/patients/{patient_id}/app-status
+GET    /api/v1/patients/{patient_id}/system-status
+WS     /ws/v1/patients/{patient_id}
+```
+
+### 3.4 Eventi WebSocket minimi
+
+```text
+edge_cycle_completed
+patient_window_updated
+decision_updated
+alert_created
+alert_acknowledged
+alert_resolved
+task_created
+task_seen
+task_completed
+system_status_updated
+```
+
+### 3.5 File di esempio per lavorare senza dipendenze
+
+- [ ] Emilio prepara payload anonimizzati da `last-cycle.json`.
+- [ ] Emilio prepara payload anonimizzati da `patient-001-decision.json`.
+- [ ] Emilio prepara una riga JSON equivalente a `latest_window.csv`.
+- [ ] Emilio prepara esempi green, yellow, orange, red e technical.
+- [ ] Daniel prepara il file OpenAPI prodotto dal backend.
+- [ ] Daniel prepara esempi di task, risultato test, alert e acknowledgement.
+- [ ] I file condivisi vengono salvati in `Documenti/contracts/examples/`.
+
+## 4. Compiti di Emilio
+
+Emilio e' responsabile delle parti vicine ai dati reali gia' funzionanti, delle
+interfacce utente e dell'integrazione Edge. Durante lo sviluppo usa un backend mock per
+non dipendere dallo stato dei servizi di Daniel.
+
+### E1. Publisher MQTT sul Raspberry Pi 5
+
+- [ ] Creare un modulo `edge_mqtt` separato dal runtime e dall'AI.
+- [ ] Leggere host, porta, client ID, utente, password e certificati da configurazione.
+- [ ] Pubblicare `last-cycle.json` sul topic `edge/status` a ogni ciclo completato.
+- [ ] Pubblicare `latest_window.csv` come JSON sul topic `telemetry/window`.
+- [ ] Pubblicare `patient-001-decision.json` sul topic `telemetry/decision`.
+- [ ] Pubblicare sul topic `alerts/critical` solo quando la logica stabilita lo richiede.
+- [ ] Generare `message_id`, `schema_version`, `patient_id`, `edge_id` e timestamp UTC.
+- [ ] Impostare Quality of Service coerente: QoS 1 per decisioni e alert.
+- [ ] Pubblicare un Last Will per segnalare una disconnessione improvvisa dell'Edge.
+- [ ] Mantenere una coda locale su disco quando Internet o broker non sono disponibili.
+- [ ] Ritrasmettere la coda in ordine senza bloccare il ciclo locale di quattro minuti.
+- [ ] Evitare che un errore MQTT interrompa receiver, baseline o inferenza AI.
+- [ ] Nascondere password e certificati dai log e da Git.
+- [ ] Aggiungere test con broker simulato o Mosquitto locale.
+- [ ] Integrare il publisher nel comando unico di avvio Windows e Raspberry.
+- [ ] Documentare configurazione, log e procedura di verifica.
+
+Output: il Raspberry continua a produrre i file locali e, quando la rete e' disponibile,
+pubblica gli stessi eventi sul broker in modo affidabile.
+
+### E2. Mock backend per sviluppo frontend
+
+- [ ] Creare risposte JSON locali conformi alle API concordate.
+- [ ] Simulare paziente normale, alert severo, problema tecnico e dati mancanti.
+- [ ] Simulare eventi WebSocket a intervalli configurabili.
+- [ ] Consentire alla dashboard di cambiare URL tra mock e backend reale tramite `.env`.
+- [ ] Non inserire dati personali reali nei mock versionati.
+
+Output: dashboard e app possono essere sviluppate anche quando il backend Cloud e'
+spento o non ancora completo.
+
+### E3. Struttura della dashboard medico web
+
+- [ ] Creare il progetto frontend React con configurazione separata per sviluppo e produzione.
+- [ ] Realizzare login e gestione della sessione.
+- [ ] Realizzare navigazione con lista pazienti, dettaglio paziente, alert, task e sistema.
+- [ ] Gestire loading, assenza dati, errore rete, dati obsoleti e permessi insufficienti.
+- [ ] Usare componenti accessibili e responsive per PC e tablet.
+- [ ] Centralizzare client REST, client WebSocket e gestione degli errori.
+- [ ] Non mostrare messaggi diagnostici assoluti: indicare sempre che si tratta di triage.
+
+Output: una base navigabile che funziona prima con mock e poi cambiando soltanto l'URL
+del backend.
+
+### E4. Overview e lista pazienti
+
+- [ ] Mostrare la lista pazienti ordinabile per severita' e ultimo aggiornamento.
+- [ ] Mostrare semaforo green, yellow, orange, red e technical.
+- [ ] Mostrare stanza corrente, watch presente e Raspberry online/offline.
+- [ ] Evidenziare dati vecchi rispetto all'ultima finestra attesa.
+- [ ] Separare chiaramente anomalia comportamentale e guasto tecnico.
+- [ ] Aprire il dettaglio del paziente selezionato senza perdere i filtri.
+
+### E5. Pagina alert e presa in carico
+
+- [ ] Visualizzare timestamp, livello, score, motivi e stato dell'alert.
+- [ ] Implementare filtri per livello, intervallo temporale e stato.
+- [ ] Aggiungere azione `Prendi in carico` con conferma.
+- [ ] Aggiungere azione `Risolvi` con nota obbligatoria.
+- [ ] Aggiornare la UI quando arriva un evento WebSocket di acknowledgement.
+- [ ] Mostrare chi ha preso in carico l'alert e quando.
+- [ ] Consentire dal dettaglio alert di creare un task per il paziente.
+
+### E6. Dati wearable e spaziali
+
+- [ ] Creare grafici per frequenza cardiaca media e deviazione standard.
+- [ ] Creare grafici per SpO2, passi, sonno e sedentarieta' quando disponibili.
+- [ ] Mostrare HRV specificando la provenienza e la disponibilita' del dato.
+- [ ] Creare timeline delle stanze e grafico dei minuti per stanza.
+- [ ] Mostrare cambi stanza, cambi notturni e permanenza massima.
+- [ ] Consentire intervalli temporali giornalieri e settimanali.
+- [ ] Non interpretare automaticamente un valore mancante come zero.
+- [ ] Indicare visivamente quando una feature e' stata imputata o non acquisita.
+
+### E7. Spiegazione AI
+
+- [ ] Mostrare anomaly score finale e livello risultante.
+- [ ] Mostrare score di modello spaziale, wearable e personale.
+- [ ] Mostrare i pesi effettivi della fusione, inclusi 15/15/70 dopo la baseline.
+- [ ] Mostrare le feature principali con valore, direzione e z-score.
+- [ ] Spiegare che `model_value` e' il valore dopo il preprocessing.
+- [ ] Mostrare se il modello personale non e' ancora disponibile.
+- [ ] Mostrare avanzamento baseline, giorni trascorsi e finestre valide su 1000.
+- [ ] Evitare termini come diagnosi, malattia confermata o emergenza medica automatica.
+
+### E8. Stato tecnico del sistema
+
+- [ ] Mostrare ultimo ciclo Edge e durata della finestra.
+- [ ] Mostrare stato BLE, Google Health, MQTT e qualita' dati.
+- [ ] Mostrare ultimo contatto del Raspberry e stato online/offline.
+- [ ] Mostrare batteria e presenza wearable quando disponibili.
+- [ ] Mostrare errori OAuth senza visualizzare token o segreti.
+- [ ] Mostrare eventuali messaggi rimasti nella coda MQTT locale.
+- [ ] Distinguere warning temporanei da guasti persistenti.
+
+### E9. Task e test cognitivi nella dashboard medico
+
+- [ ] Creare schermata elenco task con stato created, sent, seen, completed ed expired.
+- [ ] Creare form per tipo, priorita', scadenza e istruzioni.
+- [ ] Implementare almeno check-in benessere, PHQ-2 e un test dimostrativo breve.
+- [ ] Verificare con il docente quali test possono essere riprodotti e con quali licenze.
+- [ ] Mostrare risposte, score previsto, durata e data di completamento.
+- [ ] Consentire al medico di aggiungere una nota al risultato.
+- [ ] Aggiornare l'elenco in tempo reale quando il paziente completa il task.
+
+### E10. Estensione dell'app Android paziente
+
+- [ ] Conservare il Foreground Service BLE e l'avvio automatico del monitoraggio.
+- [ ] Separare configurazione amministrativa e schermata quotidiana del paziente.
+- [ ] Mostrare monitoraggio attivo, connessione Raspberry e ultimo aggiornamento.
+- [ ] Mostrare notifiche e task ricevuti dal backend.
+- [ ] Registrare seen, started e completed per ogni task.
+- [ ] Realizzare l'interfaccia dei test concordati.
+- [ ] Inviare risultati, durata e identificatore dispositivo al backend.
+- [ ] Salvare localmente risultati non inviati e ritentare quando torna la rete.
+- [ ] Registrare il token FCM senza inserirlo nei log.
+- [ ] Inviare periodicamente lo stato dell'app e la batteria del telefono.
+- [ ] Mantenere protette da credenziali admin le impostazioni tecniche e lo stop del servizio.
+- [ ] Testare blocco schermo, risparmio energetico, riavvio telefono e rete assente.
+
+### E11. Interfaccia caregiver
+
+- [ ] Realizzare una prima versione Android con login caregiver.
+- [ ] Mostrare stato generale, ultimo aggiornamento e problemi tecnici semplici.
+- [ ] Mostrare solo alert autorizzati e realmente pubblicabili.
+- [ ] Ricevere notifiche push quando l'app e' chiusa.
+- [ ] Consentire la presa in carico di un alert con conferma.
+- [ ] Mostrare quando medico o altro caregiver ha gia' preso in carico l'evento.
+- [ ] Non mostrare feature AI, dati clinici grezzi o token tecnici.
+- [ ] Rimandare la versione iOS a una fase successiva se non e' necessaria alla demo.
+
+### E12. Test frontend, Android e documentazione
+
+- [ ] Testare dashboard su desktop e tablet.
+- [ ] Testare WebSocket disconnesso e riconnessione automatica.
+- [ ] Testare token scaduto e logout.
+- [ ] Testare dati mancanti e timestamp obsoleti.
+- [ ] Testare accessibilita' di colori, testi e controlli principali.
+- [ ] Creare APK di test firmato.
+- [ ] Aggiornare README di Edge, dashboard e app Android.
+
+## 5. Compiti di Daniel
+
+Daniel e' responsabile dell'infrastruttura Cloud e dei servizi condivisi. Durante lo
+sviluppo usa payload MQTT di prova e client API automatici, quindi non deve aspettare le
+interfacce di Emilio.
+
+### D1. Broker MQTT Cloud
+
+- [ ] Scegliere tra Mosquitto su VPS e servizio MQTT gestito.
+- [ ] Configurare listener MQTT protetto da TLS.
+- [ ] Configurare eventuale listener MQTT over WebSockets protetto da WSS.
+- [ ] Creare credenziali separate per Edge Node, backend e client di test.
+- [ ] Definire ACL per impedire l'accesso ai topic di altri pazienti.
+- [ ] Consentire al Raspberry di pubblicare soltanto sui propri topic.
+- [ ] Consentire al backend di leggere gli eventi e pubblicare comandi autorizzati.
+- [ ] Configurare retained message solo per stato corrente, non per tutti gli alert.
+- [ ] Configurare persistenza, limiti dei messaggi e log essenziali.
+- [ ] Provare connessione, disconnessione e Last Will del Raspberry simulato.
+- [ ] Documentare rinnovo certificati e revoca delle credenziali.
+
+Output: un endpoint MQTT/TLS raggiungibile dal Raspberry e dal backend con permessi
+minimi e verificabili.
+
+### D2. Struttura del backend FastAPI
+
+- [ ] Creare un backend modulare unico, senza microservizi separati.
+- [ ] Separare moduli auth, patients, telemetry, alerts, tasks, notifications e realtime.
+- [ ] Configurare variabili d'ambiente e validazione della configurazione.
+- [ ] Esporre endpoint health e readiness.
+- [ ] Generare documentazione OpenAPI.
+- [ ] Aggiungere gestione centralizzata degli errori.
+- [ ] Aggiungere log strutturati senza dati sensibili.
+- [ ] Aggiungere test automatici eseguibili senza broker Cloud reale.
+
+### D3. Database PostgreSQL
+
+- [ ] Configurare PostgreSQL e migrazioni versionate.
+- [ ] Creare tabella `users` con ruoli e credenziali protette.
+- [ ] Creare tabelle `patients`, `doctors`, `caregivers` e relative associazioni.
+- [ ] Creare tabella `edge_devices` con ultimo contatto e stato.
+- [ ] Creare tabelle `edge_cycles` e `feature_windows`.
+- [ ] Creare tabelle `decisions`, `alerts` e `alert_events`.
+- [ ] Creare tabelle `sensor_status` e `patient_app_status`.
+- [ ] Creare tabelle `tasks`, `task_results` e `notifications`.
+- [ ] Aggiungere indici su patient_id, timestamp, level e status.
+- [ ] Conservare `message_id` con vincolo univoco per la deduplicazione.
+- [ ] Stabilire retention e cancellazione dei dati di prova.
+- [ ] Preparare backup e ripristino del database.
+
+### D4. Subscriber MQTT e ingestione
+
+- [ ] Connettere il backend al broker con riconnessione automatica.
+- [ ] Iscriversi ai topic Edge necessari.
+- [ ] Validare schema e versione di ogni payload.
+- [ ] Rifiutare payload senza patient_id, message_id o timestamp valido.
+- [ ] Deduplicare i messaggi tramite message_id.
+- [ ] Salvare cicli, finestre, decisioni, alert e stato sensori nelle tabelle corrette.
+- [ ] Gestire messaggi fuori ordine senza sovrascrivere uno stato piu' recente.
+- [ ] Registrare gli errori di parsing senza interrompere il subscriber.
+- [ ] Pubblicare eventi interni verso il gestore WebSocket.
+- [ ] Testare QoS 1, duplicati, ritardi e riconnessione.
+
+### D5. API REST per dashboard e app
+
+- [ ] Implementare tutti gli endpoint definiti nel contratto condiviso.
+- [ ] Aggiungere paginazione a finestre, decisioni, alert e task.
+- [ ] Aggiungere filtri temporali e per livello/stato.
+- [ ] Costruire `/current` aggregando ultima finestra, decisione e stato tecnico.
+- [ ] Restituire valori mancanti come null.
+- [ ] Impedire a caregiver e paziente di leggere dati non autorizzati.
+- [ ] Validare input, scadenze e transizioni di stato dei task.
+- [ ] Pubblicare esempi OpenAPI utilizzabili da Emilio.
+- [ ] Scrivere test di autorizzazione per ogni ruolo.
+
+### D6. WebSocket realtime
+
+- [ ] Implementare autenticazione della connessione WebSocket.
+- [ ] Iscrivere ogni connessione solo ai pazienti autorizzati.
+- [ ] Inviare gli eventi concordati con event_type e payload.
+- [ ] Gestire heartbeat, timeout e rimozione delle connessioni chiuse.
+- [ ] Evitare perdita del servizio quando un client e' lento.
+- [ ] Documentare riconnessione e recupero degli eventi persi tramite REST.
+- [ ] Testare piu' client collegati allo stesso paziente.
+
+### D7. Autenticazione, autorizzazione e audit
+
+- [ ] Implementare login e password hash sicuro.
+- [ ] Implementare access token breve e refresh token revocabile.
+- [ ] Definire ruoli doctor, caregiver, patient e admin.
+- [ ] Associare ogni utente ai soli pazienti autorizzati.
+- [ ] Registrare login, creazione task, ack, resolve e modifiche amministrative.
+- [ ] Non registrare password, token Google Health o token FCM nei log.
+- [ ] Preparare utenti demo separati per Emilio e Daniel.
+- [ ] Documentare come revocare un dispositivo smarrito.
+
+### D8. Logica alert e presa in carico
+
+- [ ] Creare un alert quando arriva un evento pubblicabile dal Raspberry.
+- [ ] Non trasformare automaticamente ogni livello yellow in notifica urgente.
+- [ ] Supportare stati new, acknowledged e resolved.
+- [ ] Salvare utente, ruolo, timestamp e nota per ogni cambio stato.
+- [ ] Rendere idempotente la presa in carico ripetuta.
+- [ ] Inviare aggiornamenti WebSocket dopo ogni cambiamento.
+- [ ] Definire quali livelli vengono notificati a medico e caregiver.
+- [ ] Mantenere separati alert clinical/behavioral e technical.
+
+### D9. Task, test e risultati
+
+- [ ] Implementare creazione, invio, visualizzazione, completamento e scadenza dei task.
+- [ ] Validare che solo il medico possa creare determinati test clinici.
+- [ ] Salvare contenuto del task con versione per mantenere lo storico.
+- [ ] Impedire risultati duplicati per lo stesso completamento.
+- [ ] Calcolare score solo quando la regola del test e' definita e verificata.
+- [ ] Inviare evento WebSocket quando il risultato viene ricevuto.
+- [ ] Rendere disponibili task e risultati tramite API filtrate per ruolo.
+- [ ] Conservare un audit delle modifiche e delle note del medico.
+
+### D10. Firebase Cloud Messaging
+
+- [ ] Creare o configurare il progetto Firebase del sistema.
+- [ ] Implementare registrazione e aggiornamento dei token dispositivo.
+- [ ] Associare token a utente, dispositivo e ambiente.
+- [ ] Inviare push per task, alert severi e problemi tecnici selezionati.
+- [ ] Usare testi diversi per paziente, caregiver e medico.
+- [ ] Evitare dati clinici sensibili nel testo visibile sulla schermata bloccata.
+- [ ] Gestire token scaduti o non validi.
+- [ ] Registrare esito dell'invio senza salvare il token nei log applicativi.
+- [ ] Preparare una modalita' fake per test senza credenziali Firebase.
+
+### D11. Stato sistema e integrazione Google Health
+
+- [ ] Salvare nel backend disponibilita' delle feature Google Health ricevute dall'Edge.
+- [ ] Mostrare come stato tecnico eventuali errori OAuth o dati non aggiornati.
+- [ ] Non trasferire al Cloud refresh token o credenziali Google presenti sul Raspberry.
+- [ ] Calcolare online/offline del Raspberry usando heartbeat e ultimo ciclo.
+- [ ] Calcolare stale/active di watch, BLE e app paziente con soglie configurabili.
+- [ ] Esporre lo stato aggregato tramite `/system-status`.
+
+### D12. Deployment e osservabilita'
+
+- [ ] Preparare avvio automatico di backend, database e broker.
+- [ ] Usare Docker Compose per sviluppo e, se opportuno, per la demo Cloud.
+- [ ] Separare configurazioni development, test e production.
+- [ ] Configurare HTTPS/WSS con certificati validi.
+- [ ] Configurare CORS soltanto per gli host delle applicazioni autorizzate.
+- [ ] Aggiungere metriche minime: messaggi ricevuti, errori, client connessi e latenza.
+- [ ] Configurare rotazione dei log.
+- [ ] Documentare installazione, aggiornamento, backup e ripristino.
+- [ ] Preparare uno script di smoke test dell'intera infrastruttura.
+
+## 6. Attivita' condivise di integrazione
+
+Queste sono le sole attivita' che richiedono il lavoro congiunto. Devono essere brevi e
+programmate quando entrambi i lati hanno superato i propri test indipendenti.
+
+### I1. Verifica dei contratti
+
+- [ ] Confrontare payload reali Edge e schemi backend.
+- [ ] Verificare null, timestamp, livelli alert e nomi delle feature.
+- [ ] Bloccare la versione `schema_version: 1`.
+- [ ] Salvare esempi validi ed esempi che devono essere rifiutati.
+
+### I2. Primo collegamento Raspberry-Broker-Backend
+
+- [ ] Avviare il sistema reale con il comando unico.
+- [ ] Verificare TLS e autenticazione MQTT.
+- [ ] Controllare che una finestra venga salvata una sola volta nel database.
+- [ ] Spegnere Internet e verificare la coda locale.
+- [ ] Riattivare Internet e verificare ritrasmissione e deduplicazione.
+
+### I3. Collegamento backend-dashboard
+
+- [ ] Sostituire URL mock con URL reale.
+- [ ] Confrontare risposta `/current` con i file presenti sul Raspberry.
+- [ ] Verificare grafici e valori null.
+- [ ] Verificare ricezione WebSocket senza refresh pagina.
+- [ ] Verificare scadenza token e riconnessione.
+
+### I4. Flusso task paziente
+
+- [ ] Il medico crea un task dalla dashboard.
+- [ ] Il backend salva il task e invia la push.
+- [ ] L'app paziente apre e completa il task.
+- [ ] Il backend salva il risultato.
+- [ ] La dashboard riceve l'evento e mostra il risultato.
+
+### I5. Flusso alert caregiver
+
+- [ ] Inviare un alert di test con should_publish true.
+- [ ] Verificare salvataggio e notifica push.
+- [ ] Prendere in carico l'alert dall'app caregiver.
+- [ ] Verificare aggiornamento immediato della dashboard medico.
+- [ ] Risolvere l'alert con nota e controllare l'audit.
+
+### I6. Test finale sul Raspberry Pi 5
+
+- [ ] Avviare tutto senza comandi manuali aggiuntivi.
+- [ ] Verificare BLE reale e Google Health nella stessa finestra.
+- [ ] Verificare decisione generica durante baseline.
+- [ ] Verificare stato e avanzamento baseline nella dashboard.
+- [ ] Riavviare il Raspberry e controllare la ripresa automatica.
+- [ ] Spegnere il backend Cloud e controllare che l'Edge continui a funzionare.
+- [ ] Ripristinare il Cloud e controllare riallineamento dei dati.
+
+## 7. Ordine di lavoro parallelo
+
+### Fase 0 - Contratti e struttura
+
+| Emilio | Daniel | Punto di incontro |
+|---|---|---|
+| Prepara payload reali anonimizzati e scenari mock | Prepara schemi API/MQTT e OpenAPI iniziale | Approvazione di schema_version 1 |
+| Crea struttura dashboard e mock server | Crea struttura backend e database | Nessuna dipendenza durante lo sviluppo |
+
+### Fase 1 - Dati Cloud e prima UI
+
+| Emilio | Daniel | Punto di incontro |
+|---|---|---|
+| Implementa publisher MQTT e overview dashboard | Configura broker, subscriber e endpoint `/current` | Primo evento Edge visibile nella dashboard |
+| Implementa pagine wearable/spatial | Implementa persistenza finestre e decisioni | Confronto dei dati con latest_window |
+
+### Fase 2 - Alert e realtime
+
+| Emilio | Daniel | Punto di incontro |
+|---|---|---|
+| Implementa lista alert, dettaglio e AI explanation | Implementa alert, WebSocket, auth e audit | Alert aggiornato senza refresh |
+| Implementa stato tecnico | Implementa heartbeat e system-status | Distinzione clinical/technical verificata |
+
+### Fase 3 - Task e applicazioni mobili
+
+| Emilio | Daniel | Punto di incontro |
+|---|---|---|
+| Estende app paziente e crea UI caregiver | Implementa task, risultati e FCM | Task completo medico-paziente-medico |
+| Gestisce push e coda offline lato app | Gestisce token, notifiche e scadenze | Alert caregiver preso in carico |
+
+### Fase 4 - Affidabilita' e deployment
+
+| Emilio | Daniel | Punto di incontro |
+|---|---|---|
+| Testa Edge offline, app in background e dashboard | Testa backup, sicurezza, carico e deployment | Test end-to-end su Raspberry Pi 5 |
+| Completa README delle applicazioni | Completa README Cloud e runbook | Demo avviabile e documentata |
+
+## 8. Criteri di completamento
+
+### Emilio ha completato la propria parte quando
+
+- [ ] Il Raspberry pubblica e accoda gli eventi senza interrompere il ciclo locale.
+- [ ] La dashboard funziona con backend reale e gestisce la perdita di connessione.
+- [ ] Medico e caregiver vedono soltanto informazioni adatte al proprio ruolo.
+- [ ] L'app paziente continua il BLE in background e completa un task reale.
+- [ ] APK, configurazione e procedure di test sono documentati.
+
+### Daniel ha completato la propria parte quando
+
+- [ ] Broker, backend e database partono automaticamente.
+- [ ] TLS, autenticazione e ACL impediscono accessi non autorizzati.
+- [ ] I messaggi duplicati non producono righe o alert duplicati.
+- [ ] REST, WebSocket, task, audit e notifiche push sono testati.
+- [ ] Backup, ripristino e configurazione sono documentati.
+
+### Il sistema e' completato quando
+
+- [ ] Una finestra reale BLE + Google Health compare nella dashboard.
+- [ ] Un alert critico raggiunge medico e caregiver.
+- [ ] La presa in carico viene sincronizzata e registrata.
+- [ ] Un test inviato dal medico viene completato dal paziente e restituito.
+- [ ] Edge, app e Cloud recuperano correttamente dopo una disconnessione.
+- [ ] Nessun segreto e nessun dataset sensibile e' presente nel repository Git.
+
+## 9. Attivita' successive alla prima versione
+
+Queste attivita' non devono bloccare il prototipo iniziale:
+
+- [ ] Versione iOS dell'app caregiver e, se necessaria, dell'app paziente.
+- [ ] Interoperabilita' HL7 FHIR con sistemi sanitari esterni.
+- [ ] Supporto multi-struttura e gestione di molti Raspberry.
+- [ ] Retention avanzata e Time-Series Database dedicato.
+- [ ] Override medico per richiedere dati Edge ad alta frequenza.
+- [ ] Integrazione NILM/Shelly quando l'hardware sara' definito.
+- [ ] Report clinici esportabili e firma dei referti.
+- [ ] Valutazione formale GDPR, DPIA e consenso informato.
+- [ ] Validazione clinica delle soglie e dei test con personale sanitario.
+- [ ] Suddivisione in microservizi soltanto se il carico o il deployment lo richiedono.
+
+La regola operativa rimane semplice: Emilio sviluppa le applicazioni e il collegamento
+con l'Edge usando mock stabili; Daniel sviluppa Cloud e backend usando publisher e client
+di test. I due rami si incontrano soltanto ai punti di integrazione definiti sopra.
