@@ -1,13 +1,39 @@
 param(
-    [string]$EdgePassword = "EdgePatient001!",
-    [string]$BackendPassword = "Backend001!",
-    [string]$TestPassword = "MqttTest001!"
+    [string]$EdgePassword = "",
+    [string]$BackendPassword = "",
+    [string]$TestPassword = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $ProjectDir = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $CloudDir = Join-Path $ProjectDir "cloud"
+
+function Import-LocalEnv {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) {
+        return
+    }
+    Get-Content $Path | ForEach-Object {
+        $line = $_.Trim()
+        if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) {
+            return
+        }
+        $name, $value = $line.Split("=", 2)
+        if ($name -and -not [Environment]::GetEnvironmentVariable($name, "Process")) {
+            [Environment]::SetEnvironmentVariable($name, $value, "Process")
+        }
+    }
+}
+
+Import-LocalEnv (Join-Path $CloudDir ".env")
+
+if (-not $EdgePassword) { $EdgePassword = $env:MQTT_EDGE_PASSWORD }
+if (-not $BackendPassword) { $BackendPassword = $env:MQTT_BACKEND_PASSWORD }
+if (-not $TestPassword) { $TestPassword = $env:MQTT_TEST_PASSWORD }
+if (-not $EdgePassword -or -not $BackendPassword -or -not $TestPassword) {
+    throw "Missing MQTT test passwords. Set MQTT_EDGE_PASSWORD, MQTT_BACKEND_PASSWORD and MQTT_TEST_PASSWORD in cloud\.env."
+}
 
 Push-Location $CloudDir
 try {

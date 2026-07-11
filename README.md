@@ -170,7 +170,7 @@ cloud/
       api/routes/        Moduli auth, patients, telemetry, alerts, tasks, realtime
       core/              Config, errori centralizzati e log JSON
       db/                SQLAlchemy models e sessione database
-      mqtt/              Spazio per subscriber MQTT D4
+      mqtt/              Subscriber MQTT, validazione e ingestione Edge
     alembic/             Migrazioni versionate PostgreSQL
     scripts/             Utility backend, inclusa esportazione OpenAPI
     tests/               Test automatici backend e schema DB
@@ -197,6 +197,7 @@ Documenti/
     D1.md                 Broker MQTT Cloud
     D2.md                 Struttura backend FastAPI
     D3.md                 Database PostgreSQL
+    D4.md                 Subscriber MQTT e ingestione
   contracts/
     API_CONTRACT.md       Contratto API REST/WebSocket
     MQTT_CONTRACT.md      Contratto topic e payload MQTT
@@ -252,6 +253,8 @@ L'app iOS si crea su Mac con Xcode usando i file in
 - Ho aggiunto PostgreSQL nello stack Docker Compose `progetto-iot`, modelli SQLAlchemy,
   migrazioni Alembic, schema iniziale D3, deduplicazione `message_id` e procedure
   backup/restore.
+- Ho aggiunto il subscriber MQTT backend D4: ascolta i topic Edge, valida i payload,
+  salva finestre/decisioni/alert/stato sensori nel database e pubblica eventi interni.
 - Ho aggiunto `edge_runtime`, il comando unico che aggrega la finestra e fa inferenza
   automaticamente se trova un modello addestrato.
 - Ho aggiunto `edge_quality`, che controlla se i dati sono utilizzabili prima di salvarli
@@ -814,7 +817,7 @@ cloud/mqtt
   - Last Will
   - retained solo stato corrente
       |
-      | D4, prossimo passo: subscriber MQTT
+      | D4, subscriber MQTT completato
       v
 cloud/backend
   FastAPI unico e modulare
@@ -833,7 +836,7 @@ PostgreSQL
 
 Per ora non conviene partire con microservizi separati: abbiamo scelto un backend unico
 ma modulare, con moduli separati per auth, patients, telemetry, alerts, tasks,
-notifications, realtime e il futuro subscriber MQTT.
+notifications, realtime e subscriber MQTT.
 
 L'app paziente non serve solo a raccogliere BLE: puo' mostrare stato giornaliero,
 promemoria, esercizi, notifiche e test cognitivi inviati dal medico. La dashboard medico
@@ -1532,10 +1535,10 @@ python -m edge_baseline.cli --config config/edge.yml status
 
 1. Emilio: implementare publisher MQTT sull'Edge/Raspberry usando i contratti in
    `Documenti/contracts/MQTT_CONTRACT.md`.
-2. Daniel: implementare D4, subscriber MQTT backend e ingestione nel database.
+2. Daniel: implementare D5, API REST reali per dashboard e app.
 3. Collegare `last-cycle.json`, `latest_window.csv` e `patient-001-decision.json` ai
    topic MQTT definitivi.
-4. Implementare D5, API REST reali per dashboard e app.
+4. Collegare dashboard/app alle API D5.
 5. Implementare D6, WebSocket realtime backend -> dashboard.
 6. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
 7. Configurare la mappa reale dei 3 BlueBeacon nell'app Android.
@@ -1838,14 +1841,38 @@ Il database e' gestito dal backend con:
 - indici su paziente, timestamp, livello e stato;
 - procedura backup/restore.
 
-### 15. Documentazione
+### 15. Subscriber MQTT backend
+
+Abbiamo aggiunto il subscriber MQTT in:
+
+```text
+cloud/backend/app/mqtt/
+```
+
+Il worker:
+
+- si collega al broker MQTT/TLS come utente backend;
+- ascolta topic Edge con wildcard paziente;
+- valida `schema_version`, `message_id`, `patient_id`, timestamp e payload;
+- rifiuta valori mancanti scritti come stringa `"nan"`;
+- deduplica i messaggi tramite `message_id`;
+- salva finestre, decisioni, alert e stato sensori nelle tabelle corrette;
+- non sovrascrive stati sensore piu' recenti con messaggi arrivati in ritardo.
+
+Test dedicato:
+
+```powershell
+.\Script\test\test_backend_mqtt_ingest.ps1
+```
+
+### 16. Documentazione
 
 Abbiamo documentato architettura, comandi, deployment Raspberry, schema feature e vincoli
 reali delle API.
 
 Il README deve rimanere il punto principale da leggere per capire lo stato del progetto.
 
-### 16. Cosa manca ancora
+### 17. Cosa manca ancora
 
 Mancano ancora:
 
@@ -1854,7 +1881,6 @@ Mancano ancora:
 - credenziali Google Health OAuth reali e consenso account;
 - eventuale Shelly o alternativa per consumi;
 - publisher MQTT sull'Edge;
-- subscriber MQTT backend e ingestione nel database;
 - API reali per dashboard/app;
 - WebSocket realtime;
 - dashboard medico e dashboard/app paziente finali.

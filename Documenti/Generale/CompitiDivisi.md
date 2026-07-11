@@ -389,16 +389,16 @@ minimi e verificabili.
 
 ### D4. Subscriber MQTT e ingestione
 
-- [ ] Connettere il backend al broker con riconnessione automatica.
-- [ ] Iscriversi ai topic Edge necessari.
-- [ ] Validare schema e versione di ogni payload.
-- [ ] Rifiutare payload senza patient_id, message_id o timestamp valido.
-- [ ] Deduplicare i messaggi tramite message_id.
-- [ ] Salvare cicli, finestre, decisioni, alert e stato sensori nelle tabelle corrette.
-- [ ] Gestire messaggi fuori ordine senza sovrascrivere uno stato piu' recente.
-- [ ] Registrare gli errori di parsing senza interrompere il subscriber.
-- [ ] Pubblicare eventi interni verso il gestore WebSocket.
-- [ ] Testare QoS 1, duplicati, ritardi e riconnessione.
+- [x] Connettere il backend al broker con riconnessione automatica.
+- [x] Iscriversi ai topic Edge necessari.
+- [x] Validare schema e versione di ogni payload.
+- [x] Rifiutare payload senza patient_id, message_id o timestamp valido.
+- [x] Deduplicare i messaggi tramite message_id.
+- [x] Salvare cicli, finestre, decisioni, alert e stato sensori nelle tabelle corrette.
+- [x] Gestire messaggi fuori ordine senza sovrascrivere uno stato piu' recente.
+- [x] Registrare gli errori di parsing senza interrompere il subscriber.
+- [x] Pubblicare eventi interni verso il gestore WebSocket.
+- [x] Testare QoS 1, duplicati, ritardi e riconnessione.
 
 ### D5. API REST per dashboard e app
 

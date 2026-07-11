@@ -1,1 +1,1 @@
-"""MQTT subscriber/publisher integration placeholder for D4."""
+"""Integrazione MQTT del backend per subscriber, validazione e ingestione."""
