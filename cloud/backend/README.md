@@ -4,8 +4,8 @@ Backend FastAPI unico per dashboard medico, app paziente, caregiver e integrazio
 
 ## Scopo
 
-Questa cartella contiene il backend Cloud del progetto. Al momento copre i blocchi D2 e
-D3 della scaletta di Daniel:
+Questa cartella contiene il backend Cloud del progetto. Al momento copre i blocchi D2,
+D3 e D4 della scaletta di Daniel:
 
 ```text
 MQTT broker -> backend -> database -> dashboard/app
@@ -16,7 +16,7 @@ Stato attuale:
 ```text
 D2 -> struttura FastAPI, health/ready, OpenAPI, errori e log
 D3 -> PostgreSQL, SQLAlchemy models, Alembic migrations e test schema
-D4 -> prossimo passo: subscriber MQTT e ingestione payload Edge
+D4 -> subscriber MQTT, validazione payload Edge e ingestione nel database
 ```
 
 ## Struttura
@@ -45,6 +45,12 @@ cloud/backend/
       models.py
       session.py
     mqtt/
+      client.py
+      events.py
+      ingest.py
+      schemas.py
+      topics.py
+      worker.py
     schemas/
     services/
   alembic/
@@ -56,6 +62,7 @@ cloud/backend/
   tests/
     test_database_schema.py
     test_health.py
+    test_mqtt_ingest.py
   alembic.ini
   requirements.txt
 ```
@@ -91,6 +98,33 @@ http://127.0.0.1:8080/docs
 http://127.0.0.1:8080/openapi.json
 ```
 
+## Subscriber MQTT
+
+Il worker MQTT del backend si collega al broker, si iscrive ai topic Edge, valida i
+payload e salva i messaggi nelle tabelle PostgreSQL corrette.
+
+Avvio manuale:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend
+.\.venv\Scripts\python -m app.mqtt.worker
+```
+
+Topic ascoltati:
+
+```text
+iot/patients/+/edge/status
+iot/patients/+/telemetry/window
+iot/patients/+/telemetry/decision
+iot/patients/+/alerts/critical
+iot/patients/+/sensors/watch
+iot/patients/+/sensors/ble
+```
+
+Il worker rifiuta payload senza `schema_version`, `message_id`, `patient_id` o timestamp
+valido; inoltre rifiuta valori mancanti scritti come stringa `"nan"`. I duplicati sono
+gestiti tramite i vincoli univoci su `message_id`.
+
 ## Test
 
 ```powershell
@@ -98,9 +132,16 @@ cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend
 .\.venv\Scripts\python -m pytest
 ```
 
-I test non richiedono broker MQTT o database reale. Lo schema DB viene verificato anche
-con SQLite in memoria; PostgreSQL reale viene testato applicando Alembic sul servizio
-Docker.
+I test unitari non richiedono broker MQTT o database reale. Lo schema DB e l'ingestione
+MQTT vengono verificati con SQLite in memoria; PostgreSQL reale viene testato applicando
+Alembic sul servizio Docker.
+
+Test completo locale con broker MQTT, PostgreSQL e worker reale:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT
+.\Script\test\test_backend_mqtt_ingest.ps1
+```
 
 ## Esportare OpenAPI
 
@@ -131,6 +172,19 @@ Le variabili usano prefisso:
 IOT_BACKEND_
 ```
 
+Per sviluppo locale bisogna creare file `.env` locali partendo dagli esempi:
+
+```powershell
+Copy-Item C:\Users\Daniel\Desktop\ProgettoIoT\cloud\.env.example C:\Users\Daniel\Desktop\ProgettoIoT\cloud\.env
+Copy-Item C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend\.env.example C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend\.env
+```
+
+I file `.env` reali sono ignorati da Git. Qui vanno inserite le password locali o reali,
+mentre nel codice restano solo nomi di variabili e valori non sensibili.
+
+Nota sicurezza: se `IOT_BACKEND_ENVIRONMENT=production`, il backend rifiuta l'avvio
+quando mancano i segreti o quando trova placeholder tipo `CAMBIA_...`.
+
 Esempi:
 
 ```powershell
@@ -139,7 +193,8 @@ $env:IOT_BACKEND_LOG_LEVEL = "INFO"
 $env:IOT_BACKEND_MQTT_HOST = "localhost"
 $env:IOT_BACKEND_MQTT_PORT = "8883"
 $env:IOT_BACKEND_MQTT_USE_TLS = "true"
-$env:IOT_BACKEND_DATABASE_URL = "postgresql+psycopg://iot_backend:IotBackendLocal001!@localhost:5432/progetto_iot"
+$env:IOT_BACKEND_MQTT_PASSWORD = "<password-mqtt>"
+$env:IOT_BACKEND_DATABASE_URL = "postgresql+psycopg://iot_backend:<password-postgres>@localhost:5432/progetto_iot"
 ```
 
 ## Database PostgreSQL
@@ -182,5 +237,4 @@ Get-Content backups\progetto_iot_backup.sql | docker compose exec -T postgres ps
 
 ## Prossimi passi
 
-- D4: collegare subscriber MQTT e ingestione.
 - D5: implementare API reali per dashboard e app.

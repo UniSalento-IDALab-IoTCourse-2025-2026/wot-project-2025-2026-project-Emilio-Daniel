@@ -24,7 +24,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-progetto_iot}
       POSTGRES_USER: ${POSTGRES_USER:-iot_backend}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-IotBackendLocal001!}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in cloud/.env}
     ports:
       - "5432:5432"
     volumes:
