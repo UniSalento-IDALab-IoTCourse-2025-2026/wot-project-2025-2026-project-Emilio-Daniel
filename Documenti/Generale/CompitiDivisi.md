@@ -219,24 +219,24 @@ pubblica gli stessi eventi sul broker in modo affidabile.
 
 ### E2. Mock backend per sviluppo frontend
 
-- [ ] Creare risposte JSON locali conformi alle API concordate.
-- [ ] Simulare paziente normale, alert severo, problema tecnico e dati mancanti.
-- [ ] Simulare eventi WebSocket a intervalli configurabili.
-- [ ] Consentire alla dashboard di cambiare URL tra mock e backend reale tramite `.env`.
-- [ ] Non inserire dati personali reali nei mock versionati.
+- [x] Creare risposte JSON locali conformi alle API concordate.
+- [x] Simulare paziente normale, alert severo, problema tecnico e dati mancanti.
+- [x] Simulare eventi WebSocket a intervalli configurabili.
+- [x] Consentire alla dashboard di cambiare URL tra mock e backend reale tramite `.env`.
+- [x] Non inserire dati personali reali nei mock versionati.
 
 Output: dashboard e app possono essere sviluppate anche quando il backend Cloud e'
 spento o non ancora completo.
 
 ### E3. Struttura della dashboard medico web
 
-- [ ] Creare il progetto frontend React con configurazione separata per sviluppo e produzione.
-- [ ] Realizzare login e gestione della sessione.
-- [ ] Realizzare navigazione con lista pazienti, dettaglio paziente, alert, task e sistema.
-- [ ] Gestire loading, assenza dati, errore rete, dati obsoleti e permessi insufficienti.
-- [ ] Usare componenti accessibili e responsive per PC e tablet.
-- [ ] Centralizzare client REST, client WebSocket e gestione degli errori.
-- [ ] Non mostrare messaggi diagnostici assoluti: indicare sempre che si tratta di triage.
+- [x] Creare il progetto frontend React con configurazione separata per sviluppo e produzione.
+- [x] Realizzare login e gestione della sessione.
+- [x] Realizzare navigazione con lista pazienti, dettaglio paziente, alert, task e sistema.
+- [x] Gestire loading, assenza dati, errore rete, dati obsoleti e permessi insufficienti.
+- [x] Usare componenti accessibili e responsive per PC e tablet.
+- [x] Centralizzare client REST, client WebSocket e gestione degli errori.
+- [x] Non mostrare messaggi diagnostici assoluti: indicare sempre che si tratta di triage.
 
 Output: una base navigabile che funziona prima con mock e poi cambiando soltanto l'URL
 del backend.

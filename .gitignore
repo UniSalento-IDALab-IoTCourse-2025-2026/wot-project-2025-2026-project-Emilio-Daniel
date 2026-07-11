@@ -89,3 +89,15 @@ edge_node/data/dataset_generici/
 !edge_node/data/processed/generic_wearable_dataset_fitbitdata.csv
 !edge_node/data/processed/generic_wearable_dataset_pamap2.csv
 !edge_node/data/processed/generic_wearable_dataset_wesad.csv
+
+# Frontend dashboard medico.
+Dashboard/node_modules/
+Dashboard/dist/
+Dashboard/.env
+Dashboard/.env.*
+!Dashboard/.env.example
+
+# Mock backend locale.
+mock_backend/.venv/
+mock_backend/__pycache__/
+mock_backend/**/__pycache__/
