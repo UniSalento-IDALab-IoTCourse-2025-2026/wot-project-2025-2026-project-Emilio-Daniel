@@ -52,6 +52,78 @@ app.add_middleware(
 
 TASKS: dict[str, list[dict[str, Any]]] = {}
 TASK_RESULTS: dict[str, list[dict[str, Any]]] = {}
+PATIENT_PROFILES: list[dict[str, Any]] = [
+    {
+        "patient_id": "patient-001",
+        "display_name": "Paziente Demo",
+        "level": "green",
+        "signal_type": "routine",
+        "score": 18.5,
+        "current_room": "kitchen",
+        "watch_present": True,
+        "watch_battery_pct": 74,
+        "edge_online": True,
+        "quality_status": "ok",
+        "mqtt_queue_depth": 0,
+        "age_minutes": 0,
+    },
+    {
+        "patient_id": "patient-002",
+        "display_name": "Paziente Osservazione",
+        "level": "yellow",
+        "signal_type": "clinical",
+        "score": 42.0,
+        "current_room": "bedroom",
+        "watch_present": True,
+        "watch_battery_pct": 61,
+        "edge_online": True,
+        "quality_status": "ok",
+        "mqtt_queue_depth": 0,
+        "age_minutes": 4,
+    },
+    {
+        "patient_id": "patient-003",
+        "display_name": "Paziente Rientro",
+        "level": "orange",
+        "signal_type": "clinical",
+        "score": 68.4,
+        "current_room": "bathroom",
+        "watch_present": True,
+        "watch_battery_pct": 49,
+        "edge_online": True,
+        "quality_status": "warning",
+        "mqtt_queue_depth": 1,
+        "age_minutes": 8,
+    },
+    {
+        "patient_id": "patient-004",
+        "display_name": "Paziente Priorita",
+        "level": "red",
+        "signal_type": "clinical",
+        "score": 87.2,
+        "current_room": "bathroom",
+        "watch_present": True,
+        "watch_battery_pct": 38,
+        "edge_online": True,
+        "quality_status": "alert",
+        "mqtt_queue_depth": 0,
+        "age_minutes": 2,
+    },
+    {
+        "patient_id": "patient-005",
+        "display_name": "Paziente Tecnico",
+        "level": "technical",
+        "signal_type": "technical",
+        "score": None,
+        "current_room": None,
+        "watch_present": False,
+        "watch_battery_pct": 4,
+        "edge_online": False,
+        "quality_status": "warning",
+        "mqtt_queue_depth": 5,
+        "age_minutes": 22,
+    },
+]
 
 
 @app.exception_handler(HTTPException)
@@ -126,53 +198,37 @@ def login(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any
 
 @app.get("/api/v1/patients")
 def list_patients() -> dict[str, Any]:
-    scenario = scenario_payload()
     return {
-        "items": [
-            {
-                "patient_id": scenario["patient"]["patient_id"],
-                "display_name": scenario["patient"]["display_name"],
-                "last_update": scenario["current"]["last_update"],
-                "level": scenario["current"]["level"],
-                "current_room": scenario["current"]["current_room"],
-                "edge_online": scenario["current"]["edge"]["online"],
-                "watch_present": scenario["current"]["watch"]["present"],
-                "has_open_alerts": bool(scenario["alerts"]),
-            }
-        ],
+        "items": patient_summaries(),
         "page": 1,
         "page_size": 20,
-        "total": 1,
+        "total": len(PATIENT_PROFILES),
     }
 
 
 @app.get("/api/v1/patients/{patient_id}/current")
 def patient_current(patient_id: str) -> dict[str, Any]:
-    scenario = scenario_payload()
-    assert_patient(patient_id, scenario)
+    scenario = scenario_payload(patient_id)
     return scenario["current"]
 
 
 @app.get("/api/v1/patients/{patient_id}/windows")
 def patient_windows(patient_id: str, limit: int = Query(default=20, ge=1, le=200)) -> dict[str, Any]:
-    scenario = scenario_payload()
-    assert_patient(patient_id, scenario)
+    scenario = scenario_payload(patient_id)
     items = scenario["windows"][-limit:]
     return paginated(items)
 
 
 @app.get("/api/v1/patients/{patient_id}/decisions")
 def patient_decisions(patient_id: str, limit: int = Query(default=20, ge=1, le=200)) -> dict[str, Any]:
-    scenario = scenario_payload()
-    assert_patient(patient_id, scenario)
+    scenario = scenario_payload(patient_id)
     items = scenario["decisions"][-limit:]
     return paginated(items)
 
 
 @app.get("/api/v1/patients/{patient_id}/alerts")
 def patient_alerts(patient_id: str) -> dict[str, Any]:
-    scenario = scenario_payload()
-    assert_patient(patient_id, scenario)
+    scenario = scenario_payload(patient_id)
     return paginated(scenario["alerts"])
 
 
@@ -202,8 +258,7 @@ def resolve_alert(alert_id: str, payload: dict[str, Any] = Body(default_factory=
 
 @app.post("/api/v1/patients/{patient_id}/tasks")
 def create_task(patient_id: str, payload: TaskCreate) -> dict[str, Any]:
-    scenario = scenario_payload()
-    assert_patient(patient_id, scenario)
+    scenario_payload(patient_id)
     task = {
         "task_id": f"task-{uuid.uuid4().hex[:8]}",
         "patient_id": patient_id,
@@ -222,8 +277,7 @@ def create_task(patient_id: str, payload: TaskCreate) -> dict[str, Any]:
 
 @app.get("/api/v1/patients/{patient_id}/tasks")
 def list_tasks(patient_id: str) -> dict[str, Any]:
-    scenario = scenario_payload()
-    assert_patient(patient_id, scenario)
+    scenario = scenario_payload(patient_id)
     items = scenario["tasks"] + TASKS.get(patient_id, [])
     return paginated(items)
 
@@ -267,15 +321,13 @@ def app_status(patient_id: str, payload: dict[str, Any] = Body(default_factory=d
 
 @app.get("/api/v1/patients/{patient_id}/system-status")
 def system_status(patient_id: str) -> dict[str, Any]:
-    scenario = scenario_payload()
-    assert_patient(patient_id, scenario)
+    scenario = scenario_payload(patient_id)
     return scenario["system_status"]
 
 
 @app.websocket("/ws/v1/patients/{patient_id}")
 async def patient_websocket(websocket: WebSocket, patient_id: str) -> None:
-    scenario = scenario_payload()
-    assert_patient(patient_id, scenario)
+    scenario = scenario_payload(patient_id)
     await websocket.accept()
     interval = websocket_interval_seconds()
     index = 0
@@ -304,8 +356,41 @@ def websocket_interval_seconds() -> float:
         return 5.0
 
 
-def scenario_payload() -> dict[str, Any]:
-    return build_scenario(active_scenario())
+def scenario_payload(patient_id: str = "patient-001") -> dict[str, Any]:
+    if patient_id == "patient-001":
+        return build_scenario(active_scenario())
+    profile = patient_profile(patient_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {patient_id}")
+    return profile_scenario(profile)
+
+
+def patient_summaries() -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    for profile in PATIENT_PROFILES:
+        scenario = scenario_payload(profile["patient_id"])
+        current = scenario["current"]
+        summaries.append(
+            {
+                "patient_id": scenario["patient"]["patient_id"],
+                "display_name": scenario["patient"]["display_name"],
+                "last_update": current["last_update"],
+                "level": current["level"],
+                "signal_type": current["signal_type"],
+                "current_room": current["current_room"],
+                "edge_online": current["edge"]["online"],
+                "watch_present": current["watch"]["present"],
+                "has_open_alerts": bool(scenario["alerts"]),
+            }
+        )
+    return summaries
+
+
+def patient_profile(patient_id: str) -> dict[str, Any] | None:
+    for profile in PATIENT_PROFILES:
+        if profile["patient_id"] == patient_id:
+            return profile
+    return None
 
 
 def build_scenario(name: str) -> dict[str, Any]:
@@ -321,16 +406,16 @@ def build_scenario(name: str) -> dict[str, Any]:
     return base
 
 
-def base_scenario() -> dict[str, Any]:
+def base_scenario(patient_id: str = "patient-001", display_name: str = "Paziente Demo") -> dict[str, Any]:
     now = datetime.now(timezone.utc).replace(microsecond=0)
-    patient_id = "patient-001"
     windows = make_windows(now, patient_id)
     decisions = make_decisions(now, patient_id, "green", 18.5, False)
     current = {
         "patient_id": patient_id,
-        "edge_id": "edge-rpi5-001",
+        "edge_id": edge_id_for(patient_id),
         "last_update": now.isoformat().replace("+00:00", "Z"),
         "level": "green",
+        "signal_type": "routine",
         "should_publish": False,
         "anomaly_score": 18.5,
         "current_room": "kitchen",
@@ -348,7 +433,7 @@ def base_scenario() -> dict[str, Any]:
     return {
         "patient": {
             "patient_id": patient_id,
-            "display_name": "Paziente Demo",
+            "display_name": display_name,
         },
         "current": current,
         "windows": windows,
@@ -357,6 +442,76 @@ def base_scenario() -> dict[str, Any]:
         "tasks": default_tasks(patient_id, now),
         "system_status": system_payload(patient_id, now, current, "ok"),
         "ws_events": ws_events(patient_id, current, decisions[-1], None),
+    }
+
+
+def profile_scenario(profile: dict[str, Any]) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    updated_at = now - timedelta(minutes=int(profile["age_minutes"]))
+    patient_id = profile["patient_id"]
+    level = profile["level"]
+    score = profile["score"]
+    should_publish = level == "red"
+    scenario = base_scenario(patient_id, profile["display_name"])
+    scenario["windows"] = make_windows(updated_at, patient_id)
+    scenario["decisions"] = make_decisions(updated_at, patient_id, level, score or 0.0, should_publish)
+    scenario["current"].update(
+        {
+            "patient_id": patient_id,
+            "edge_id": edge_id_for(patient_id),
+            "last_update": updated_at.isoformat().replace("+00:00", "Z"),
+            "level": level,
+            "signal_type": profile["signal_type"],
+            "should_publish": should_publish,
+            "anomaly_score": score,
+            "current_room": profile["current_room"],
+            "watch": {
+                "present": profile["watch_present"],
+                "battery_pct": profile["watch_battery_pct"],
+                "available_features": ["heart_rate_mean", "hrv_rmssd", "spo2_mean"]
+                if profile["watch_present"]
+                else [],
+            },
+            "edge": {
+                "online": profile["edge_online"],
+                "quality_status": profile["quality_status"],
+                "mqtt_queue_depth": profile["mqtt_queue_depth"],
+            },
+        }
+    )
+    alert = alert_for_profile(profile, updated_at)
+    scenario["alerts"] = [] if alert is None else [alert]
+    scenario["system_status"] = system_payload(patient_id, updated_at, scenario["current"], profile["signal_type"])
+    scenario["ws_events"] = ws_events(patient_id, scenario["current"], scenario["decisions"][-1], alert)
+    return scenario
+
+
+def edge_id_for(patient_id: str) -> str:
+    suffix = patient_id.rsplit("-", maxsplit=1)[-1]
+    return f"edge-rpi5-{suffix}"
+
+
+def alert_for_profile(profile: dict[str, Any], opened_at: datetime) -> dict[str, Any] | None:
+    level = profile["level"]
+    if level not in {"orange", "red", "technical"}:
+        return None
+    category = "technical" if profile["signal_type"] == "technical" else "behavioral"
+    title = "Problema tecnico da verificare" if category == "technical" else "Anomalia comportamentale da revisionare"
+    description = (
+        "Watch o Edge non risultano disponibili con dati recenti."
+        if category == "technical"
+        else "Pattern spaziale e comportamentale fuori dalla routine attesa."
+    )
+    return {
+        "alert_id": f"alert-{profile['patient_id']}",
+        "patient_id": profile["patient_id"],
+        "level": level,
+        "status": "new",
+        "category": category,
+        "title": title,
+        "description": description,
+        "opened_at": opened_at.isoformat().replace("+00:00", "Z"),
+        "anomaly_score": profile["score"],
     }
 
 
@@ -378,6 +533,7 @@ def severe_alert_scenario(base: dict[str, Any]) -> dict[str, Any]:
     scenario["current"].update(
         {
             "level": "red",
+            "signal_type": "clinical",
             "should_publish": True,
             "anomaly_score": 87.2,
             "current_room": "bathroom",
@@ -397,6 +553,7 @@ def technical_issue_scenario(base: dict[str, Any]) -> dict[str, Any]:
     scenario["current"].update(
         {
             "level": "technical",
+            "signal_type": "technical",
             "should_publish": False,
             "anomaly_score": None,
             "current_room": None,
@@ -442,6 +599,7 @@ def missing_data_scenario(base: dict[str, Any]) -> dict[str, Any]:
     scenario["current"].update(
         {
             "level": "yellow",
+            "signal_type": "clinical",
             "should_publish": False,
             "anomaly_score": 41.0,
             "watch": {

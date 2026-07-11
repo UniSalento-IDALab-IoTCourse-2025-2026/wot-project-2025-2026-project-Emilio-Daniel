@@ -1,15 +1,20 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowDownUp,
   CheckCircle2,
+  Clock3,
   ClipboardList,
   HeartPulse,
+  Home,
   LogOut,
   MonitorCog,
   RefreshCcw,
+  Server,
   ShieldCheck,
   Stethoscope,
   Users,
+  Watch,
   Wifi,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -103,6 +108,8 @@ function Dashboard({ session, onLogout }) {
   const [patients, setPatients] = useState([]);
   const [selectedPatientId, setSelectedPatientId] = useState(null);
   const [activeTab, setActiveTab] = useState("patient");
+  const [patientSort, setPatientSort] = useState("severity");
+  const [patientFilter, setPatientFilter] = useState("all");
   const [state, setState] = useState({ loading: true, error: "", data: null });
   const [wsStatus, setWsStatus] = useState("idle");
   const [events, setEvents] = useState([]);
@@ -111,9 +118,12 @@ function Dashboard({ session, onLogout }) {
     setState((previous) => ({ ...previous, loading: true, error: "" }));
     try {
       const payload = await api.patients(session);
-      const items = [...(payload.items ?? [])].sort((a, b) => severityRank(b.level) - severityRank(a.level));
+      const items = payload.items ?? [];
       setPatients(items);
-      if (!selectedPatientId && items[0]) setSelectedPatientId(items[0].patient_id);
+      if (!selectedPatientId && items[0]) {
+        const first = [...items].sort((a, b) => severityRank(b.level) - severityRank(a.level))[0];
+        setSelectedPatientId(first.patient_id);
+      }
     } catch (error) {
       setState({ loading: false, error: readableApiError(error), data: null });
     }
@@ -174,6 +184,11 @@ function Dashboard({ session, onLogout }) {
     [patients, selectedPatientId]
   );
 
+  const visiblePatients = useMemo(
+    () => sortPatients(filterPatients(patients, patientFilter), patientSort),
+    [patients, patientFilter, patientSort]
+  );
+
   return (
     <main className="app-shell">
       <aside className="sidebar" aria-label="Navigazione principale">
@@ -190,18 +205,43 @@ function Dashboard({ session, onLogout }) {
             <Users size={16} />
             Pazienti
           </div>
+          <PatientListControls
+            sortMode={patientSort}
+            filterMode={patientFilter}
+            onSortChange={setPatientSort}
+            onFilterChange={setPatientFilter}
+          />
           {patients.length === 0 && <p className="empty-text">Nessun paziente assegnato.</p>}
+          {patients.length > 0 && visiblePatients.length === 0 && (
+            <p className="empty-text">Nessun paziente nel filtro scelto.</p>
+          )}
           <div className="patient-list">
-            {patients.map((patient) => (
+            {visiblePatients.map((patient) => (
               <button
                 key={patient.patient_id}
-                className={`patient-button ${patient.patient_id === selectedPatientId ? "active" : ""}`}
+                className={`patient-button ${patient.patient_id === selectedPatientId ? "active" : ""} ${isStale(patient.last_update) ? "stale" : ""}`}
                 type="button"
                 onClick={() => setSelectedPatientId(patient.patient_id)}
               >
                 <span className={`level-dot ${patient.level}`} />
                 <span>
                   <strong>{patient.display_name}</strong>
+                  <small className="patient-meta-line">
+                    <Home size={13} />
+                    {patient.current_room ?? "stanza n/d"}
+                  </small>
+                  <small className="patient-meta-line">
+                    <Watch size={13} />
+                    {patient.watch_present ? "watch ok" : "watch assente"}
+                    <Server size={13} />
+                    {patient.edge_online ? "edge online" : "edge offline"}
+                  </small>
+                  <small className="patient-meta-line">
+                    <span className={`signal-chip ${signalKind(patient)}`}>
+                      {signalLabel(patient)}
+                    </span>
+                    {isStale(patient.last_update) && <span className="stale-chip">obsoleto</span>}
+                  </small>
                   <small>{levelLabel(patient.level)} · {patient.current_room ?? "stanza n/d"}</small>
                 </span>
               </button>
@@ -253,6 +293,7 @@ function Dashboard({ session, onLogout }) {
         {!state.loading && !state.error && !state.data && <EmptyState />}
         {!state.loading && !state.error && state.data && (
           <>
+            <OverviewStrip patients={patients} selectedPatientId={selectedPatientId} />
             <TriageNotice />
             {activeTab === "patient" && <PatientView data={state.data} />}
             {activeTab === "alerts" && <AlertsView data={state.data} session={session} onChanged={() => loadPatientData(selectedPatientId)} />}
@@ -284,6 +325,92 @@ function ErrorState({ message }) {
 
 function EmptyState() {
   return <div className="state-card">Nessun dato disponibile per questa vista.</div>;
+}
+
+function PatientListControls({ sortMode, filterMode, onSortChange, onFilterChange }) {
+  return (
+    <div className="patient-controls" aria-label="Controlli lista pazienti">
+      <div className="segmented-control" aria-label="Ordinamento pazienti">
+        <button
+          className={sortMode === "severity" ? "active" : ""}
+          type="button"
+          onClick={() => onSortChange("severity")}
+        >
+          <ArrowDownUp size={14} />
+          Severita
+        </button>
+        <button
+          className={sortMode === "updated" ? "active" : ""}
+          type="button"
+          onClick={() => onSortChange("updated")}
+        >
+          <Clock3 size={14} />
+          Update
+        </button>
+      </div>
+      <select
+        className="filter-select"
+        value={filterMode}
+        onChange={(event) => onFilterChange(event.target.value)}
+        aria-label="Filtro pazienti"
+      >
+        <option value="all">Tutti</option>
+        <option value="clinical">Comportamentali</option>
+        <option value="technical">Tecnici</option>
+        <option value="stale">Obsoleti</option>
+      </select>
+    </div>
+  );
+}
+
+function OverviewStrip({ patients, selectedPatientId }) {
+  const counts = patients.reduce(
+    (accumulator, patient) => {
+      accumulator.total += 1;
+      accumulator[patient.level] = (accumulator[patient.level] ?? 0) + 1;
+      if (isStale(patient.last_update)) accumulator.stale += 1;
+      if (signalKind(patient) === "technical") accumulator.technicalSignals += 1;
+      if (signalKind(patient) === "clinical") accumulator.clinicalSignals += 1;
+      return accumulator;
+    },
+    {
+      total: 0,
+      green: 0,
+      yellow: 0,
+      orange: 0,
+      red: 0,
+      technical: 0,
+      stale: 0,
+      clinicalSignals: 0,
+      technicalSignals: 0,
+    }
+  );
+  const selected = patients.find((patient) => patient.patient_id === selectedPatientId);
+
+  return (
+    <section className="overview-strip" aria-label="Overview pazienti">
+      <OverviewMetric label="Monitorati" value={counts.total} />
+      <OverviewMetric label="Alta priorita" value={counts.red + counts.orange} tone={counts.red ? "red" : "orange"} />
+      <OverviewMetric label="Tecnici" value={counts.technicalSignals} tone="technical" />
+      <OverviewMetric label="Obsoleti" value={counts.stale} tone={counts.stale ? "yellow" : "green"} />
+      <div className="selected-summary">
+        <span className={`level-dot ${selected?.level ?? "green"}`} />
+        <div>
+          <strong>{selected?.display_name ?? "Nessun paziente selezionato"}</strong>
+          <small>{selected ? `${levelLabel(selected.level)} - ${signalLabel(selected)}` : "Seleziona dalla lista"}</small>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OverviewMetric({ label, value, tone }) {
+  return (
+    <div className={`overview-metric ${tone ?? ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
 }
 
 function PatientView({ data }) {
@@ -567,3 +694,42 @@ function severityRank(level) {
   return { red: 5, orange: 4, yellow: 3, technical: 2, green: 1 }[level] ?? 0;
 }
 
+function sortPatients(patients, sortMode) {
+  const ordered = [...patients];
+  if (sortMode === "updated") {
+    return ordered.sort((a, b) => new Date(b.last_update ?? 0).getTime() - new Date(a.last_update ?? 0).getTime());
+  }
+  return ordered.sort((a, b) => {
+    const severityDiff = severityRank(b.level) - severityRank(a.level);
+    if (severityDiff !== 0) return severityDiff;
+    return new Date(b.last_update ?? 0).getTime() - new Date(a.last_update ?? 0).getTime();
+  });
+}
+
+function filterPatients(patients, filterMode) {
+  if (filterMode === "clinical") {
+    return patients.filter((patient) => signalKind(patient) === "clinical");
+  }
+  if (filterMode === "technical") {
+    return patients.filter((patient) => signalKind(patient) === "technical");
+  }
+  if (filterMode === "stale") {
+    return patients.filter((patient) => isStale(patient.last_update));
+  }
+  return patients;
+}
+
+function signalKind(patient) {
+  if (patient.signal_type === "behavioral") return "clinical";
+  if (patient.signal_type) return patient.signal_type;
+  if (patient.level === "technical" || patient.edge_online === false || patient.watch_present === false) return "technical";
+  if (["yellow", "orange", "red"].includes(patient.level)) return "clinical";
+  return "routine";
+}
+
+function signalLabel(patient) {
+  const kind = signalKind(patient);
+  if (kind === "technical") return "guasto tecnico";
+  if (kind === "clinical") return "segnale comportamentale";
+  return "routine";
+}

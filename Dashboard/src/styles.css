@@ -18,7 +18,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -144,6 +145,7 @@ input {
 }
 
 input:focus,
+select:focus,
 button:focus-visible {
   outline: 3px solid rgba(23, 104, 108, 0.24);
   outline-offset: 2px;
@@ -227,6 +229,51 @@ button:focus-visible {
   gap: 10px;
 }
 
+.patient-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid #d5e0e3;
+  border-radius: 8px;
+  padding: 3px;
+  background: #f6f9fa;
+}
+
+.segmented-control button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  color: #40545c;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.segmented-control button.active {
+  background: #ffffff;
+  color: #17686c;
+  box-shadow: 0 1px 5px rgba(33, 52, 59, 0.08);
+}
+
+.filter-select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #d5e0e3;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #263941;
+  font-weight: 700;
+}
+
 .patient-button,
 .tab-button {
   width: 100%;
@@ -247,10 +294,58 @@ button:focus-visible {
   background: #edf7f7;
 }
 
+.patient-button.stale {
+  border-color: #f1d48a;
+  background: #fffaf0;
+}
+
 .patient-button small {
   display: block;
   margin-top: 2px;
   color: #65767d;
+}
+
+.patient-button small:not(.patient-meta-line) {
+  display: none;
+}
+
+.patient-meta-line {
+  display: flex !important;
+  align-items: center;
+  gap: 5px;
+  min-height: 18px;
+  flex-wrap: wrap;
+}
+
+.signal-chip,
+.stale-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.signal-chip.routine {
+  background: #e9f7f0;
+  color: #176144;
+}
+
+.signal-chip.clinical {
+  background: #fff2d2;
+  color: #744d00;
+}
+
+.signal-chip.technical {
+  background: #eceefe;
+  color: #4452ba;
+}
+
+.stale-chip {
+  background: #fff2d2;
+  color: #744d00;
 }
 
 .tab-button {
@@ -309,6 +404,71 @@ button:focus-visible {
   border: 1px solid #dbe4e6;
   border-radius: 8px;
   background: #ffffff;
+}
+
+.overview-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr)) minmax(220px, 1.35fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.overview-metric,
+.selected-summary {
+  min-height: 74px;
+  border: 1px solid #dbe4e6;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.overview-metric {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  border-left: 4px solid #9aa9ae;
+}
+
+.overview-metric span,
+.selected-summary small {
+  color: #65767d;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.overview-metric strong {
+  font-size: 1.35rem;
+}
+
+.overview-metric.green {
+  border-left-color: #20825c;
+}
+
+.overview-metric.yellow {
+  border-left-color: #c58b13;
+}
+
+.overview-metric.orange {
+  border-left-color: #c05621;
+}
+
+.overview-metric.red {
+  border-left-color: #c83532;
+}
+
+.overview-metric.technical {
+  border-left-color: #6271d9;
+}
+
+.selected-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.selected-summary strong {
+  display: block;
+  margin-bottom: 3px;
 }
 
 .notice {
@@ -562,6 +722,14 @@ th {
   .metric-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .overview-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .selected-summary {
+    grid-column: span 2;
+  }
 }
 
 @media (max-width: 720px) {
@@ -581,12 +749,16 @@ th {
   .content-grid,
   .patient-list,
   .tab-list,
-  .metric-row {
+  .metric-row,
+  .overview-strip {
     grid-template-columns: 1fr;
   }
 
   .span-2 {
     grid-column: span 1;
   }
-}
 
+  .selected-summary {
+    grid-column: span 1;
+  }
+}

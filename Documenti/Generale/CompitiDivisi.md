@@ -243,12 +243,12 @@ del backend.
 
 ### E4. Overview e lista pazienti
 
-- [ ] Mostrare la lista pazienti ordinabile per severita' e ultimo aggiornamento.
-- [ ] Mostrare semaforo green, yellow, orange, red e technical.
-- [ ] Mostrare stanza corrente, watch presente e Raspberry online/offline.
-- [ ] Evidenziare dati vecchi rispetto all'ultima finestra attesa.
-- [ ] Separare chiaramente anomalia comportamentale e guasto tecnico.
-- [ ] Aprire il dettaglio del paziente selezionato senza perdere i filtri.
+- [x] Mostrare la lista pazienti ordinabile per severita' e ultimo aggiornamento.
+- [x] Mostrare semaforo green, yellow, orange, red e technical.
+- [x] Mostrare stanza corrente, watch presente e Raspberry online/offline.
+- [x] Evidenziare dati vecchi rispetto all'ultima finestra attesa.
+- [x] Separare chiaramente anomalia comportamentale e guasto tecnico.
+- [x] Aprire il dettaglio del paziente selezionato senza perdere i filtri.
 
 ### E5. Pagina alert e presa in carico
 
