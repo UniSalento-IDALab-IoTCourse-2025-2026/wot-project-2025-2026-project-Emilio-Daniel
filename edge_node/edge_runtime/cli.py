@@ -171,6 +171,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Data quality report JSON path. Use an empty value to disable.",
     )
     parser.add_argument(
+        "--disable-mqtt-publish",
+        action="store_true",
+        help="Do not publish cycle outputs to MQTT even if config mqtt.enabled=true.",
+    )
+    parser.add_argument(
         "--baseline-state",
         default=str(DEFAULT_BASELINE_STATE),
         help="Baseline session state JSON path.",
@@ -238,6 +243,7 @@ def run_loop(args: argparse.Namespace) -> None:
                 f"quality={status.get('quality_status')} "
                 f"inference={status.get('inference')} "
                 f"decision={status.get('decision_level')} "
+                f"mqtt={_mqtt_status(status)} "
                 f"duration={duration_s:.1f}s"
             )
             if status.get("quality_status") != "ok":
@@ -476,6 +482,20 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.status_output:
         _write_json(Path(args.status_output), status)
+
+    if not args.disable_mqtt_publish:
+        mqtt_decision_output = (
+            decision_output
+            if decision_payload is not None
+            else Path("outputs") / "__decision_not_available__.json"
+        )
+        status["mqtt_publish"] = _publish_mqtt_outputs(
+            config=config,
+            status=status,
+            decision_output=mqtt_decision_output,
+        )
+        if args.status_output:
+            _write_json(Path(args.status_output), status)
     return status
 
 
@@ -836,6 +856,49 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
+
+
+def _publish_mqtt_outputs(
+    *,
+    config: Any,
+    status: dict[str, Any],
+    decision_output: Path,
+) -> dict[str, Any]:
+    """Pubblica gli output del ciclo su MQTT senza interrompere il runtime.
+
+    Il publisher e' volutamente isolato: errori di rete, password o broker non
+    devono mai fermare aggregazione, baseline o inferenza locale.
+    """
+    try:
+        from edge_mqtt.publisher import publish_runtime_outputs
+
+        return publish_runtime_outputs(
+            config=config,
+            status_payload=status,
+            decision_output=decision_output,
+        ).to_dict()
+    except Exception as exc:
+        return {
+            "enabled": bool(getattr(config, "mqtt", None) and config.mqtt.enabled),
+            "status": "runtime_mqtt_error",
+            "attempted": 0,
+            "published": 0,
+            "queued": 0,
+            "queue_depth": None,
+            "errors": [f"{type(exc).__name__}: {exc}"],
+        }
+
+
+def _mqtt_status(status: dict[str, Any]) -> str:
+    """Ritorna una stringa compatta per il log del loop runtime."""
+    mqtt_payload = status.get("mqtt_publish")
+    if not isinstance(mqtt_payload, dict):
+        return "not_run"
+    text = str(mqtt_payload.get("status", "unknown"))
+    queue_depth = mqtt_payload.get("queue_depth")
+    if queue_depth is not None:
+        return f"{text}/queue={queue_depth}"
+    return text
 
 
 def _to_local_iso(value: Any, timezone_name: str) -> str:

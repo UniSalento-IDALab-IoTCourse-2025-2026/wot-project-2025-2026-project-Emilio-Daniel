@@ -9,13 +9,9 @@ locali.
 edge_ai/        modelli generici/personale, fusione, debounce e CLI train/infer
 edge_auth/      setup OAuth Google Health/Fitbit, token e refresh per Pixel Watch 2
 edge_baseline/  gestione fase baseline: start, status, finalize, train
-<<<<<<< HEAD
 edge_datasets/  convertitori dataset pubblici CASAS/fitbitdata/PAMAP2/WESAD
-edge_ingest/    aggregazione dati Fitbit, BLE e Shelly in finestre da 4 minuti
-=======
-edge_datasets/  convertitori dataset pubblici CASAS/PAMAP2/WESAD
 edge_ingest/    aggregazione dati Google Health/Fitbit, BLE e Shelly in finestre da 4 minuti
->>>>>>> 4fb8463ce1af090dbe5827ace9cb727510ff9b8f
+edge_mqtt/      publisher MQTT verso il broker Cloud con coda offline
 edge_receiver/  receiver FastAPI per campioni BLE inviati dall'app Android
 edge_runtime/   ciclo edge: aggregazione, qualita, inferenza e decisione
 edge_stack/     comando unico che avvia receiver BLE e runtime continuo
@@ -148,9 +144,83 @@ edge_runtime --loop
   -> Shelly/NILM se abilitato in futuro
   -> aggiorna latest_window.csv e decision JSON
   -> se manca il modello personale, gestisce la baseline automatica
+  -> se mqtt.enabled=true, pubblica ciclo, finestra, decisione e alert al Cloud
 ```
 
 Il comando si ferma con `CTRL+C`.
+
+## Publisher MQTT Edge -> Cloud
+
+Il modulo `edge_mqtt/` pubblica sul broker MQTT preparato da Daniel gli stessi output
+che il Raspberry continua a salvare localmente. Il runtime locale resta sempre
+prioritario: se il broker, Internet o TLS non sono disponibili, i messaggi vengono
+accodati su disco e il ciclo da 4 minuti continua.
+
+Configurazione in `config/edge.yml`:
+
+```yaml
+mqtt:
+  enabled: true
+  host: localhost
+  port: 8883
+  use_tls: true
+  username: edge_patient_001
+  password: ""
+  password_env: MQTT_EDGE_PASSWORD
+  client_id: edge-rpi5-001
+  edge_id: edge-rpi5-001
+  ca_file: ../cloud/mqtt/certs/ca.crt
+  queue_dir: data/state/mqtt_queue
+  retain_status: true
+```
+
+La password non va messa nei README o nei log. In locale Windows:
+
+```powershell
+$env:MQTT_EDGE_PASSWORD = "password-edge-scelta"
+```
+
+Sul Raspberry:
+
+```bash
+export MQTT_EDGE_PASSWORD='password-edge-scelta'
+```
+
+Topic pubblicati:
+
+```text
+iot/patients/patient-001/edge/status
+iot/patients/patient-001/telemetry/window
+iot/patients/patient-001/telemetry/decision
+iot/patients/patient-001/alerts/critical
+```
+
+Ogni messaggio contiene `schema_version`, `message_id`, `event_type`, `patient_id`,
+`edge_id`, timestamp UTC e `payload`, come richiesto dal subscriber D4. I valori `nan`
+del CSV vengono convertiti in `null`.
+
+Dry-run senza broker:
+
+```bash
+python -m edge_mqtt.cli --config config/edge.yml --dry-run
+```
+
+Test unitari:
+
+```bash
+python -m pytest tests/test_edge_mqtt.py
+```
+
+Quando il broker non risponde, la coda locale e' in:
+
+```text
+data/state/mqtt_queue/
+```
+
+Al ciclo successivo il publisher prova prima a svuotare la coda in ordine FIFO e poi
+pubblica i messaggi nuovi. `outputs/last-cycle.json` riporta anche `mqtt_publish` con
+stato, messaggi pubblicati, messaggi accodati ed eventuali errori sintetici senza
+mostrare password.
 
 La baseline non richiede piu' un comando separato: se `models/patient-001.pkl`
 non esiste, `avviaSistema` crea automaticamente la sessione baseline, raccoglie

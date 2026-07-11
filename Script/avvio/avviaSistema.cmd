@@ -18,7 +18,7 @@ if not exist "%PYTHON_EXE%" (
 )
 
 pushd "%EDGE_DIR%" || exit /b 1
-echo Avvio sistema IoT: receiver + runtime + baseline automatica 7 giorni.
+echo Avvio sistema IoT: receiver + runtime + MQTT se abilitato + baseline automatica 7 giorni.
 echo Se il modello personale esiste gia, verra usato automaticamente.
 "%PYTHON_EXE%" -m edge_stack.cli --config config\edge.yml %*
 set "EXIT_CODE=%ERRORLEVEL%"

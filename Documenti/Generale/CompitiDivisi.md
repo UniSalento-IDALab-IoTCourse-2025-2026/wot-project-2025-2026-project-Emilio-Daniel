@@ -197,22 +197,22 @@ non dipendere dallo stato dei servizi di Daniel.
 
 ### E1. Publisher MQTT sul Raspberry Pi 5
 
-- [ ] Creare un modulo `edge_mqtt` separato dal runtime e dall'AI.
-- [ ] Leggere host, porta, client ID, utente, password e certificati da configurazione.
-- [ ] Pubblicare `last-cycle.json` sul topic `edge/status` a ogni ciclo completato.
-- [ ] Pubblicare `latest_window.csv` come JSON sul topic `telemetry/window`.
-- [ ] Pubblicare `patient-001-decision.json` sul topic `telemetry/decision`.
-- [ ] Pubblicare sul topic `alerts/critical` solo quando la logica stabilita lo richiede.
-- [ ] Generare `message_id`, `schema_version`, `patient_id`, `edge_id` e timestamp UTC.
-- [ ] Impostare Quality of Service coerente: QoS 1 per decisioni e alert.
-- [ ] Pubblicare un Last Will per segnalare una disconnessione improvvisa dell'Edge.
-- [ ] Mantenere una coda locale su disco quando Internet o broker non sono disponibili.
-- [ ] Ritrasmettere la coda in ordine senza bloccare il ciclo locale di quattro minuti.
-- [ ] Evitare che un errore MQTT interrompa receiver, baseline o inferenza AI.
-- [ ] Nascondere password e certificati dai log e da Git.
-- [ ] Aggiungere test con broker simulato o Mosquitto locale.
-- [ ] Integrare il publisher nel comando unico di avvio Windows e Raspberry.
-- [ ] Documentare configurazione, log e procedura di verifica.
+- [x] Creare un modulo `edge_mqtt` separato dal runtime e dall'AI.
+- [x] Leggere host, porta, client ID, utente, password e certificati da configurazione.
+- [x] Pubblicare `last-cycle.json` sul topic `edge/status` a ogni ciclo completato.
+- [x] Pubblicare `latest_window.csv` come JSON sul topic `telemetry/window`.
+- [x] Pubblicare `patient-001-decision.json` sul topic `telemetry/decision`.
+- [x] Pubblicare sul topic `alerts/critical` solo quando la logica stabilita lo richiede.
+- [x] Generare `message_id`, `schema_version`, `patient_id`, `edge_id` e timestamp UTC.
+- [x] Impostare Quality of Service coerente: QoS 1 per decisioni e alert.
+- [x] Pubblicare un Last Will per segnalare una disconnessione improvvisa dell'Edge.
+- [x] Mantenere una coda locale su disco quando Internet o broker non sono disponibili.
+- [x] Ritrasmettere la coda in ordine senza bloccare il ciclo locale di quattro minuti.
+- [x] Evitare che un errore MQTT interrompa receiver, baseline o inferenza AI.
+- [x] Nascondere password e certificati dai log e da Git.
+- [x] Aggiungere test con broker simulato o Mosquitto locale.
+- [x] Integrare il publisher nel comando unico di avvio Windows e Raspberry.
+- [x] Documentare configurazione, log e procedura di verifica.
 
 Output: il Raspberry continua a produrre i file locali e, quando la rete e' disponibile,
 pubblica gli stessi eventi sul broker in modo affidabile.

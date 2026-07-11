@@ -52,3 +52,23 @@ ble:
 shelly:
   enabled: false
   raw_csv: data/raw/shelly_samples.csv
+
+mqtt:
+  # Attivare a true sul Raspberry quando broker e credenziali sono pronti.
+  enabled: false
+  host: localhost
+  port: 8883
+  use_tls: true
+  username: edge_patient_001
+  # Consigliato: lasciare vuoto e impostare la variabile ambiente MQTT_EDGE_PASSWORD.
+  password: ""
+  password_env: MQTT_EDGE_PASSWORD
+  client_id: edge-rpi5-001
+  edge_id: edge-rpi5-001
+  ca_file: ../cloud/mqtt/certs/ca.crt
+  keepalive_seconds: 60
+  connect_timeout_seconds: 8
+  publish_timeout_seconds: 8
+  queue_dir: data/state/mqtt_queue
+  max_flush_messages: 50
+  retain_status: true

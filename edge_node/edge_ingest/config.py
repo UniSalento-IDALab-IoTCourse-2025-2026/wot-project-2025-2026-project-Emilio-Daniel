@@ -88,6 +88,32 @@ class ShellyConfig:
 
 
 @dataclass(frozen=True)
+class MqttConfig:
+    """Configurazione del publisher MQTT Edge verso il backend Cloud.
+
+    Le credenziali possono restare fuori dal file YAML versionato usando
+    `password_env`, mentre `edge.yml` locale resta ignorato da Git.
+    """
+
+    enabled: bool = False
+    host: str = "localhost"
+    port: int = 8883
+    use_tls: bool = True
+    username: str = "edge_patient_001"
+    password: str = ""
+    password_env: str = "MQTT_EDGE_PASSWORD"
+    client_id: str = "edge-rpi5-001"
+    edge_id: str = "edge-rpi5-001"
+    ca_file: Path = Path("../cloud/mqtt/certs/ca.crt")
+    keepalive_seconds: int = 60
+    connect_timeout_seconds: float = 8.0
+    publish_timeout_seconds: float = 8.0
+    queue_dir: Path = Path("data/state/mqtt_queue")
+    max_flush_messages: int = 50
+    retain_status: bool = True
+
+
+@dataclass(frozen=True)
 class EdgeIngestConfig:
     patient: PatientConfig
     window: WindowConfig
@@ -97,6 +123,7 @@ class EdgeIngestConfig:
     google_health: GoogleHealthConfig
     ble: BleConfig
     shelly: ShellyConfig
+    mqtt: MqttConfig
 
 
 def load_config(path: str | Path) -> EdgeIngestConfig:
@@ -261,6 +288,48 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
                     "data/raw/shelly_samples.csv",
                 )
             ),
+        ),
+        mqtt=MqttConfig(
+            enabled=bool(_section(payload, "mqtt").get("enabled", False)),
+            host=str(_section(payload, "mqtt").get("host", "localhost")),
+            port=int(_section(payload, "mqtt").get("port", 8883)),
+            use_tls=bool(_section(payload, "mqtt").get("use_tls", True)),
+            username=str(
+                _section(payload, "mqtt").get("username", "edge_patient_001")
+            ),
+            password=str(_section(payload, "mqtt").get("password", "")),
+            password_env=str(
+                _section(payload, "mqtt").get("password_env", "MQTT_EDGE_PASSWORD")
+            ),
+            client_id=str(
+                _section(payload, "mqtt").get("client_id", "edge-rpi5-001")
+            ),
+            edge_id=str(_section(payload, "mqtt").get("edge_id", "edge-rpi5-001")),
+            ca_file=Path(
+                _section(payload, "mqtt").get(
+                    "ca_file",
+                    "../cloud/mqtt/certs/ca.crt",
+                )
+            ),
+            keepalive_seconds=int(
+                _section(payload, "mqtt").get("keepalive_seconds", 60)
+            ),
+            connect_timeout_seconds=float(
+                _section(payload, "mqtt").get("connect_timeout_seconds", 8.0)
+            ),
+            publish_timeout_seconds=float(
+                _section(payload, "mqtt").get("publish_timeout_seconds", 8.0)
+            ),
+            queue_dir=Path(
+                _section(payload, "mqtt").get(
+                    "queue_dir",
+                    "data/state/mqtt_queue",
+                )
+            ),
+            max_flush_messages=int(
+                _section(payload, "mqtt").get("max_flush_messages", 50)
+            ),
+            retain_status=bool(_section(payload, "mqtt").get("retain_status", True)),
         ),
     )
 

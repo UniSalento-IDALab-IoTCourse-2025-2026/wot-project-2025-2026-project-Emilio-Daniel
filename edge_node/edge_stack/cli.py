@@ -152,6 +152,19 @@ def _warn_about_config(config_path: Path) -> None:
         )
     else:
         _log("Google Health senza delay: Watch e BLE sulla stessa finestra da 4 minuti")
+    if config.mqtt.enabled:
+        _log(
+            "MQTT publisher attivo: "
+            f"{config.mqtt.username}@{config.mqtt.host}:{config.mqtt.port}, "
+            f"queue={config.mqtt.queue_dir}"
+        )
+        if not config.mqtt.password and config.mqtt.password_env:
+            _log(
+                "MQTT password letta dalla variabile ambiente "
+                f"{config.mqtt.password_env}"
+            )
+    else:
+        _log("MQTT publisher disattivato nel file di configurazione")
 
 
 def _start_process(name: str, command: list[str]) -> subprocess.Popen:
