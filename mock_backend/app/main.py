@@ -52,6 +52,7 @@ app.add_middleware(
 
 TASKS: dict[str, list[dict[str, Any]]] = {}
 TASK_RESULTS: dict[str, list[dict[str, Any]]] = {}
+ALERT_OVERRIDES: dict[str, dict[str, Any]] = {}
 PATIENT_PROFILES: list[dict[str, Any]] = [
     {
         "patient_id": "patient-001",
@@ -234,12 +235,14 @@ def patient_alerts(patient_id: str) -> dict[str, Any]:
 
 @app.patch("/api/v1/alerts/{alert_id}/acknowledge")
 def acknowledge_alert(alert_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
-    return {
+    update = {
         "alert_id": alert_id,
         "status": "acknowledged",
         "acknowledged_at": now_iso(),
         "acknowledged_by": payload.get("user_id", "user-doctor-001"),
     }
+    ALERT_OVERRIDES.setdefault(alert_id, {}).update(update)
+    return apply_alert_override({"alert_id": alert_id})
 
 
 @app.patch("/api/v1/alerts/{alert_id}/resolve")
@@ -247,13 +250,15 @@ def resolve_alert(alert_id: str, payload: dict[str, Any] = Body(default_factory=
     note = payload.get("note")
     if not note:
         raise HTTPException(status_code=422, detail="Resolve note is required.")
-    return {
+    update = {
         "alert_id": alert_id,
         "status": "resolved",
         "resolved_at": now_iso(),
         "resolved_by": payload.get("user_id", "user-doctor-001"),
-        "note": note,
+        "resolution_note": note,
     }
+    ALERT_OVERRIDES.setdefault(alert_id, {}).update(update)
+    return apply_alert_override({"alert_id": alert_id})
 
 
 @app.post("/api/v1/patients/{patient_id}/tasks")
@@ -327,13 +332,14 @@ def system_status(patient_id: str) -> dict[str, Any]:
 
 @app.websocket("/ws/v1/patients/{patient_id}")
 async def patient_websocket(websocket: WebSocket, patient_id: str) -> None:
-    scenario = scenario_payload(patient_id)
+    scenario_payload(patient_id)
     await websocket.accept()
     interval = websocket_interval_seconds()
     index = 0
-    events = scenario["ws_events"]
     try:
         while True:
+            scenario = scenario_payload(patient_id)
+            events = scenario["ws_events"]
             event = deepcopy(events[index % len(events)])
             event["event_id"] = f"mock-event-{uuid.uuid4().hex[:10]}"
             event["timestamp"] = now_iso()
@@ -480,6 +486,8 @@ def profile_scenario(profile: dict[str, Any]) -> dict[str, Any]:
         }
     )
     alert = alert_for_profile(profile, updated_at)
+    if alert is not None:
+        alert = apply_alert_override(alert)
     scenario["alerts"] = [] if alert is None else [alert]
     scenario["system_status"] = system_payload(patient_id, updated_at, scenario["current"], profile["signal_type"])
     scenario["ws_events"] = ws_events(patient_id, scenario["current"], scenario["decisions"][-1], alert)
@@ -515,6 +523,14 @@ def alert_for_profile(profile: dict[str, Any], opened_at: datetime) -> dict[str,
     }
 
 
+def apply_alert_override(alert: dict[str, Any]) -> dict[str, Any]:
+    merged = deepcopy(alert)
+    override = ALERT_OVERRIDES.get(merged["alert_id"])
+    if override:
+        merged.update(override)
+    return merged
+
+
 def severe_alert_scenario(base: dict[str, Any]) -> dict[str, Any]:
     scenario = deepcopy(base)
     patient_id = scenario["patient"]["patient_id"]
@@ -540,6 +556,7 @@ def severe_alert_scenario(base: dict[str, Any]) -> dict[str, Any]:
         }
     )
     scenario["decisions"] = make_decisions(now, patient_id, "red", 87.2, True)
+    alert = apply_alert_override(alert)
     scenario["alerts"] = [alert]
     scenario["system_status"] = system_payload(patient_id, now, scenario["current"], "alert")
     scenario["ws_events"] = ws_events(patient_id, scenario["current"], scenario["decisions"][-1], alert)
@@ -570,7 +587,7 @@ def technical_issue_scenario(base: dict[str, Any]) -> dict[str, Any]:
         }
     )
     scenario["system_status"] = system_payload(patient_id, now, scenario["current"], "technical")
-    scenario["alerts"] = [
+    alert = apply_alert_override(
         {
             "alert_id": "alert-tech-001",
             "patient_id": patient_id,
@@ -582,7 +599,8 @@ def technical_issue_scenario(base: dict[str, Any]) -> dict[str, Any]:
             "opened_at": now.isoformat().replace("+00:00", "Z"),
             "anomaly_score": None,
         }
-    ]
+    )
+    scenario["alerts"] = [alert]
     scenario["ws_events"] = ws_events(
         patient_id,
         scenario["current"],
@@ -781,9 +799,14 @@ def ws_events(
         },
     ]
     if alert is not None:
+        alert_event_type = "alert_created"
+        if alert.get("status") == "acknowledged":
+            alert_event_type = "alert_acknowledged"
+        elif alert.get("status") == "resolved":
+            alert_event_type = "alert_resolved"
         events.append(
             {
-                "event_type": "alert_created",
+                "event_type": alert_event_type,
                 "event_id": "mock-event-alert",
                 "patient_id": patient_id,
                 "timestamp": now_iso(),

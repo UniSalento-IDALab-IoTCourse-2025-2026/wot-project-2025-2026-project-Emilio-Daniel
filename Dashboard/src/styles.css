@@ -134,7 +134,8 @@ label {
   font-weight: 700;
 }
 
-input {
+input,
+textarea {
   width: 100%;
   min-height: 42px;
   border: 1px solid #cfdadd;
@@ -142,10 +143,18 @@ input {
   padding: 0 12px;
   background: #ffffff;
   color: #182026;
+  font: inherit;
+}
+
+textarea {
+  min-height: 88px;
+  padding: 10px 12px;
+  resize: vertical;
 }
 
 input:focus,
 select:focus,
+textarea:focus,
 button:focus-visible {
   outline: 3px solid rgba(23, 104, 108, 0.24);
   outline-offset: 2px;
@@ -628,6 +637,21 @@ dd {
   color: #9d2118;
 }
 
+.status-pill.new {
+  background: #fff2d2;
+  color: #744d00;
+}
+
+.status-pill.acknowledged {
+  background: #e7f0ff;
+  color: #1d4f91;
+}
+
+.status-pill.resolved {
+  background: #e6f6ef;
+  color: #126544;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -667,6 +691,14 @@ th {
   border-left: 4px solid #9aa9ae;
 }
 
+.alert-item.yellow {
+  border-left-color: #c79220;
+}
+
+.alert-item.orange {
+  border-left-color: #d96f32;
+}
+
 .alert-item.red {
   border-left-color: #c83532;
 }
@@ -678,6 +710,72 @@ th {
 .alert-actions {
   display: grid;
   gap: 10px;
+}
+
+.alert-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.alert-toolbar select {
+  min-height: 38px;
+  border: 1px solid #d5e0e3;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #263941;
+  font-weight: 700;
+}
+
+.alert-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.alert-content {
+  display: grid;
+  gap: 10px;
+}
+
+.alert-content > small {
+  display: none;
+}
+
+.alert-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin: 0;
+}
+
+.alert-meta-grid dt {
+  color: #607179;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.alert-meta-grid dd {
+  margin: 2px 0 0;
+  font-weight: 760;
+}
+
+.reason-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #40545c;
+}
+
+.alert-ownership {
+  display: grid;
+  gap: 4px;
+  color: #607179;
+  font-size: 0.82rem;
 }
 
 .note-field {
@@ -727,6 +825,10 @@ th {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .alert-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .selected-summary {
     grid-column: span 2;
   }
@@ -750,7 +852,9 @@ th {
   .patient-list,
   .tab-list,
   .metric-row,
-  .overview-strip {
+  .overview-strip,
+  .alert-toolbar,
+  .alert-meta-grid {
     grid-template-columns: 1fr;
   }
 

@@ -172,7 +172,16 @@ function Dashboard({ session, onLogout }) {
       onStatus: setWsStatus,
       onEvent: (event) => {
         setEvents((previous) => [event, ...previous].slice(0, 8));
-        if (["decision_updated", "alert_created", "system_status_updated"].includes(event.event_type)) {
+        if (
+          [
+            "decision_updated",
+            "alert_created",
+            "alert_acknowledged",
+            "alert_resolved",
+            "task_created",
+            "system_status_updated",
+          ].includes(event.event_type)
+        ) {
           loadPatientData(selectedPatientId);
         }
       },
@@ -296,7 +305,14 @@ function Dashboard({ session, onLogout }) {
             <OverviewStrip patients={patients} selectedPatientId={selectedPatientId} />
             <TriageNotice />
             {activeTab === "patient" && <PatientView data={state.data} />}
-            {activeTab === "alerts" && <AlertsView data={state.data} session={session} onChanged={() => loadPatientData(selectedPatientId)} />}
+            {activeTab === "alerts" && (
+              <AlertsView
+                data={state.data}
+                session={session}
+                patientId={selectedPatientId}
+                onChanged={() => loadPatientData(selectedPatientId)}
+              />
+            )}
             {activeTab === "tasks" && <TasksView data={state.data} session={session} patientId={selectedPatientId} onChanged={() => loadPatientData(selectedPatientId)} />}
             {activeTab === "system" && <SystemView data={state.data} events={events} wsStatus={wsStatus} />}
           </>
@@ -486,16 +502,35 @@ function PatientView({ data }) {
   );
 }
 
-function AlertsView({ data, session, onChanged }) {
-  const [note, setNote] = useState("Evento verificato dal medico.");
+function AlertsView({ data, session, patientId, onChanged }) {
+  const [levelFilter, setLevelFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [rangeFilter, setRangeFilter] = useState("all");
+  const [notes, setNotes] = useState({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
-  async function acknowledge(alertId) {
-    setBusy(alertId);
+  const filteredAlerts = useMemo(
+    () => filterAlerts(data.alerts, { levelFilter, statusFilter, rangeFilter }),
+    [data.alerts, levelFilter, statusFilter, rangeFilter]
+  );
+  const activeAlerts = data.alerts.filter((alert) => alert.status !== "resolved").length;
+
+  function noteFor(alertId) {
+    return notes[alertId] ?? "";
+  }
+
+  function updateNote(alertId, value) {
+    setNotes((previous) => ({ ...previous, [alertId]: value }));
+  }
+
+  async function acknowledge(alert) {
+    const confirmed = window.confirm(`Prendere in carico l'alert ${alert.alert_id}?`);
+    if (!confirmed) return;
+    setBusy(`${alert.alert_id}:ack`);
     setError("");
     try {
-      await api.acknowledgeAlert(alertId, session);
+      await api.acknowledgeAlert(alert.alert_id, session);
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -504,11 +539,44 @@ function AlertsView({ data, session, onChanged }) {
     }
   }
 
-  async function resolve(alertId) {
-    setBusy(alertId);
+  async function resolve(alert) {
+    const note = noteFor(alert.alert_id).trim();
+    if (!note) {
+      setError("Inserisci una nota clinica prima di risolvere l'alert.");
+      return;
+    }
+    const confirmed = window.confirm(`Segnare come risolto l'alert ${alert.alert_id}?`);
+    if (!confirmed) return;
+    setBusy(`${alert.alert_id}:resolve`);
     setError("");
     try {
-      await api.resolveAlert(alertId, note, session);
+      await api.resolveAlert(alert.alert_id, note, session);
+      updateNote(alert.alert_id, "");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function createAlertTask(alert) {
+    setBusy(`${alert.alert_id}:task`);
+    setError("");
+    try {
+      await api.createTask(alert.patient_id ?? patientId, {
+        type: "alert_follow_up",
+        priority: taskPriorityForAlert(alert.level),
+        title: `Follow-up ${levelLabel(alert.level)}`,
+        instructions: `Rivedere l'alert ${alert.alert_id}: ${alert.title}.`,
+        payload: {
+          source_alert_id: alert.alert_id,
+          source_level: alert.level,
+          source_status: alert.status,
+          source_category: alert.category,
+          source_score: alertScore(alert),
+        },
+      }, session);
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -521,36 +589,108 @@ function AlertsView({ data, session, onChanged }) {
     <section className="panel">
       <div className="panel-heading">
         <h3>Alert</h3>
-        <span className="badge">{data.alerts.length} aperti o recenti</span>
+        <span className="badge">{activeAlerts} attivi</span>
+      </div>
+      <div className="alert-toolbar" aria-label="Filtri alert">
+        <label>
+          Livello
+          <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
+            <option value="all">Tutti</option>
+            <option value="yellow">Yellow</option>
+            <option value="orange">Orange</option>
+            <option value="red">Red</option>
+            <option value="technical">Technical</option>
+          </select>
+        </label>
+        <label>
+          Stato
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">Tutti</option>
+            <option value="new">Nuovi</option>
+            <option value="acknowledged">Presi in carico</option>
+            <option value="resolved">Risolti</option>
+          </select>
+        </label>
+        <label>
+          Intervallo
+          <select value={rangeFilter} onChange={(event) => setRangeFilter(event.target.value)}>
+            <option value="all">Tutto</option>
+            <option value="24h">Ultime 24 ore</option>
+            <option value="7d">Ultimi 7 giorni</option>
+          </select>
+        </label>
+        <span className="badge">{filteredAlerts.length} visibili</span>
       </div>
       {error && <p className="error-text">{error}</p>}
       {data.alerts.length === 0 ? (
         <p className="empty-text">Nessun alert pubblicabile nello scenario corrente.</p>
+      ) : filteredAlerts.length === 0 ? (
+        <p className="empty-text">Nessun alert corrisponde ai filtri selezionati.</p>
       ) : (
         <div className="alert-list">
-          {data.alerts.map((alert) => (
+          {filteredAlerts.map((alert) => {
+            const resolved = alert.status === "resolved";
+            const busyForAlert = busy.startsWith(`${alert.alert_id}:`);
+            const reasons = alertReasonList(alert);
+            return (
             <article key={alert.alert_id} className={`alert-item ${alert.level}`}>
-              <div>
-                <span className={`badge ${alert.level}`}>{levelLabel(alert.level)}</span>
+              <div className="alert-content">
+                <div className="alert-title-row">
+                  <span className={`badge ${alert.level}`}>{levelLabel(alert.level)}</span>
+                  <span className={`status-pill ${alert.status}`}>{alertStatusLabel(alert.status)}</span>
+                </div>
                 <h4>{alert.title}</h4>
                 <p>{alert.description}</p>
+                <dl className="alert-meta-grid">
+                  <Detail label="Timestamp" value={formatDateTime(alertTimestamp(alert))} />
+                  <Detail label="Score" value={scoreText(alertScore(alert))} />
+                  <Detail label="Categoria" value={alert.category ?? "n/d"} />
+                  <Detail label="Stato" value={alertStatusLabel(alert.status)} />
+                </dl>
+                {reasons.length > 0 && (
+                  <ul className="reason-list" aria-label="Motivi alert">
+                    {reasons.map((reason) => (
+                      <li key={`${alert.alert_id}-${reason}`}>{reason}</li>
+                    ))}
+                  </ul>
+                )}
+                <div className="alert-ownership">
+                  <span>
+                    Presa in carico: {alert.acknowledged_by ?? "n/d"}
+                    {alert.acknowledged_at ? ` - ${formatDateTime(alert.acknowledged_at)}` : ""}
+                  </span>
+                  <span>
+                    Risoluzione: {alert.resolved_by ?? "n/d"}
+                    {alert.resolved_at ? ` - ${formatDateTime(alert.resolved_at)}` : ""}
+                  </span>
+                </div>
                 <small>{formatDateTime(alert.opened_at)} · stato {alert.status}</small>
               </div>
               <div className="alert-actions">
-                <button className="secondary-button" type="button" disabled={busy === alert.alert_id} onClick={() => acknowledge(alert.alert_id)}>
+                <button className="secondary-button" type="button" disabled={resolved || busyForAlert} onClick={() => acknowledge(alert)}>
                   <CheckCircle2 size={16} />
                   Prendi in carico
                 </button>
                 <label className="note-field">
-                  Nota
-                  <input value={note} onChange={(event) => setNote(event.target.value)} />
+                  Nota risoluzione
+                  <textarea
+                    value={noteFor(alert.alert_id)}
+                    onChange={(event) => updateNote(alert.alert_id, event.target.value)}
+                    placeholder="Scrivi la motivazione della risoluzione"
+                    disabled={resolved}
+                  />
                 </label>
-                <button className="primary-button compact" type="button" disabled={busy === alert.alert_id} onClick={() => resolve(alert.alert_id)}>
+                <button className="primary-button compact" type="button" disabled={resolved || busyForAlert} onClick={() => resolve(alert)}>
                   Risolvi
+                </button>
+                <button className="secondary-button compact" type="button" disabled={busyForAlert} onClick={() => createAlertTask(alert)}>
+                  <ClipboardList size={16} />
+                  Crea task
                 </button>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>
@@ -658,6 +798,49 @@ function SystemView({ data, events, wsStatus }) {
       </section>
     </div>
   );
+}
+
+function filterAlerts(alerts, filters) {
+  return alerts.filter((alert) => {
+    if (filters.levelFilter !== "all" && alert.level !== filters.levelFilter) return false;
+    if (filters.statusFilter !== "all" && alert.status !== filters.statusFilter) return false;
+    if (filters.rangeFilter === "all") return true;
+
+    const timestamp = new Date(alertTimestamp(alert)).getTime();
+    if (Number.isNaN(timestamp)) return true;
+    const maxAgeMs = filters.rangeFilter === "24h" ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+    return Date.now() - timestamp <= maxAgeMs;
+  });
+}
+
+function alertTimestamp(alert) {
+  return alert.opened_at ?? alert.timestamp ?? alert.created_at ?? alert.updated_at;
+}
+
+function alertScore(alert) {
+  return alert.anomaly_score ?? alert.score ?? alert.payload?.anomaly_score ?? null;
+}
+
+function alertReasonList(alert) {
+  const rawReasons = alert.reasons ?? alert.payload?.reasons;
+  if (Array.isArray(rawReasons)) return rawReasons.filter(Boolean);
+  if (typeof rawReasons === "string" && rawReasons.trim()) return [rawReasons.trim()];
+  return alert.description ? [alert.description] : [];
+}
+
+function alertStatusLabel(status) {
+  return {
+    new: "Nuovo",
+    acknowledged: "Preso in carico",
+    resolved: "Risolto",
+  }[status] ?? status ?? "n/d";
+}
+
+function taskPriorityForAlert(level) {
+  if (level === "red") return "high";
+  if (level === "orange") return "medium";
+  if (level === "technical") return "technical";
+  return "normal";
 }
 
 function Metric({ label, value, tone }) {

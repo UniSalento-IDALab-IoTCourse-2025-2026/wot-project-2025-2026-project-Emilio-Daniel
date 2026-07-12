@@ -252,13 +252,13 @@ del backend.
 
 ### E5. Pagina alert e presa in carico
 
-- [ ] Visualizzare timestamp, livello, score, motivi e stato dell'alert.
-- [ ] Implementare filtri per livello, intervallo temporale e stato.
-- [ ] Aggiungere azione `Prendi in carico` con conferma.
-- [ ] Aggiungere azione `Risolvi` con nota obbligatoria.
-- [ ] Aggiornare la UI quando arriva un evento WebSocket di acknowledgement.
-- [ ] Mostrare chi ha preso in carico l'alert e quando.
-- [ ] Consentire dal dettaglio alert di creare un task per il paziente.
+- [x] Visualizzare timestamp, livello, score, motivi e stato dell'alert.
+- [x] Implementare filtri per livello, intervallo temporale e stato.
+- [x] Aggiungere azione `Prendi in carico` con conferma.
+- [x] Aggiungere azione `Risolvi` con nota obbligatoria.
+- [x] Aggiornare la UI quando arriva un evento WebSocket di acknowledgement.
+- [x] Mostrare chi ha preso in carico l'alert e quando.
+- [x] Consentire dal dettaglio alert di creare un task per il paziente.
 
 ### E6. Dati wearable e spaziali
 

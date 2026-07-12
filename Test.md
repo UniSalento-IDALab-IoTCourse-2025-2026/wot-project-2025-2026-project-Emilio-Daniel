@@ -1,4 +1,4 @@
-# Test completo D1-D4 ed E1-E4
+# Test completo D1-D4 ed E1-E5
 
 Questo file contiene una procedura ordinata per verificare la prima versione del sistema:
 
@@ -6,7 +6,7 @@ Questo file contiene una procedura ordinata per verificare la prima versione del
 Cloud Daniel D1-D4
 Edge/MQTT Emilio E1
 Mock backend E2
-Dashboard medico E3-E4
+Dashboard medico E3-E5
 ```
 
 L'obiettivo e' avere una prima inquadratura end-to-end: broker MQTT, backend Cloud,
@@ -973,7 +973,7 @@ legge la lista pazienti demo
 Cosa stiamo testando:
 
 ```text
-che la dashboard abbia dati realistici per E3/E4
+che la dashboard abbia dati realistici per E3/E4/E5
 ```
 
 ```powershell
@@ -1026,7 +1026,7 @@ Per tornare allo scenario normale:
 Remove-Item Env:\MOCK_SCENARIO -ErrorAction SilentlyContinue
 ```
 
-## 11. Test Emilio E3-E4 - Dashboard medico
+## 11. Test Emilio E3-E5 - Dashboard medico
 
 ### 11.1 Avviare dashboard
 
@@ -1043,7 +1043,7 @@ usa le variabili VITE_* o i default per parlare col mock backend
 Cosa stiamo testando:
 
 ```text
-E3/E4: frontend accessibile dal browser e collegato alle API mock
+E3/E4/E5: frontend accessibile dal browser e collegato alle API mock
 ```
 
 ```powershell
@@ -1135,7 +1135,138 @@ Paziente Priorita    -> red / segnale comportamentale
 Paziente Tecnico     -> technical / guasto tecnico
 ```
 
-### 11.4 Build finale Dashboard
+### 11.4 Test E5 - Pagina alert e presa in carico
+
+Prima di questo test devono essere gia' avviati:
+
+```text
+mock_backend su http://127.0.0.1:8090
+Dashboard su http://127.0.0.1:5173
+```
+
+Per vedere piu' rapidamente gli aggiornamenti realtime puoi avviare il mock con:
+
+```powershell
+$env:MOCK_WS_INTERVAL_SECONDS="2"
+cd mock_backend
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8090
+```
+
+Cosa fa:
+
+```text
+avvia il mock backend con eventi WebSocket piu' frequenti
+permette alla dashboard di ricevere eventi alert_acknowledged e alert_resolved piu' velocemente
+```
+
+Cosa stiamo testando:
+
+```text
+E5: gestione operativa degli alert, presa in carico, risoluzione con nota e task collegato
+```
+
+Aprire la dashboard:
+
+```text
+http://127.0.0.1:5173
+```
+
+Credenziali demo:
+
+```text
+doctor@example.test
+password-demo
+```
+
+Passaggi UI:
+
+```text
+selezionare Paziente Priorita
+aprire il tab Alert
+verificare timestamp, livello, score, motivi e stato
+filtrare per livello red
+filtrare per stato Nuovi
+filtrare per ultime 24 ore
+premere Prendi in carico
+confermare la finestra di conferma
+verificare che compaiano utente e timestamp di presa in carico
+provare a premere Risolvi senza nota
+verificare che la dashboard blocchi l'azione
+inserire una nota di risoluzione
+premere Risolvi e confermare
+filtrare per stato Risolti
+premere Crea task sull'alert
+aprire il tab Task
+verificare che esista un task di follow-up collegato all'alert
+```
+
+Quando e' superato:
+
+```text
+l'alert mostra stato acknowledged dopo la presa in carico
+l'alert mostra stato resolved dopo la risoluzione
+la nota e' obbligatoria
+il task compare nella sezione Task
+la dashboard si aggiorna quando arrivano eventi WebSocket compatibili
+```
+
+Test REST opzionale senza usare la UI:
+
+```powershell
+$alerts = Invoke-RestMethod http://127.0.0.1:8090/api/v1/patients/patient-004/alerts
+$alertId = $alerts.items[0].alert_id
+
+Invoke-RestMethod `
+  -Method Patch `
+  -Uri "http://127.0.0.1:8090/api/v1/alerts/$alertId/acknowledge" `
+  -ContentType "application/json" `
+  -Body '{"user_id":"doctor-test"}'
+
+Invoke-RestMethod http://127.0.0.1:8090/api/v1/patients/patient-004/alerts
+
+Invoke-RestMethod `
+  -Method Patch `
+  -Uri "http://127.0.0.1:8090/api/v1/alerts/$alertId/resolve" `
+  -ContentType "application/json" `
+  -Body '{"user_id":"doctor-test","note":"Controllo completato dal medico."}'
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8090/api/v1/patients/patient-004/tasks" `
+  -ContentType "application/json" `
+  -Body '{"type":"alert_follow_up","priority":"high","title":"Follow-up alert","instructions":"Verificare alert preso in carico.","payload":{"source_alert_id":"test"}}'
+
+Invoke-RestMethod http://127.0.0.1:8090/api/v1/patients/patient-004/tasks
+```
+
+Cosa fa:
+
+```text
+legge l'alert mock di patient-004
+lo prende in carico tramite API
+verifica che lo stato sia persistito nel mock
+lo risolve con nota obbligatoria
+crea un task manuale collegabile all'alert
+verifica che il task sia visibile nella lista task
+```
+
+Cosa stiamo testando:
+
+```text
+che i pulsanti della dashboard poggino su API reali del mock e non solo su stato locale React
+```
+
+Output atteso:
+
+```text
+status acknowledged dopo acknowledge
+acknowledged_by valorizzato
+status resolved dopo resolve
+resolved_by e resolution_note valorizzati
+task status created nella lista task
+```
+
+### 11.5 Build finale Dashboard
 
 Cosa fa:
 
@@ -1175,6 +1306,7 @@ Cosa stiamo testando:
 
 ```text
 regressioni veloci sui payload MQTT Edge e sugli endpoint principali del mock backend
+incluso il ciclo alert acknowledge/resolve usato da E5
 ```
 
 ```powershell
