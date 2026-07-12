@@ -17,7 +17,7 @@ import {
   Watch,
   Wifi,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api, clearSession, loadSession, saveSession } from "./api/client.js";
 import { readableApiError } from "./api/errors.js";
 import { openPatientSocket } from "./api/realtime.js";

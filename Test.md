@@ -12,6 +12,20 @@ Dashboard medico E3-E4
 L'obiettivo e' avere una prima inquadratura end-to-end: broker MQTT, backend Cloud,
 database, publisher Edge, mock frontend e dashboard funzionanti.
 
+## Come leggere questo file
+
+Ogni blocco di test ha sempre tre livelli:
+
+```text
+Cosa fa il comando       -> effetto tecnico sul sistema
+Cosa stiamo testando     -> requisito D/E che vogliamo verificare
+Quando e' superato       -> output o comportamento atteso
+```
+
+Questi comandi non sono la procedura finale per il paziente. Servono a noi sviluppatori
+per collaudare i pezzi uno alla volta. Nella versione finale Raspberry e servizi Cloud
+dovranno partire con script unici e servizi automatici.
+
 ## 0. Prerequisiti
 
 Sul PC devono essere disponibili:
@@ -53,6 +67,20 @@ Documenti
 
 Questo ambiente serve per Edge Node, mock backend e test locali.
 
+Cosa fa:
+
+```text
+crea l'ambiente Python principale del progetto
+installa librerie Edge Node, AI, MQTT, FastAPI mock e pytest
+isola le dipendenze dal Python globale del PC
+```
+
+Cosa stiamo testando:
+
+```text
+che il PC sia pronto a eseguire Edge Node, mock backend e test automatici
+```
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
@@ -76,6 +104,19 @@ pytest ...
 
 Il backend reale di Daniel ha un suo `.venv` separato dentro `cloud/backend`.
 
+Cosa fa:
+
+```text
+crea l'ambiente Python dedicato al backend Cloud reale
+installa FastAPI, SQLAlchemy, Alembic, PostgreSQL driver, MQTT worker e test backend
+```
+
+Cosa stiamo testando:
+
+```text
+che la parte Cloud possa essere avviata senza dipendere dall'ambiente Edge
+```
+
 ```powershell
 cd cloud\backend
 python -m venv .venv
@@ -85,6 +126,20 @@ cd ..\..
 ```
 
 ### 1.3 Dipendenze dashboard React
+
+Cosa fa:
+
+```text
+scarica le dipendenze Node della dashboard
+compila il frontend React con Vite
+verifica che JSX, import e CSS siano validi
+```
+
+Cosa stiamo testando:
+
+```text
+che la Dashboard medico possa essere costruita senza errori
+```
 
 ```powershell
 cd Dashboard
@@ -104,6 +159,19 @@ build completata
 I file reali `.env`, password e certificati non devono andare su Git.
 
 ### 2.1 Creare `.env` Cloud
+
+Cosa fa:
+
+```text
+crea i file locali con password, URL database e credenziali MQTT
+parte dagli esempi versionati ma lascia i segreti fuori da Git
+```
+
+Cosa stiamo testando:
+
+```text
+che broker, backend e database possano leggere configurazioni reali locali
+```
 
 ```powershell
 Copy-Item cloud\.env.example cloud\.env -Force
@@ -125,6 +193,20 @@ Importante: per i test locali puoi usare password semplici, ma devono combaciare
 utenti Mosquitto creati nel passaggio successivo.
 
 ### 2.2 Generare certificati TLS MQTT locali
+
+Cosa fa:
+
+```text
+genera una CA/certificato locale self-signed per Mosquitto
+abilita il listener MQTT sicuro sulla porta 8883
+abilita anche WSS sulla porta 9001
+```
+
+Cosa stiamo testando:
+
+```text
+che il broker possa accettare connessioni TLS come avverra' sul Cloud/VPS
+```
 
 ```powershell
 New-Item -ItemType Directory -Force cloud\mqtt\certs | Out-Null
@@ -159,6 +241,19 @@ server.key
 ```
 
 ### 2.3 Creare utenti Mosquitto
+
+Cosa fa:
+
+```text
+crea il file cloud/mqtt/passwd usato da Mosquitto
+aggiunge tre identita separate: Edge, backend e client di test
+```
+
+Cosa stiamo testando:
+
+```text
+che ogni componente abbia credenziali separate e non usi accesso anonimo
+```
 
 Sostituire le password con quelle scelte in `cloud\.env`.
 
@@ -197,6 +292,20 @@ D1 verifica Mosquitto, TLS, WSS, utenti, ACL, retained policy e Last Will.
 
 ### 3.1 Avviare MQTT
 
+Cosa fa:
+
+```text
+avvia il container Docker iot-mqtt
+espone MQTT locale 1883, MQTT/TLS 8883 e WSS 9001
+carica password, ACL, certificati e configurazione Mosquitto
+```
+
+Cosa stiamo testando:
+
+```text
+che il broker D1 sia vivo e raggiungibile
+```
+
 ```powershell
 cd cloud
 docker compose up -d mqtt
@@ -213,6 +322,24 @@ iot-mqtt ... running
 ### 3.2 Test automatico MQTT locale
 
 Lo script legge le password da `cloud\.env`.
+
+Cosa fa:
+
+```text
+pubblica messaggi come Edge autorizzato
+prova a pubblicare su un paziente non autorizzato
+verifica che il backend possa inviare comandi all'Edge
+simula una caduta improvvisa dell'Edge e controlla il Last Will
+testa MQTT/TLS su 8883
+testa handshake MQTT over secure WebSocket su 9001
+controlla che i retained message siano usati solo per stato corrente
+```
+
+Cosa stiamo testando:
+
+```text
+D1: sicurezza base del broker, ACL, TLS, WSS, Last Will e policy retained
+```
 
 ```powershell
 .\Script\test\test_mqtt_local.ps1
@@ -239,6 +366,20 @@ Se fallisce qui, non andare avanti: prima sistemare certificati, `passwd`, `.env
 
 Terminale dedicato:
 
+Cosa fa:
+
+```text
+avvia l'app FastAPI reale di Daniel
+espone health, ready, docs e OpenAPI sulla porta 8080
+carica la configurazione da cloud/backend/.env e variabili IOT_BACKEND_*
+```
+
+Cosa stiamo testando:
+
+```text
+D2: struttura backend FastAPI, configurazione, logging, error handling e documentazione API
+```
+
 ```powershell
 cd cloud\backend
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
@@ -249,6 +390,21 @@ Lasciare questo terminale aperto.
 ### 4.2 Verificare health, ready e OpenAPI
 
 In un secondo terminale dalla root:
+
+Cosa fa:
+
+```text
+interroga il backend reale
+verifica che il processo sia vivo
+verifica che la configurazione minima sia caricata
+verifica che FastAPI produca il contratto OpenAPI
+```
+
+Cosa stiamo testando:
+
+```text
+che la base Cloud sia raggiungibile prima di collegare MQTT/database/dashboard
+```
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/health
@@ -277,6 +433,20 @@ non completa D5 e D6.
 
 ### 5.1 Avviare PostgreSQL
 
+Cosa fa:
+
+```text
+avvia il container iot-postgres
+crea il database progetto_iot con utente iot_backend
+espone PostgreSQL sulla porta 5432
+```
+
+Cosa stiamo testando:
+
+```text
+D3: servizio database disponibile per il backend
+```
+
 ```powershell
 cd cloud
 docker compose up -d postgres
@@ -287,6 +457,20 @@ cd ..
 Attendere che `iot-postgres` sia `healthy`.
 
 ### 5.2 Applicare migrazioni Alembic
+
+Cosa fa:
+
+```text
+esegue le migrazioni versionate del backend
+crea o aggiorna le tabelle PostgreSQL
+porta lo schema DB alla versione attesa dal codice
+```
+
+Cosa stiamo testando:
+
+```text
+D3: schema database riproducibile e versionato
+```
 
 ```powershell
 cd cloud\backend
@@ -301,6 +485,19 @@ Running upgrade ... initial_schema
 ```
 
 ### 5.3 Controllare tabelle
+
+Cosa fa:
+
+```text
+entra nel container PostgreSQL
+lista le tabelle presenti nel database progetto_iot
+```
+
+Cosa stiamo testando:
+
+```text
+che Alembic abbia creato le tabelle necessarie a pazienti, Edge, finestre, decisioni, alert e task
+```
 
 ```powershell
 cd cloud
@@ -329,6 +526,23 @@ D4 verifica che il backend legga messaggi MQTT e li salvi nel database.
 
 ### 6.1 Test automatico completo MQTT -> backend -> PostgreSQL
 
+Cosa fa:
+
+```text
+avvia mqtt e postgres se non sono gia attivi
+applica le migrazioni Alembic
+avvia temporaneamente il worker MQTT del backend
+pubblica tre messaggi MQTT: finestra, decisione e alert
+verifica sul database che i tre messaggi siano stati salvati
+ferma il worker temporaneo
+```
+
+Cosa stiamo testando:
+
+```text
+D4: pipeline reale MQTT -> subscriber backend -> validazione -> PostgreSQL
+```
+
 ```powershell
 .\Script\test\test_backend_mqtt_ingest.ps1
 ```
@@ -351,6 +565,19 @@ controlla che siano salvati in PostgreSQL
 
 ### 6.2 Controllo manuale opzionale DB
 
+Cosa fa:
+
+```text
+interroga direttamente le tabelle scritte dal subscriber MQTT
+mostra gli ultimi messaggi salvati
+```
+
+Cosa stiamo testando:
+
+```text
+che i dati non siano solo ricevuti dal broker ma persistiti nel database
+```
+
 ```powershell
 cd cloud
 docker compose exec postgres psql -U iot_backend -d progetto_iot -c "select message_id, patient_id, created_at from feature_windows order by created_at desc limit 5;"
@@ -365,6 +592,20 @@ E1 verifica che il Raspberry/Edge pubblichi gli output locali su MQTT senza romp
 ciclo locale.
 
 ### 7.1 Preparare `edge_node/config/edge.yml`
+
+Cosa fa:
+
+```text
+abilita il publisher MQTT dell'Edge
+imposta host, porta TLS, utente Edge, CA file e coda locale
+lascia la password fuori dal file usando MQTT_EDGE_PASSWORD
+```
+
+Cosa stiamo testando:
+
+```text
+E1: configurazione Edge pronta per pubblicare verso il broker di Daniel
+```
 
 Se non esiste:
 
@@ -397,6 +638,22 @@ $env:MQTT_EDGE_PASSWORD="PASSWORD_EDGE"
 
 ### 7.2 Test unitari Edge MQTT
 
+Cosa fa:
+
+```text
+testa la costruzione dei payload MQTT Edge
+verifica che nan diventi null
+verifica topic e QoS dei messaggi
+verifica che alerts/critical venga creato solo con should_publish=true
+verifica la coda locale su disco
+```
+
+Cosa stiamo testando:
+
+```text
+E1: messaggi Edge coerenti con contratto MQTT e tolleranza a broker non disponibile
+```
+
 ```powershell
 cd edge_node
 ..\.venv\Scripts\python.exe -m pytest tests\test_edge_mqtt.py
@@ -412,6 +669,20 @@ Output atteso:
 ### 7.3 Generare payload MQTT senza pubblicare
 
 Serve per verificare topic, QoS, `message_id`, `schema_version` e conversione `nan -> null`.
+
+Cosa fa:
+
+```text
+legge last-cycle.json, latest_window.csv e patient-001-decision.json
+costruisce i messaggi MQTT
+li stampa a schermo senza connettersi al broker
+```
+
+Cosa stiamo testando:
+
+```text
+che il contenuto pubblicabile sia corretto prima di inviarlo davvero
+```
 
 ```powershell
 cd edge_node
@@ -429,6 +700,21 @@ eventuale topic iot/patients/patient-001/alerts/critical solo se should_publish=
 ```
 
 ### 7.4 Pubblicare davvero su MQTT
+
+Cosa fa:
+
+```text
+connette l'Edge al broker MQTT/TLS
+pubblica edge/status, telemetry/window e telemetry/decision
+pubblica alerts/critical solo se la decisione lo richiede
+se il broker non risponde, salva i messaggi nella coda locale
+```
+
+Cosa stiamo testando:
+
+```text
+E1: pubblicazione reale dell'Edge senza interrompere il ciclo locale
+```
 
 Assicurarsi che il broker sia attivo:
 
@@ -463,6 +749,18 @@ Questo passaggio collega Edge Publisher e backend subscriber.
 
 ### 8.1 Avviare servizi Cloud
 
+Cosa fa:
+
+```text
+prepara il lato Cloud completo: broker, database e schema aggiornato
+```
+
+Cosa stiamo testando:
+
+```text
+che il backend abbia tutto il necessario per ricevere cio' che pubblica l'Edge
+```
+
 ```powershell
 cd cloud
 docker compose up -d mqtt postgres
@@ -471,6 +769,20 @@ cd ..\cloud\backend
 ```
 
 ### 8.2 Avviare subscriber backend
+
+Cosa fa:
+
+```text
+avvia il worker MQTT del backend reale
+si iscrive ai topic Edge
+resta in ascolto di finestre, decisioni, alert e stati sensori
+```
+
+Cosa stiamo testando:
+
+```text
+che Daniel D4 sia pronto a ricevere messaggi pubblicati da Emilio E1
+```
 
 Terminale dedicato:
 
@@ -483,6 +795,19 @@ Lasciare aperto.
 
 ### 8.3 Pubblicare dal modulo Edge
 
+Cosa fa:
+
+```text
+usa i file locali dell'Edge come sorgente
+pubblica gli eventi sul broker con l'utente edge_patient_001
+```
+
+Cosa stiamo testando:
+
+```text
+integrazione E1 -> D1 -> D4
+```
+
 In un altro terminale:
 
 ```powershell
@@ -493,6 +818,18 @@ cd ..
 ```
 
 ### 8.4 Verificare salvataggio su PostgreSQL
+
+Cosa fa:
+
+```text
+controlla le tabelle scritte dal worker dopo la pubblicazione Edge
+```
+
+Cosa stiamo testando:
+
+```text
+che il messaggio pubblicato dall'Edge arrivi fino al database Cloud
+```
 
 ```powershell
 cd cloud
@@ -520,6 +857,23 @@ receiver Android/BLE + runtime ogni 4 minuti + baseline automatica + MQTT se abi
 
 Terminale dedicato:
 
+Cosa fa:
+
+```text
+avvia in un solo comando il receiver HTTP per l'app Android
+avvia il runtime Edge in loop ogni 240 secondi
+aggrega BLE, Google Health e altri dati configurati
+produce latest_window.csv, decision JSON e last-cycle.json
+gestisce baseline automatica e training personale quando pronto
+pubblica su MQTT se mqtt.enabled=true
+```
+
+Cosa stiamo testando:
+
+```text
+che il Raspberry possa essere usato con un comando unico, senza lanciare pezzi separati
+```
+
 ```powershell
 .\Script\avvio\avviaSistema.ps1
 ```
@@ -536,6 +890,19 @@ INFO: Edge runtime loop started
 ```
 
 ### 9.2 Verificare file locali prodotti
+
+Cosa fa:
+
+```text
+legge i principali output locali dell'Edge
+controlla finestra aggregata, stato ciclo, decisione AI e qualita dati
+```
+
+Cosa stiamo testando:
+
+```text
+che l'Edge continui a funzionare anche localmente e offline, indipendentemente dal Cloud
+```
 
 Dopo almeno un ciclo:
 
@@ -572,6 +939,19 @@ ancora D5/D6 completi.
 
 Terminale dedicato:
 
+Cosa fa:
+
+```text
+avvia un backend finto sulla porta 8090
+simula le API REST e WebSocket che Daniel esporra' con D5/D6
+```
+
+Cosa stiamo testando:
+
+```text
+E2: sviluppo della dashboard anche se il backend reale non ha ancora tutte le API
+```
+
 ```powershell
 cd mock_backend
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8090
@@ -582,6 +962,19 @@ Lasciare aperto.
 ### 10.2 Verificare health e pazienti
 
 In un altro terminale:
+
+Cosa fa:
+
+```text
+verifica che il mock sia vivo
+legge la lista pazienti demo
+```
+
+Cosa stiamo testando:
+
+```text
+che la dashboard abbia dati realistici per E3/E4
+```
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8090/health
@@ -598,6 +991,19 @@ lista con 5 pazienti: green, yellow, orange, red, technical
 ### 10.3 Test scenari mock
 
 Chiudere e riavviare il mock cambiando scenario:
+
+Cosa fa:
+
+```text
+cambia il comportamento del mock backend
+permette di provare routine, alert severo, problema tecnico e dati mancanti
+```
+
+Cosa stiamo testando:
+
+```text
+che la dashboard gestisca scenari diversi senza cambiare codice frontend
+```
 
 ```powershell
 $env:MOCK_SCENARIO="normal"
@@ -626,6 +1032,20 @@ Remove-Item Env:\MOCK_SCENARIO -ErrorAction SilentlyContinue
 
 Terminale dedicato:
 
+Cosa fa:
+
+```text
+avvia il server Vite della dashboard medico
+serve React sulla porta 5173
+usa le variabili VITE_* o i default per parlare col mock backend
+```
+
+Cosa stiamo testando:
+
+```text
+E3/E4: frontend accessibile dal browser e collegato alle API mock
+```
+
 ```powershell
 cd Dashboard
 npm run dev
@@ -646,6 +1066,18 @@ password-demo
 
 ### 11.2 Test E3 - Struttura navigabile
 
+Cosa fa:
+
+```text
+verifica il flusso utente base della dashboard medico
+```
+
+Cosa stiamo testando:
+
+```text
+login, sessione, navigazione, tab principali, error handling e WebSocket client
+```
+
 Verificare:
 
 ```text
@@ -661,6 +1093,18 @@ logout funzionante
 ```
 
 ### 11.3 Test E4 - Overview e lista pazienti
+
+Cosa fa:
+
+```text
+verifica la vista operativa iniziale del medico
+```
+
+Cosa stiamo testando:
+
+```text
+ordinamento pazienti, filtri, semafori, stato stanza/watch/edge, dato obsoleto e distinzione tecnico-comportamentale
+```
 
 Verificare:
 
@@ -693,6 +1137,18 @@ Paziente Tecnico     -> technical / guasto tecnico
 
 ### 11.4 Build finale Dashboard
 
+Cosa fa:
+
+```text
+compila la dashboard in modalita produzione
+```
+
+Cosa stiamo testando:
+
+```text
+che la dashboard non abbia errori di import/JSX/CSS prima di versionarla o consegnarla
+```
+
 ```powershell
 cd Dashboard
 npm run build
@@ -709,12 +1165,36 @@ build completata
 
 Da root progetto:
 
+Cosa fa:
+
+```text
+esegue i test Python automatici di Edge e mock backend
+```
+
+Cosa stiamo testando:
+
+```text
+regressioni veloci sui payload MQTT Edge e sugli endpoint principali del mock backend
+```
+
 ```powershell
 .\.venv\Scripts\python.exe -m pytest edge_node\tests
 .\.venv\Scripts\python.exe -m pytest mock_backend\tests
 ```
 
 Da backend Cloud:
+
+Cosa fa:
+
+```text
+esegue i test automatici scritti da Daniel sul backend reale
+```
+
+Cosa stiamo testando:
+
+```text
+health backend, schema database e ingestione MQTT a livello unitario
+```
 
 ```powershell
 cd cloud\backend
@@ -743,6 +1223,12 @@ Questa e' la sequenza piu' comoda per vedere tutto senza rifare ogni volta la pr
 
 ### Terminale 1 - Docker Cloud
 
+Cosa fa:
+
+```text
+tiene accesi broker MQTT e database PostgreSQL
+```
+
 ```powershell
 cd cloud
 docker compose up -d mqtt postgres
@@ -750,6 +1236,12 @@ cd ..
 ```
 
 ### Terminale 2 - Backend Cloud reale
+
+Cosa fa:
+
+```text
+applica migrazioni e avvia API/documentazione backend su 8080
+```
 
 ```powershell
 cd cloud\backend
@@ -759,6 +1251,12 @@ cd cloud\backend
 
 ### Terminale 3 - Subscriber MQTT reale
 
+Cosa fa:
+
+```text
+ascolta i messaggi MQTT Edge e li salva nel database
+```
+
 ```powershell
 cd cloud\backend
 .\.venv\Scripts\python.exe -m app.mqtt.worker
@@ -766,12 +1264,24 @@ cd cloud\backend
 
 ### Terminale 4 - Edge completo
 
+Cosa fa:
+
+```text
+avvia receiver Android/BLE e runtime Edge automatico
+```
+
 ```powershell
 $env:MQTT_EDGE_PASSWORD="PASSWORD_EDGE"
 .\Script\avvio\avviaSistema.ps1
 ```
 
 ### Terminale 5 - Mock backend per dashboard
+
+Cosa fa:
+
+```text
+fornisce API REST/WebSocket simulate alla dashboard
+```
 
 Finche' D5/D6 non sono completi, la dashboard usa il mock:
 
@@ -781,6 +1291,12 @@ cd mock_backend
 ```
 
 ### Terminale 6 - Dashboard
+
+Cosa fa:
+
+```text
+avvia l'interfaccia medico in React
+```
 
 ```powershell
 cd Dashboard
