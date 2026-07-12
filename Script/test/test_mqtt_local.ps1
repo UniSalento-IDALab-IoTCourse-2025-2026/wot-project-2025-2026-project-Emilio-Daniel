@@ -79,27 +79,28 @@ try {
         -r -n `
         -t "iot/patients/patient-001/edge/status"
 
-    $willResult = docker compose exec -T `
-        -e BACKEND_PASSWORD=$BackendPassword `
-        -e EDGE_PASSWORD=$EdgePassword `
-        mqtt sh -c @'
-cat > /tmp/test_will.sh <<'EOF'
-#!/bin/sh
+    $willScript = @'
 set -eu
 WILL='{"schema_version":1,"message_id":"script-will-001","event_type":"edge_offline_unexpected","patient_id":"patient-001","edge_id":"edge-rpi5-001","timestamp":"2026-07-10T10:00:00Z","payload":{"online":false,"reason":"mqtt_last_will"}}'
-mosquitto_sub -h localhost -p 1883 -u backend -P "$BACKEND_PASSWORD" -C 1 -W 12 -t 'iot/patients/patient-001/edge/status' -v > /tmp/will_backend.out 2>&1 &
+rm -f /tmp/will_backend.out /tmp/will_edge.out
+mosquitto_sub -h localhost -p 1883 -u backend -P "$BACKEND_PASSWORD" -C 1 -W 15 -t 'iot/patients/patient-001/edge/status' -v > /tmp/will_backend.out 2>&1 &
 subpid=$!
 sleep 1
 mosquitto_sub -h localhost -p 1883 -u edge_patient_001 -P "$EDGE_PASSWORD" -i edge_will_test --will-topic 'iot/patients/patient-001/edge/status' --will-payload "$WILL" --will-qos 1 -t 'iot/patients/patient-001/commands/#' > /tmp/will_edge.out 2>&1 &
 edgepid=$!
 sleep 2
-kill -9 $edgepid
+kill -9 $edgepid || true
 wait $subpid || true
-cat /tmp/will_backend.out
-rm -f /tmp/will_backend.out /tmp/will_edge.out /tmp/test_will.sh
-EOF
-sh /tmp/test_will.sh
+cat /tmp/will_backend.out || true
+echo '---EDGE-LAST-WILL-CLIENT---'
+cat /tmp/will_edge.out || true
+rm -f /tmp/will_backend.out /tmp/will_edge.out
 '@
+    $willScript = $willScript -replace "`r", ""
+    $willResult = $willScript | docker compose exec -T `
+        -e BACKEND_PASSWORD=$BackendPassword `
+        -e EDGE_PASSWORD=$EdgePassword `
+        mqtt sh
     if (-not ($willResult -match "edge_offline_unexpected")) {
         throw "Last Will was not received by backend."
     }
