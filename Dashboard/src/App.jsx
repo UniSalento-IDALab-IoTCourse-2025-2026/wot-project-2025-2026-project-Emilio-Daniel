@@ -129,9 +129,12 @@ function Dashboard({ session, onLogout }) {
     }
   }
 
-  async function loadPatientData(patientId) {
+  async function loadPatientData(patientId, options = {}) {
     if (!patientId) return;
-    setState({ loading: true, error: "", data: null });
+    const background = options.background === true;
+    if (!background) {
+      setState({ loading: true, error: "", data: null });
+    }
     try {
       const [current, windows, decisions, alerts, tasks, system] = await Promise.all([
         api.current(patientId, session),
@@ -154,7 +157,11 @@ function Dashboard({ session, onLogout }) {
         },
       });
     } catch (error) {
-      setState({ loading: false, error: readableApiError(error), data: null });
+      if (background) {
+        setState((previous) => ({ ...previous, loading: false }));
+      } else {
+        setState({ loading: false, error: readableApiError(error), data: null });
+      }
     }
   }
 
@@ -182,7 +189,7 @@ function Dashboard({ session, onLogout }) {
             "system_status_updated",
           ].includes(event.event_type)
         ) {
-          loadPatientData(selectedPatientId);
+          loadPatientData(selectedPatientId, { background: true });
         }
       },
     });
