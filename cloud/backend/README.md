@@ -5,7 +5,7 @@ Backend FastAPI unico per dashboard medico, app paziente, caregiver e integrazio
 ## Scopo
 
 Questa cartella contiene il backend Cloud del progetto. Al momento copre i blocchi D2,
-D3, D4, D5, D6, D7 e D8 della scaletta di Daniel:
+D3, D4, D5, D6, D7, D8 e D9 della scaletta di Daniel:
 
 ```text
 MQTT broker -> backend -> database -> dashboard/app
@@ -21,6 +21,7 @@ D5 -> API REST reali per dashboard e app
 D6 -> WebSocket realtime verso dashboard
 D7 -> autenticazione, autorizzazione per ruolo e audit
 D8 -> logica alert, presa in carico e alert automatici da decisioni AI
+D9 -> task clinici, risultati, scadenze e scoring controllato
 ```
 
 ## Struttura
@@ -284,4 +285,4 @@ Get-Content backups\progetto_iot_backup.sql | docker compose exec -T postgres ps
 
 ## Prossimi passi
 
-- D9: completare task clinici, risultati, scadenze e regole di scoring.
+- D10: integrare Firebase Cloud Messaging o modalita' fake per notifiche push.

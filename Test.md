@@ -1451,7 +1451,8 @@ utile per simulare scenari controllati.
 
 ## 14. Usare backend reale D5/D6/D7/D8
 
-Le REST reali D5, il WebSocket reale D6, l'auth D7 e gli alert automatici D8 sono disponibili. Modificare la Dashboard per
+Le REST reali D5, il WebSocket reale D6, l'auth D7, gli alert automatici D8 e i task
+D9 sono disponibili. Modificare la Dashboard per
 puntare interamente al backend reale.
 
 Creare o modificare `Dashboard\.env`:
@@ -1467,6 +1468,13 @@ Per verificare D8 lato backend:
 ```powershell
 cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend
 .\.venv\Scripts\python -m pytest tests\test_mqtt_ingest.py
+```
+
+Per verificare D9 lato backend:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend
+.\.venv\Scripts\python -m pytest tests\test_d9_tasks.py
 ```
 
 Riavviare Vite:

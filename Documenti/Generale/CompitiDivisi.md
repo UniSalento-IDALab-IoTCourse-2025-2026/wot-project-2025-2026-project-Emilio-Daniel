@@ -411,6 +411,12 @@ minimi e verificabili.
 - [x] Validare input, scadenze e transizioni di stato dei task.
 - [x] Pubblicare esempi OpenAPI utilizzabili da Emilio.
 - [x] Scrivere test di autorizzazione per ogni ruolo.
+- [ ] Implementare endpoint profilo corrente `GET /api/v1/auth/me`.
+- [ ] Implementare endpoint admin per creare pazienti.
+- [ ] Implementare endpoint admin per creare utenti doctor, caregiver, patient e admin.
+- [ ] Implementare endpoint admin per associare utenti ai pazienti autorizzati.
+- [ ] Estendere paginazione con `page` e `page_size` coerenti su tutte le liste.
+- [ ] Aggiungere filtri task per tipo, scadenza e priorita'.
 
 ### D6. WebSocket realtime
 
@@ -421,6 +427,9 @@ minimi e verificabili.
 - [x] Evitare perdita del servizio quando un client e' lento.
 - [x] Documentare riconnessione e recupero degli eventi persi tramite REST.
 - [x] Testare piu' client collegati allo stesso paziente.
+- [ ] Implementare ping/pong applicativo esplicito per verificare client vivi.
+- [ ] Documentare e testare recupero eventi persi dopo riconnessione tramite REST.
+- [ ] Documentare in modo esplicito evento `task_completed`.
 
 ### D7. Autenticazione, autorizzazione e audit
 
@@ -432,6 +441,11 @@ minimi e verificabili.
 - [x] Non registrare password, token Google Health o token FCM nei log.
 - [x] Preparare utenti demo separati per Emilio e Daniel.
 - [x] Documentare come revocare un dispositivo smarrito.
+- [ ] Implementare cambio password utente.
+- [ ] Implementare revoca refresh token per dispositivo/sessione specifica.
+- [ ] Salvare `last_login_at` sugli utenti.
+- [ ] Registrare audit dei login falliti senza salvare password.
+- [ ] Aggiungere rate limit base sul login.
 
 ### D8. Logica alert e presa in carico
 
@@ -443,17 +457,29 @@ minimi e verificabili.
 - [x] Inviare aggiornamenti WebSocket dopo ogni cambiamento.
 - [x] Definire quali livelli vengono notificati a medico e caregiver.
 - [x] Mantenere separati alert clinical/behavioral e technical.
+- [ ] Aggiungere anti-spam per non creare alert simili gia' aperti da poco.
+- [ ] Separare severita' clinica da severita' tecnica.
+- [ ] Aggiungere campo sorgente alert: `ai`, `edge`, `manual`, `system`.
+- [ ] Implementare escalation se un alert resta `new` troppo a lungo.
+- [ ] Definire destinatari diversi per alert clinici, comportamentali e tecnici.
 
 ### D9. Task, test e risultati
 
-- [ ] Implementare creazione, invio, visualizzazione, completamento e scadenza dei task.
-- [ ] Validare che solo il medico possa creare determinati test clinici.
-- [ ] Salvare contenuto del task con versione per mantenere lo storico.
-- [ ] Impedire risultati duplicati per lo stesso completamento.
-- [ ] Calcolare score solo quando la regola del test e' definita e verificata.
-- [ ] Inviare evento WebSocket quando il risultato viene ricevuto.
-- [ ] Rendere disponibili task e risultati tramite API filtrate per ruolo.
-- [ ] Conservare un audit delle modifiche e delle note del medico.
+- [x] Implementare creazione, invio, visualizzazione, completamento e scadenza dei task.
+- [x] Validare che solo il medico possa creare determinati test clinici.
+- [x] Salvare contenuto del task con versione per mantenere lo storico.
+- [x] Impedire risultati duplicati per lo stesso completamento.
+- [x] Calcolare score solo quando la regola del test e' definita e verificata.
+- [x] Inviare evento WebSocket quando il risultato viene ricevuto.
+- [x] Rendere disponibili task e risultati tramite API filtrate per ruolo.
+- [x] Conservare un audit delle modifiche e delle note del medico.
+- [x] Implementare annullamento task non ancora completato.
+- [x] Supportare stato `cancelled`.
+- [x] Aggiornare o calcolare automaticamente stato `expired`.
+- [x] Assegnare task a destinatario specifico: paziente o caregiver.
+- [x] Restituire dettagli score, ad esempio `correct`, `total` e motivazione.
+- [x] Salvare note medico associate al task.
+- [x] Strutturare risultati diversi per tipo test.
 
 ### D10. Firebase Cloud Messaging
 

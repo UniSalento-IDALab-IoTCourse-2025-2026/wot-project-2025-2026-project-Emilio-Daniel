@@ -8,6 +8,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.api.routes.utils import event_note_payload, paginated, utc_iso
+from app.api.routes.task_rules import effective_task_status, validate_task_creation_payload
 from app.auth.dependencies import (
     CurrentUser,
     authorized_patient_ids,
@@ -145,9 +146,10 @@ def create_patient_task(
         raise HTTPException(status_code=403, detail="Only doctor or admin can create patient tasks.")
     get_patient_or_404(db, patient_id)
     title = str(payload.get("title") or "").strip()
-    task_type = str(payload.get("type") or payload.get("task_type") or "").strip()
+    task_type = str(payload.get("type") or payload.get("task_type") or "").strip().lower()
     if not title or not task_type:
         raise HTTPException(status_code=422, detail="Task title and type are required.")
+    normalized_task_payload = validate_task_creation_payload(task_type, payload, current_user.role)
     task = Task(
         patient_id=patient_id,
         created_by_user_id=current_user.id,
@@ -156,11 +158,7 @@ def create_patient_task(
         title=title,
         instructions=payload.get("instructions"),
         due_at=parse_datetime(payload.get("due_at") or payload.get("expires_at")),
-        payload={
-            "priority": payload.get("priority", "normal"),
-            "expires_at": payload.get("expires_at"),
-            "content": payload.get("payload", {}),
-        },
+        payload=normalized_task_payload,
     )
     db.add(task)
     write_audit(
@@ -407,14 +405,18 @@ def task_payload(task: Task) -> dict[str, Any]:
     return {
         "task_id": f"task-{task.id}",
         "patient_id": task.patient_id,
-        "status": task.status,
+        "status": effective_task_status(task.status, task.due_at),
         "type": task.task_type,
+        "schema_version": payload.get("schema_version", 1),
         "priority": payload.get("priority", "normal"),
+        "assigned_to": payload.get("assigned_to", "patient"),
         "title": task.title,
         "instructions": task.instructions,
+        "medical_note": payload.get("medical_note"),
         "due_at": utc_iso(task.due_at),
         "expires_at": payload.get("expires_at") or utc_iso(task.due_at),
         "payload": payload.get("content", payload),
+        "scoring": payload.get("scoring"),
         "created_at": utc_iso(task.created_at),
     }
 
