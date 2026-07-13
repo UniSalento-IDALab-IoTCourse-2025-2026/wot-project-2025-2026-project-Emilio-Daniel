@@ -573,11 +573,12 @@ function AlertsView({ data, session, patientId, onChanged }) {
     setError("");
     try {
       await api.createTask(alert.patient_id ?? patientId, {
-        type: "alert_follow_up",
+        type: "custom",
         priority: taskPriorityForAlert(alert.level),
         title: `Follow-up ${levelLabel(alert.level)}`,
         instructions: `Rivedere l'alert ${alert.alert_id}: ${alert.title}.`,
         payload: {
+          workflow: "alert_follow_up",
           source_alert_id: alert.alert_id,
           source_level: alert.level,
           source_status: alert.status,
