@@ -1208,6 +1208,7 @@ l'alert mostra stato resolved dopo la risoluzione
 la nota e' obbligatoria
 il task compare nella sezione Task
 la dashboard si aggiorna quando arrivano eventi WebSocket compatibili
+mentre si scrive la nota, il refresh realtime non cancella il testo inserito
 ```
 
 Test REST opzionale senza usare la UI:
