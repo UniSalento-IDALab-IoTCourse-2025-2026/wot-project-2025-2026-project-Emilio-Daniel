@@ -57,9 +57,10 @@ La dashboard usa solo queste variabili per passare da mock a backend reale.
 - Lista pazienti ordinata per severita'.
 - Dettaglio paziente con stato corrente e ultime finestre.
 - Grafici wearable/spaziali con intervallo giornaliero o settimanale.
+- Valutazione comportamentale con sintesi clinica, contributo delle fonti, fattori principali e avanzamento del profilo personale.
 - Alert con presa in carico e risoluzione.
 - Task con creazione check-in dimostrativo.
-- Stato sistema con Edge, Watch, BLE, Google Health e WebSocket.
+- Stato tecnico del sistema con ultimo ciclo Edge, durata finestra, sensori, Google Health/OAuth, MQTT, coda locale e distinzione warning/guasti.
 
 ## Nota clinica
 

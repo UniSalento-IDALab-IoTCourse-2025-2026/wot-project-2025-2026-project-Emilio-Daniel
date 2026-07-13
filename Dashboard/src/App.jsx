@@ -2,17 +2,23 @@ import {
   Activity,
   AlertTriangle,
   ArrowDownUp,
+  BrainCircuit,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   ClipboardList,
+  Gauge,
   HeartPulse,
   Home,
+  Info,
   LogOut,
+  MapPin,
   MonitorCog,
   RefreshCcw,
   Server,
   ShieldCheck,
   Stethoscope,
+  UserRoundCheck,
   Users,
   Watch,
   Wifi,
@@ -245,13 +251,13 @@ function Dashboard({ session, onLogout }) {
                   <strong>{patient.display_name}</strong>
                   <small className="patient-meta-line">
                     <Home size={13} />
-                    {patient.current_room ?? "stanza n/d"}
+                    {roomLabel(patient.current_room)}
                   </small>
                   <small className="patient-meta-line">
                     <Watch size={13} />
-                    {patient.watch_present ? "watch ok" : "watch assente"}
+                    {patient.watch_present ? "wearable presente" : "wearable non rilevato"}
                     <Server size={13} />
-                    {patient.edge_online ? "edge online" : "edge offline"}
+                    {patient.edge_online ? "Raspberry online" : "Raspberry offline"}
                   </small>
                   <small className="patient-meta-line">
                     <span className={`signal-chip ${signalKind(patient)}`}>
@@ -259,7 +265,6 @@ function Dashboard({ session, onLogout }) {
                     </span>
                     {isStale(patient.last_update) && <span className="stale-chip">obsoleto</span>}
                   </small>
-                  <small>{levelLabel(patient.level)} · {patient.current_room ?? "stanza n/d"}</small>
                 </span>
               </button>
             ))}
@@ -454,10 +459,14 @@ function PatientView({ data }) {
         </div>
         <div className="metric-row">
           <Metric label="Livello" value={levelLabel(current.level)} tone={current.level} />
-          <Metric label="Score" value={scoreText(current.anomaly_score)} />
-          <Metric label="Stanza" value={current.current_room ?? "n/d"} />
-          <Metric label="Ultimo update" value={formatDateTime(current.last_update)} />
+          <Metric label="Indice di scostamento" value={scoreText(current.anomaly_score)} />
+          <Metric label="Stanza" value={roomLabel(current.current_room)} />
+          <Metric label="Ultimo aggiornamento" value={formatDateTime(current.last_update)} />
         </div>
+      </section>
+
+      <section className="panel span-2">
+        <AiExplanationPanel decision={latestDecision} system={data.system} current={current} />
       </section>
 
       <section className="panel span-2">
@@ -495,19 +504,6 @@ function PatientView({ data }) {
         </dl>
       </section>
 
-      <section className="panel">
-        <h3>Ultima decisione AI</h3>
-        {latestDecision ? (
-          <dl className="detail-list">
-            <Detail label="Modello" value={latestDecision.model_label} />
-            <Detail label="Score" value={scoreText(latestDecision.anomaly_score)} />
-            <Detail label="Finestra" value={`${formatDateTime(latestDecision.window_start)} - ${formatDateTime(latestDecision.window_end)}`} />
-          </dl>
-        ) : (
-          <p className="empty-text">Nessuna decisione disponibile.</p>
-        )}
-      </section>
-
       <section className="panel span-2">
         <h3>Finestre recenti</h3>
         <div className="table-wrap">
@@ -535,6 +531,313 @@ function PatientView({ data }) {
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+function AiExplanationPanel({ decision, system, current }) {
+  const fusion = fusionFromDecision(decision);
+  const models = modelSummaries(fusion);
+  const baseline = baselineFromSystem(system);
+  const finalScore = decision?.anomaly_score ?? current?.anomaly_score;
+  const finalLevel = decision?.level ?? current?.level;
+  const personalModel = fusion?.models?.personal;
+  const personalAvailable = personalModel?.available === true || system?.ai?.personal_model_available === true;
+  const activeModels = models.filter((model) => model.available).length;
+
+  if (!decision) {
+    return (
+      <div>
+        <div className="panel-heading">
+          <h3>Valutazione comportamentale</h3>
+          <span className="badge">Supporto al triage</span>
+        </div>
+        <p className="empty-text">La valutazione non e' ancora disponibile per questo paziente.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ai-explanation">
+      <div className="ai-title-row">
+        <div className="ai-title-icon"><BrainCircuit size={20} /></div>
+        <div className="ai-title-copy">
+          <h3>Valutazione comportamentale</h3>
+          <p>Una lettura sintetica dei dati disponibili a supporto del triage clinico.</p>
+        </div>
+        <span className={`clinical-level-badge ${finalLevel}`}>{levelLabel(finalLevel)}</span>
+      </div>
+
+      <section className={`clinical-ai-summary ${finalLevel}`}>
+        <ScoreGauge score={finalScore} level={finalLevel} />
+        <div className="clinical-summary-copy">
+          <span className="clinical-kicker">Valutazione corrente</span>
+          <h4>{decisionHeadline(finalLevel)}</h4>
+          <p>{clinicalDecisionSummary(models, finalLevel)}</p>
+          <div className="clinical-summary-meta">
+            <span><Clock3 size={15} /> {formatAnalysisWindow(decision.window_start, decision.window_end)}</span>
+            <span><Gauge size={15} /> {activeModels} {activeModels === 1 ? "fonte attiva" : "fonti attive"}</span>
+          </div>
+        </div>
+        <div className="clinical-safety-note">
+          <ShieldCheck size={19} />
+          <div>
+            <strong>Supporto alla decisione</strong>
+            <span>La valutazione finale resta al medico.</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="ai-section-block">
+        <div className="ai-section-heading">
+          <div>
+            <h4>Contributo delle fonti</h4>
+            <p>Ogni indice misura quanto i dati si discostano dal proprio riferimento.</p>
+          </div>
+          {!personalAvailable && <span className="soft-status"><UserRoundCheck size={14} /> Profilo in preparazione</span>}
+        </div>
+        <div className="model-score-list">
+          {models.map((model) => <ModelScoreCard key={model.key} model={model} />)}
+        </div>
+      </section>
+
+      <div className="ai-support-grid">
+        <section className="ai-support-section">
+          <div className="ai-section-heading compact-heading">
+            <div>
+              <h4>Composizione dell'indice</h4>
+              <p>Incidenza attuale di ciascuna fonte sul risultato complessivo.</p>
+            </div>
+          </div>
+          <FusionWeights weights={fusion?.weights} personalAvailable={personalAvailable} />
+        </section>
+
+        <section className="ai-support-section baseline-section">
+          <div className="ai-section-heading compact-heading">
+            <div>
+              <h4>Profilo personale</h4>
+              <p>Apprendimento della routine specifica del paziente.</p>
+            </div>
+          </div>
+          <BaselineProgress baseline={baseline} personalAvailable={personalAvailable} />
+        </section>
+      </div>
+
+      <section className="ai-section-block factors-section">
+        <div className="ai-section-heading">
+          <div>
+            <h4>Fattori che hanno inciso maggiormente</h4>
+            <p>Indicatori ordinati per distanza dal riferimento utilizzato dal sistema.</p>
+          </div>
+          <span className="soft-status"><Info size={14} /> Dati disponibili</span>
+        </div>
+        <ClinicalFactors models={models} />
+      </section>
+
+      <section className="decision-rationale">
+        <div className="decision-rationale-icon"><CheckCircle2 size={18} /></div>
+        <div>
+          <h4>Come leggere il risultato</h4>
+          <ul className="reason-list clinical-reasons">
+            {(decision.reasons?.length ? decision.reasons : fusion?.reasons ?? []).map((reason) => (
+              <li key={reason}>{decisionReasonLabel(reason)}</li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ScoreGauge({ score, level }) {
+  const boundedScore = Math.min(100, Math.max(0, Number(score) || 0));
+  return (
+    <div className={`score-gauge ${level}`} style={{ "--score": boundedScore }} aria-label={`Indice di scostamento ${scoreText(score)} su 100`}>
+      <div className="score-gauge-inner">
+        <strong>{scoreText(score)}</strong>
+        <span>su 100</span>
+      </div>
+    </div>
+  );
+}
+
+function ModelScoreCard({ model }) {
+  const Icon = model.icon;
+  const score = Math.min(100, Math.max(0, Number(model.score) || 0));
+  return (
+    <article className={`model-score-card ${model.key} ${model.available ? "" : "unavailable"}`}>
+      <div className="model-score-icon"><Icon size={19} /></div>
+      <div className="model-score-content">
+        <div className="model-score-title">
+          <div>
+            <strong>{model.label}</strong>
+            <small>{model.description}</small>
+          </div>
+          <span className={`model-status ${modelStatusTone(model)}`}>{modelStatusLabel(model)}</span>
+        </div>
+        {model.available ? (
+          <div className="model-score-value">
+            <div className="model-score-track"><span style={{ width: `${score}%` }} /></div>
+            <strong>{scoreText(model.score)} <small>/ 100</small></strong>
+          </div>
+        ) : (
+          <p className="model-unavailable-copy">Sara disponibile al termine della baseline personale.</p>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function FusionWeights({ weights, personalAvailable }) {
+  const entries = modelOrder.map((model) => ({
+    key: model.key,
+    label: model.label,
+    weight: normalizeWeight(weights?.[model.key]),
+  }));
+  const hasWeights = entries.some((entry) => entry.weight !== null);
+
+  return (
+    <div className="fusion-weight-list">
+      {hasWeights ? entries.map((entry) => (
+        <div key={entry.key} className={`fusion-weight-row ${entry.key}`}>
+          <span>{entry.label}</span>
+          <div className="weight-track">
+            <span style={{ width: `${entry.weight ?? 0}%` }} />
+          </div>
+          <strong>{entry.weight === null ? "n/d" : `${entry.weight.toFixed(0)}%`}</strong>
+        </div>
+      )) : <p className="empty-text">Pesi non disponibili nel payload corrente.</p>}
+      <div className="future-weight-note">
+        <UserRoundCheck size={18} />
+        <p>
+          <strong>Dopo la baseline:</strong> routine negli ambienti 15%, parametri wearable 15%, profilo personale 70%.
+          {!personalAvailable && " Fino ad allora il calcolo usa soltanto le fonti generali disponibili."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function BaselineProgress({ baseline, personalAvailable }) {
+  if (!baseline?.available) {
+    return (
+      <div className="baseline-empty">
+        <UserRoundCheck size={22} />
+        <div>
+          <strong>Avanzamento non ancora ricevuto</strong>
+          <p>Il profilo personale sara creato dopo almeno 1000 finestre valide.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const accepted = numberOrZero(baseline.accepted_windows);
+  const minWindows = Math.max(1, numberOrZero(baseline.min_training_windows) || 1000);
+  const progress = Math.min(100, (accepted / minWindows) * 100);
+  const elapsedDays = elapsedDaysFromBaseline(baseline);
+
+  return (
+    <div className="baseline-progress">
+      <div className="progress-header">
+        <strong>{personalAvailable ? "Profilo pronto" : baselineStatusLabel(baseline.status)}</strong>
+        <span>{progress.toFixed(0)}%</span>
+      </div>
+      <div className="progress-track" aria-label="Avanzamento baseline">
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <p className="baseline-window-count"><strong>{accepted}</strong> di {minWindows} finestre valide raccolte</p>
+      <div className="baseline-stats">
+        <div><span>Tempo trascorso</span><strong>{elapsedDays === null ? "Non disponibile" : `${elapsedDays.toFixed(1)} giorni`}</strong></div>
+        <div><span>Durata prevista</span><strong>{baseline.planned_days ? `${baseline.planned_days} giorni` : "Non disponibile"}</strong></div>
+        <div><span>Completamento stimato</span><strong>{baseline.target_end_at ? formatDateTime(baseline.target_end_at) : "Non disponibile"}</strong></div>
+        <div><span>Finestre escluse</span><strong>{baseline.rejected_windows ?? 0}</strong></div>
+      </div>
+    </div>
+  );
+}
+
+function ClinicalFactors({ models }) {
+  const rows = models.flatMap((model) =>
+    (model.topFeatures ?? []).slice(0, 4).map((feature) => ({
+      modelKey: model.key,
+      model: model.label,
+      ...feature,
+    }))
+  ).sort((left, right) => {
+    if (left.imputed !== right.imputed) return left.imputed ? 1 : -1;
+    return Math.abs(Number(right.z_score) || 0) - Math.abs(Number(left.z_score) || 0);
+  }).slice(0, 7);
+
+  if (rows.length === 0) {
+    return <p className="empty-text">I fattori principali non sono disponibili per questa valutazione.</p>;
+  }
+
+  return (
+    <div className="clinical-factor-wrap">
+      <div className="clinical-factor-list">
+        {rows.map((row, index) => {
+          const metadata = clinicalFeature(row.feature);
+          return (
+            <article className={`clinical-factor ${row.imputed ? "imputed" : ""}`} key={`${row.model}-${row.feature}-${index}`}>
+              <div className={`factor-source-dot ${row.modelKey}`} />
+              <div className="factor-name">
+                <strong>{metadata.label}</strong>
+                <span>{row.model}</span>
+              </div>
+              <div className="factor-reading">
+                <span>Valore rilevato</span>
+                <strong>{row.imputed ? "Non acquisito" : formatFeatureValue(row.value, metadata.unit)}</strong>
+              </div>
+              <div className="factor-comparison">
+                <span>Confronto col riferimento</span>
+                <strong>{row.imputed ? "Dato stimato" : directionLabel(row.direction)}</strong>
+              </div>
+              <span className={`factor-quality ${row.imputed ? "imputed" : "acquired"}`}>
+                {row.imputed ? "Stima tecnica" : "Misurato"}
+              </span>
+            </article>
+          );
+        })}
+      </div>
+
+      <details className="technical-details">
+        <summary><Info size={16} /> Dettagli tecnici del calcolo <ChevronDown size={16} /></summary>
+        <div className="technical-details-body">
+          <p>
+            Il valore usato nel calcolo e' il dato dopo la preparazione automatica. Se una misura manca,
+            il sistema puo sostituirla con un valore coerente con i dati di addestramento: per questo puo
+            essere diverso dal valore rilevato. Lo scostamento standardizzato indica la distanza dal riferimento,
+            non una diagnosi.
+          </p>
+          <div className="table-wrap">
+            <table className="feature-table">
+              <thead>
+                <tr>
+                  <th>Indicatore</th>
+                  <th>Valore rilevato</th>
+                  <th>Valore usato nel calcolo</th>
+                  <th>Scostamento standardizzato</th>
+                  <th>Qualita del dato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => {
+                  const metadata = clinicalFeature(row.feature);
+                  return (
+                    <tr key={`technical-${row.model}-${row.feature}-${index}`}>
+                      <td>{metadata.label}</td>
+                      <td>{formatFeatureValue(row.value, metadata.unit)}</td>
+                      <td>{formatFeatureValue(row.model_value, metadata.unit)}</td>
+                      <td>{scoreText(row.z_score)}</td>
+                      <td>{row.imputed ? "Stimato per dato mancante" : "Acquisito dal sensore"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
@@ -833,6 +1136,206 @@ function FeatureStatusBadge({ status, compact = false }) {
 }
 
 const roomKeys = ["kitchen", "bedroom", "bathroom", "living_room"];
+const modelOrder = [
+  {
+    key: "generic_spatial",
+    label: "Routine negli ambienti",
+    description: "Permanenza nelle stanze e spostamenti",
+    icon: MapPin,
+  },
+  {
+    key: "generic_wearable",
+    label: "Parametri dal wearable",
+    description: "Dati fisiologici, sonno e attivita",
+    icon: Watch,
+  },
+  {
+    key: "personal",
+    label: "Profilo personale",
+    description: "Confronto con la routine individuale",
+    icon: UserRoundCheck,
+  },
+];
+
+function fusionFromDecision(decision) {
+  return decision?.evidence?.fusion ?? decision?.payload?.evidence?.fusion ?? null;
+}
+
+function modelSummaries(fusion) {
+  const models = fusion?.models ?? {};
+  return modelOrder.map((model) => {
+    const payload = models[model.key] ?? {};
+    return {
+      key: model.key,
+      label: model.label,
+      description: model.description,
+      icon: model.icon,
+      available: payload.available === true,
+      score: payload.score,
+      decisionValue: payload.decision_value,
+      statusLabel: payload.label ?? "disponibile",
+      topFeatures: payload.feature_explanation?.top_features ?? [],
+    };
+  });
+}
+
+function baselineFromSystem(system) {
+  const baseline = system?.ai?.baseline ?? system?.baseline ?? null;
+  if (!baseline) return { available: false };
+  return baseline;
+}
+
+function normalizeWeight(value) {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return numeric <= 1 ? numeric * 100 : numeric;
+}
+
+function numberOrZero(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function elapsedDaysFromBaseline(baseline) {
+  if (!baseline?.started_at) return null;
+  const started = new Date(baseline.started_at).getTime();
+  if (!Number.isFinite(started)) return null;
+  return Math.max(0, (Date.now() - started) / (24 * 60 * 60 * 1000));
+}
+
+function directionLabel(direction) {
+  return {
+    above_training: "Piu alto del riferimento",
+    below_training: "Piu basso del riferimento",
+    inside_training: "In linea con il riferimento",
+  }[direction] ?? "Confronto non disponibile";
+}
+
+const clinicalFeatureCatalog = {
+  wearable_present: { label: "Wearable indossato", unit: "" },
+  wearable_battery_pct: { label: "Batteria del wearable", unit: "%" },
+  heart_rate_mean: { label: "Frequenza cardiaca media", unit: "bpm" },
+  heart_rate_std: { label: "Oscillazione della frequenza cardiaca", unit: "bpm" },
+  resting_heart_rate: { label: "Frequenza cardiaca a riposo", unit: "bpm" },
+  hrv_rmssd: { label: "Variabilita cardiaca (HRV)", unit: "ms" },
+  spo2_mean: { label: "Saturazione media (SpO2)", unit: "%" },
+  sleep_minutes: { label: "Durata del sonno", unit: "min" },
+  awake_minutes: { label: "Tempo di veglia", unit: "min" },
+  steps: { label: "Passi", unit: "" },
+  sedentary_minutes: { label: "Tempo sedentario", unit: "min" },
+  room_changes: { label: "Cambi di stanza", unit: "" },
+  night_room_changes: { label: "Spostamenti notturni", unit: "" },
+  bedroom_minutes: { label: "Permanenza in camera da letto", unit: "min" },
+  kitchen_minutes: { label: "Permanenza in cucina", unit: "min" },
+  bathroom_minutes: { label: "Permanenza in bagno", unit: "min" },
+  living_room_minutes: { label: "Permanenza in soggiorno", unit: "min" },
+  longest_single_room_minutes: { label: "Permanenza continuativa massima", unit: "min" },
+  nilm_total_wh: { label: "Consumo elettrico complessivo", unit: "Wh" },
+  nilm_kitchen_events: { label: "Utilizzi rilevati in cucina", unit: "" },
+  nilm_tv_minutes: { label: "Tempo di utilizzo TV", unit: "min" },
+  nilm_coffee_events: { label: "Utilizzi della macchina del caffe", unit: "" },
+  nilm_stove_events: { label: "Utilizzi del piano cottura", unit: "" },
+  fall_events: { label: "Possibili cadute rilevate", unit: "" },
+};
+
+function clinicalFeature(feature) {
+  return clinicalFeatureCatalog[feature] ?? {
+    label: String(feature ?? "Indicatore").replaceAll("_", " "),
+    unit: "",
+  };
+}
+
+function modelStatusLabel(model) {
+  if (!model.available) return "In preparazione";
+  if (["outlier", "anomaly"].includes(String(model.statusLabel).toLowerCase())) return "Scostamento rilevato";
+  return "Nella norma";
+}
+
+function modelStatusTone(model) {
+  if (!model.available) return "preparing";
+  return ["outlier", "anomaly"].includes(String(model.statusLabel).toLowerCase()) ? "attention" : "normal";
+}
+
+function modelNeedsAttention(model) {
+  return model.available && ["outlier", "anomaly"].includes(String(model.statusLabel).toLowerCase());
+}
+
+function decisionHeadline(level) {
+  return {
+    green: "Andamento regolare",
+    yellow: "Variazione da verificare",
+    orange: "Variazione rilevante",
+    red: "Priorita elevata",
+    technical: "Verifica tecnica necessaria",
+  }[level] ?? "Valutazione disponibile";
+}
+
+function clinicalDecisionSummary(models, level) {
+  if (level === "technical") {
+    return "Uno o piu dispositivi non stanno fornendo dati affidabili. Verificare il sistema prima di interpretare il comportamento.";
+  }
+  const spatial = models.find((model) => model.key === "generic_spatial");
+  const wearable = models.find((model) => model.key === "generic_wearable");
+  const personal = models.find((model) => model.key === "personal");
+  const spatialAttention = modelNeedsAttention(spatial);
+  const wearableAttention = modelNeedsAttention(wearable);
+  const personalAttention = modelNeedsAttention(personal);
+
+  if (spatialAttention && wearableAttention) {
+    return "La routine negli ambienti e i parametri del wearable mostrano variazioni concordanti da approfondire.";
+  }
+  if (personalAttention) {
+    return "I dati attuali si discostano dalla routine personale appresa dal sistema e meritano una verifica.";
+  }
+  if (spatialAttention) {
+    return "La routine negli ambienti mostra uno scostamento; i parametri del wearable non confermano al momento la stessa variazione.";
+  }
+  if (wearableAttention) {
+    return "I parametri del wearable mostrano uno scostamento; la routine negli ambienti non evidenzia variazioni concordanti.";
+  }
+  return "Le fonti disponibili descrivono un andamento compatibile con i riferimenti correnti del sistema.";
+}
+
+function formatAnalysisWindow(start, end) {
+  if (!start || !end) return "Intervallo non disponibile";
+  return `${formatDateTime(start)} - ${formatDateTime(end)}`;
+}
+
+function baselineStatusLabel(status) {
+  return {
+    collecting: "Raccolta in corso",
+    active: "Raccolta in corso",
+    ready: "Dati sufficienti",
+    training: "Creazione del profilo",
+    completed: "Profilo completato",
+    failed: "Verifica necessaria",
+  }[status] ?? "Raccolta in corso";
+}
+
+function decisionReasonLabel(reason) {
+  const exactLabels = {
+    "Current anomaly score exceeds severe threshold": "L'indice complessivo ha superato la soglia di priorita elevata.",
+    "Current anomaly score exceeds important threshold": "L'indice complessivo ha superato la soglia di attenzione rilevante.",
+    "Current anomaly score exceeds attention threshold": "L'indice complessivo ha superato la soglia di attenzione.",
+    "Attention level is visible in dashboard but not published as an alert": "La variazione e' visibile per la valutazione clinica, ma non ha generato un allarme prioritario.",
+    "Routine inside learned baseline": "L'andamento osservato e' coerente con il riferimento appreso.",
+    "Wearable not detected or not worn": "Il wearable non risulta rilevato o indossato.",
+    "Wearable battery below technical threshold": "La batteria del wearable e' sotto la soglia tecnica prevista.",
+    "Wearable battery value is invalid": "Il valore della batteria del wearable non e' valido.",
+    "Available models report routine-compatible behavior": "Le fonti disponibili indicano un andamento compatibile con i riferimenti correnti.",
+    "Other available models do not confirm the anomaly at alert level": "Le altre fonti disponibili non confermano la variazione a livello di allarme.",
+    "Model scores differ, but all remain below alert threshold": "Le fonti mostrano differenze, ma restano sotto la soglia di allarme.",
+  };
+  if (exactLabels[reason]) return exactLabels[reason];
+  if (reason?.includes("generic_spatial reports an anomaly")) return "La routine negli ambienti mostra uno scostamento dal riferimento.";
+  if (reason?.includes("generic_wearable reports an anomaly")) return "I parametri del wearable mostrano uno scostamento dal riferimento.";
+  if (reason?.includes("personal reports an anomaly")) return "I dati si discostano dalla routine personale appresa.";
+  if (reason?.startsWith("Attention signal confirmed by")) return "La variazione e' confermata da piu fonti disponibili.";
+  if (reason?.startsWith("Important anomaly confirmed by")) return "Una variazione rilevante e' confermata da piu fonti disponibili.";
+  if (reason?.startsWith("Severe anomaly confirmed by")) return "Una variazione di priorita elevata e' confermata da piu fonti disponibili.";
+  return "Il sistema ha rilevato un elemento utile alla valutazione clinica.";
+}
 
 function filterWindowsByRange(windows, rangeMode) {
   if (!Array.isArray(windows) || windows.length === 0) return [];
@@ -1232,29 +1735,184 @@ function TasksView({ data, session, patientId, onChanged }) {
 }
 
 function SystemView({ data, events, wsStatus }) {
-  const status = data.system;
+  const status = data.system ?? {};
+  const edge = status.edge ?? {};
+  const sensors = status.sensors ?? {};
+  const watch = sensors.watch ?? {};
+  const ble = sensors.ble ?? {};
+  const googleHealth = sensors.google_health ?? {};
+  const mqtt = edge.mqtt ?? {};
+  const health = systemHealth(status, wsStatus);
+  const issues = systemIssueGroups(status, wsStatus);
+  const availableFeatures = Array.isArray(googleHealth.available_features)
+    ? googleHealth.available_features
+    : [];
+  const mqttErrors = Array.isArray(mqtt.errors) ? mqtt.errors.filter(Boolean) : [];
+
   return (
-    <div className="content-grid">
-      <section className="panel">
-        <h3>Edge Node</h3>
-        <dl className="detail-list">
-          <Detail label="Online" value={status.edge.online ? "Si" : "No"} />
-          <Detail label="Qualita dati" value={status.edge.quality_status} />
-          <Detail label="Coda MQTT" value={status.edge.mqtt_queue_depth} />
-          <Detail label="Ultimo ciclo" value={formatDateTime(status.edge.last_cycle_at)} />
-        </dl>
+    <div className="content-grid system-board">
+      <section className={`panel span-2 system-overview-panel ${health.tone}`}>
+        <div className="panel-heading">
+          <div className="system-title-row">
+            <span className="system-title-icon"><MonitorCog size={22} /></span>
+            <div>
+              <h3>Stato tecnico del sistema</h3>
+              <p className="panel-subtitle">
+                Monitoraggio operativo di Raspberry, sensori, Google Health, MQTT e qualita dati.
+              </p>
+            </div>
+          </div>
+          <span className={`system-health-badge ${health.tone}`}>{health.label}</span>
+        </div>
+        <div className="system-hero-grid">
+          <SystemStatusCard
+            icon={<Server size={20} />}
+            title="Raspberry Pi 5"
+            value={edge.online ? "Online" : "Offline"}
+            caption={`Ultimo contatto: ${formatDateTime(edge.last_seen_at ?? status.updated_at)}`}
+            tone={edge.online ? "good" : "error"}
+          />
+          <SystemStatusCard
+            icon={<Clock3 size={20} />}
+            title="Ultimo ciclo Edge"
+            value={formatDateTime(edge.last_cycle_at)}
+            caption={`Finestra ${formatWindowRange(edge.window_start, edge.window_end)} - ${formatDurationMinutes(edge.window_minutes)}`}
+            tone={edge.last_cycle_at ? "good" : "warning"}
+          />
+          <SystemStatusCard
+            icon={<Gauge size={20} />}
+            title="Qualita dati"
+            value={qualityStatusLabel(edge.quality_status)}
+            caption={`${formatNumber(edge.quality_error_count, "0")} errori, ${formatNumber(edge.quality_warning_count, "0")} warning`}
+            tone={statusTone(edge.quality_status)}
+          />
+          <SystemStatusCard
+            icon={<Wifi size={20} />}
+            title="Coda MQTT locale"
+            value={`${formatNumber(edge.mqtt_queue_depth ?? 0, "0")} messaggi`}
+            caption={mqtt.status ? `Stato pubblicazione: ${mqttStatusLabel(mqtt.status)}` : "Nessuna diagnostica MQTT ricevuta"}
+            tone={Number(edge.mqtt_queue_depth ?? 0) > 0 ? "warning" : statusTone(mqtt.status)}
+          />
+        </div>
       </section>
-      <section className="panel">
-        <h3>Sensori</h3>
-        <dl className="detail-list">
-          <Detail label="Watch" value={status.sensors.watch.status} />
-          <Detail label="BLE" value={status.sensors.ble.status} />
-          <Detail label="Google Health" value={status.sensors.google_health.status} />
-          <Detail label="WebSocket" value={wsStatus} />
-        </dl>
-      </section>
+
       <section className="panel span-2">
-        <h3>Eventi realtime</h3>
+        <div className="panel-heading">
+          <h3>Sensori e flussi dati</h3>
+          <span className="badge">E8</span>
+        </div>
+        <div className="sensor-status-grid">
+          <SensorCard
+            icon={<Watch size={19} />}
+            title="Wearable"
+            status={watch.present === false ? "missing" : watch.status}
+            details={[
+              ["Presenza", watch.present === false ? "Non rilevato" : "Rilevato"],
+              ["Batteria", watch.battery_pct === null || watch.battery_pct === undefined ? "n/d" : `${watch.battery_pct}%`],
+              ["Ultimo dato", formatDateTime(watch.last_seen_at)],
+            ]}
+          />
+          <SensorCard
+            icon={<MapPin size={19} />}
+            title="Beacon BLE"
+            status={ble.status}
+            details={[
+              ["Stanza", roomLabel(ble.current_room)],
+              ["Campioni ciclo", formatNumber(ble.samples_collected)],
+              ["Ultimo dato", formatDateTime(ble.last_seen_at)],
+            ]}
+          />
+          <SensorCard
+            icon={<Activity size={19} />}
+            title="Google Health"
+            status={googleHealth.status}
+            details={[
+              ["Feature disponibili", formatNumber(googleHealth.available_feature_count ?? availableFeatures.length, "0")],
+              ["Ultima finestra", formatDateTime(googleHealth.last_window_at)],
+              ["OAuth", googleHealth.oauth_error ? "Errore da verificare" : "Nessun errore segnalato"],
+            ]}
+          />
+          <SensorCard
+            icon={<Wifi size={19} />}
+            title="Realtime dashboard"
+            status={wsStatus === "connected" ? "active" : wsStatus}
+            details={[
+              ["WebSocket", websocketStatusLabel(wsStatus)],
+              ["Eventi recenti", events.length],
+              ["Fonte dati", config.dataSource],
+            ]}
+          />
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <h3>Google Health e OAuth</h3>
+          <span className={`feature-status compact-status ${googleHealth.oauth_error ? "imputed" : "acquired"}`}>
+            {googleHealth.oauth_error ? "attenzione" : "ok"}
+          </span>
+        </div>
+        <dl className="detail-list">
+          <Detail label="Stato" value={systemStatusLabel(googleHealth.status)} />
+          <Detail label="Campioni salvati" value={formatBoolean(googleHealth.samples_logged)} />
+          <Detail label="Feature" value={availableFeatures.length ? availableFeatures.map(clinicalFeatureName).join(", ") : "n/d"} />
+          <Detail label="Errore OAuth" value={googleHealth.oauth_error ?? "Nessun errore OAuth ricevuto dal backend"} />
+        </dl>
+        <p className="system-safe-note">
+          La dashboard mostra solo messaggi ripuliti: token, refresh token, password e client secret non vengono esposti.
+        </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <h3>MQTT e coda locale</h3>
+          <span className={`feature-status compact-status ${Number(edge.mqtt_queue_depth ?? 0) > 0 ? "imputed" : "acquired"}`}>
+            {Number(edge.mqtt_queue_depth ?? 0) > 0 ? "in coda" : "allineato"}
+          </span>
+        </div>
+        <dl className="detail-list">
+          <Detail label="Stato" value={mqttStatusLabel(mqtt.status)} />
+          <Detail label="Tentati" value={formatNumber(mqtt.attempted)} />
+          <Detail label="Pubblicati" value={formatNumber(mqtt.published)} />
+          <Detail label="In coda" value={formatNumber(mqtt.queue_depth ?? edge.mqtt_queue_depth)} />
+        </dl>
+        {mqttErrors.length > 0 ? (
+          <ul className="system-error-list">
+            {mqttErrors.map((error, index) => (
+              <li key={`mqtt-error-${index}`}>{error}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="system-safe-note">Nessun errore MQTT segnalato nell'ultimo ciclo.</p>
+        )}
+      </section>
+
+      <section className="panel span-2">
+        <div className="panel-heading">
+          <h3>Warning e guasti</h3>
+          <span className="badge">{issues.warning.length + issues.persistent.length} segnalazioni</span>
+        </div>
+        <div className="system-issues-grid">
+          <SystemIssueList
+            title="Warning temporanei"
+            emptyText="Nessun warning temporaneo rilevato."
+            issues={issues.warning}
+            tone="warning"
+          />
+          <SystemIssueList
+            title="Guasti persistenti"
+            emptyText="Nessun guasto persistente rilevato."
+            issues={issues.persistent}
+            tone="error"
+          />
+        </div>
+      </section>
+
+      <section className="panel span-2">
+        <div className="panel-heading">
+          <h3>Eventi realtime</h3>
+          <StatusPill status={wsStatus} />
+        </div>
         {events.length === 0 ? (
           <p className="empty-text">In attesa di eventi WebSocket.</p>
         ) : (
@@ -1262,7 +1920,7 @@ function SystemView({ data, events, wsStatus }) {
             {events.map((event) => (
               <div key={event.event_id} className="event-item">
                 <Wifi size={16} />
-                <span>{event.event_type}</span>
+                <span>{eventTypeLabel(event.event_type)}</span>
                 <small>{formatDateTime(event.timestamp)}</small>
               </div>
             ))}
@@ -1271,6 +1929,255 @@ function SystemView({ data, events, wsStatus }) {
       </section>
     </div>
   );
+}
+
+function SystemStatusCard({ icon, title, value, caption, tone }) {
+  return (
+    <article className={`system-status-card ${tone ?? "neutral"}`}>
+      <span className="system-card-icon">{icon}</span>
+      <div>
+        <span>{title}</span>
+        <strong>{value ?? "n/d"}</strong>
+        <small>{caption}</small>
+      </div>
+    </article>
+  );
+}
+
+function SensorCard({ icon, title, status, details }) {
+  const tone = statusTone(status);
+  return (
+    <article className={`sensor-status-card ${tone}`}>
+      <div className="sensor-status-header">
+        <span className="sensor-status-icon">{icon}</span>
+        <div>
+          <strong>{title}</strong>
+          <span className={`technical-status-chip ${tone}`}>{systemStatusLabel(status)}</span>
+        </div>
+      </div>
+      <dl className="mini-detail-list">
+        {details.map(([label, value]) => (
+          <React.Fragment key={`${title}-${label}`}>
+            <dt>{label}</dt>
+            <dd>{value ?? "n/d"}</dd>
+          </React.Fragment>
+        ))}
+      </dl>
+    </article>
+  );
+}
+
+function SystemIssueList({ title, emptyText, issues, tone }) {
+  return (
+    <div className={`system-issue-column ${tone}`}>
+      <h4>{title}</h4>
+      {issues.length === 0 ? (
+        <p className="empty-text">{emptyText}</p>
+      ) : (
+        <div className="system-issue-list">
+          {issues.map((issue) => (
+            <div className={`system-issue ${issue.tone}`} key={`${title}-${issue.title}-${issue.detail}`}>
+              <AlertTriangle size={17} />
+              <div>
+                <strong>{issue.title}</strong>
+                <span>{issue.detail}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function systemHealth(status, wsStatus) {
+  const edge = status?.edge ?? {};
+  const sensors = status?.sensors ?? {};
+  const mqtt = edge.mqtt ?? {};
+  if (
+    edge.online === false ||
+    statusTone(edge.quality_status) === "error" ||
+    statusTone(sensors.google_health?.status) === "error" ||
+    statusTone(mqtt.status) === "error"
+  ) {
+    return { tone: "error", label: "Guasto da verificare" };
+  }
+  if (
+    statusTone(edge.quality_status) === "warning" ||
+    statusTone(sensors.ble?.status) === "warning" ||
+    statusTone(sensors.watch?.status) === "warning" ||
+    sensors.watch?.present === false ||
+    statusTone(sensors.google_health?.status) === "warning" ||
+    Number(edge.mqtt_queue_depth ?? 0) > 0 ||
+    wsStatus !== "connected"
+  ) {
+    return { tone: "warning", label: "Attenzione tecnica" };
+  }
+  return { tone: "good", label: "Operativo" };
+}
+
+function systemIssueGroups(status, wsStatus) {
+  const edge = status?.edge ?? {};
+  const sensors = status?.sensors ?? {};
+  const watch = sensors.watch ?? {};
+  const ble = sensors.ble ?? {};
+  const googleHealth = sensors.google_health ?? {};
+  const mqtt = edge.mqtt ?? {};
+  const warning = [];
+  const persistent = [];
+
+  function add(target, title, detail, tone = target === persistent ? "error" : "warning") {
+    target.push({ title, detail, tone });
+  }
+
+  if (edge.online === false) {
+    add(persistent, "Raspberry offline", "L'ultimo stato ricevuto indica Edge non raggiungibile.", "error");
+  } else if (isStale(edge.last_seen_at ?? status?.updated_at)) {
+    add(warning, "Contatto Raspberry obsoleto", "L'ultimo contatto e' piu vecchio della soglia configurata.");
+  }
+
+  if (edge.quality_status === "error") {
+    add(persistent, "Qualita dati non utilizzabile", `${formatNumber(edge.quality_error_count, "0")} errori nell'ultimo ciclo.`, "error");
+  } else if (edge.quality_status === "warning") {
+    add(warning, "Qualita dati con warning", `${formatNumber(edge.quality_warning_count, "0")} warning nell'ultimo ciclo.`);
+  }
+
+  if (Number(edge.mqtt_queue_depth ?? 0) > 0) {
+    add(warning, "Messaggi MQTT in coda", `${formatNumber(edge.mqtt_queue_depth, "0")} messaggi attendono ritrasmissione.`);
+  }
+  if (statusTone(mqtt.status) === "error") {
+    add(persistent, "Errore MQTT", mqttStatusLabel(mqtt.status), "error");
+  }
+
+  if (watch.present === false || ["missing", "stale"].includes(String(watch.status))) {
+    add(warning, "Wearable non stabile", "Watch assente o non aggiornato nell'ultima finestra.");
+  }
+  if (Number(watch.battery_pct) > 0 && Number(watch.battery_pct) < 20) {
+    add(warning, "Batteria wearable bassa", `Batteria rilevata al ${watch.battery_pct}%.`);
+  }
+
+  if (["missing", "stale"].includes(String(ble.status))) {
+    add(warning, "BLE non aggiornato", "I beacon non hanno prodotto campioni recenti per la finestra corrente.");
+  }
+  if (googleHealth.oauth_error) {
+    add(persistent, "OAuth Google Health", googleHealth.oauth_error, "error");
+  } else if (["stale", "missing"].includes(String(googleHealth.status))) {
+    add(warning, "Google Health non aggiornato", "Il backend non vede feature wearable recenti.");
+  }
+
+  if (wsStatus !== "connected") {
+    add(warning, "Realtime non connesso", `Stato WebSocket: ${websocketStatusLabel(wsStatus)}.`);
+  }
+
+  return { warning, persistent };
+}
+
+function statusTone(status) {
+  const normalized = String(status ?? "").toLowerCase();
+  if (["active", "online", "ok", "published", "connected", "cycle_completed", "completed"].includes(normalized)) {
+    return "good";
+  }
+  if (["error", "offline", "runtime_mqtt_error", "invalid_event", "failed"].includes(normalized)) {
+    return "error";
+  }
+  if (["warning", "stale", "missing", "reconnecting", "connecting", "queued"].includes(normalized)) {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function systemStatusLabel(status) {
+  const labels = {
+    active: "Attivo",
+    online: "Online",
+    ok: "Regolare",
+    warning: "Warning",
+    error: "Errore",
+    stale: "Non aggiornato",
+    missing: "Non rilevato",
+    disabled: "Disabilitato",
+    connected: "Connesso",
+    reconnecting: "Riconnessione",
+    connecting: "Connessione",
+    published: "Pubblicato",
+    queued: "In coda",
+    offline: "Offline",
+    cycle_completed: "Ciclo completato",
+    runtime_mqtt_error: "Errore MQTT runtime",
+  };
+  return labels[String(status ?? "").toLowerCase()] ?? (status ? String(status) : "n/d");
+}
+
+function qualityStatusLabel(status) {
+  return {
+    ok: "Regolare",
+    warning: "Warning",
+    error: "Non utilizzabile",
+    unknown: "Non disponibile",
+  }[String(status ?? "").toLowerCase()] ?? systemStatusLabel(status);
+}
+
+function mqttStatusLabel(status) {
+  return {
+    published: "Pubblicazione completata",
+    queued: "Accodato per ritrasmissione",
+    runtime_mqtt_error: "Errore runtime MQTT",
+    disabled: "Disabilitato",
+  }[String(status ?? "").toLowerCase()] ?? systemStatusLabel(status);
+}
+
+function websocketStatusLabel(status) {
+  return {
+    idle: "Inattivo",
+    connecting: "Connessione",
+    connected: "Connesso",
+    reconnecting: "Riconnessione",
+    error: "Errore",
+    invalid_event: "Evento non valido",
+  }[status] ?? systemStatusLabel(status);
+}
+
+function eventTypeLabel(eventType) {
+  return {
+    system_status_updated: "Stato tecnico aggiornato",
+    decision_updated: "Decisione AI aggiornata",
+    alert_created: "Nuovo alert",
+    alert_acknowledged: "Alert preso in carico",
+    alert_resolved: "Alert risolto",
+    task_created: "Task creato",
+    task_completed: "Task completato",
+    task_cancelled: "Task annullato",
+    patient_window_updated: "Finestra dati aggiornata",
+    edge_cycle_completed: "Ciclo Edge completato",
+    pong: "Heartbeat realtime",
+  }[eventType] ?? eventType ?? "Evento realtime";
+}
+
+function clinicalFeatureName(feature) {
+  return clinicalFeature(feature).label;
+}
+
+function formatNumber(value, fallback = "n/d") {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
+}
+
+function formatDurationMinutes(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "durata non disponibile";
+  return `${Number(numeric.toFixed(1))} min`;
+}
+
+function formatWindowRange(start, end) {
+  if (!start || !end) return "non disponibile";
+  return `${formatShortDateTime(start)} - ${formatShortDateTime(end)}`;
+}
+
+function formatBoolean(value) {
+  if (value === true) return "Si";
+  if (value === false) return "No";
+  return "n/d";
 }
 
 function filterAlerts(alerts, filters) {

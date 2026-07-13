@@ -12,7 +12,19 @@ from sqlalchemy.pool import StaticPool
 from app.auth.security import hash_password
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.models import Alert, Decision, Doctor, DoctorPatient, EdgeDevice, FeatureWindow, Patient, PatientUser, User
+from app.db.models import (
+    Alert,
+    Decision,
+    Doctor,
+    DoctorPatient,
+    EdgeCycle,
+    EdgeDevice,
+    FeatureWindow,
+    Patient,
+    PatientUser,
+    SensorStatus,
+    User,
+)
 from app.db.session import get_db
 from app.main import app
 
@@ -78,6 +90,43 @@ def seed_database(engine) -> None:
             )
         )
         session.add(
+            EdgeCycle(
+                message_id="edge-cycle-001",
+                patient_id="patient-001",
+                edge_id="edge-rpi5-001",
+                event_type="edge_cycle_completed",
+                timestamp=now,
+                window_start=now,
+                window_end=now,
+                payload={
+                    "payload": {
+                        "status": "cycle_completed",
+                        "quality_status": "warning",
+                        "quality_issue_count": 1,
+                        "quality_warning_count": 1,
+                        "quality_error_count": 0,
+                        "ble_samples_collected": 12,
+                        "google_health_enabled": True,
+                        "google_health_available_feature_count": 3,
+                        "google_health_available_features": [
+                            "heart_rate_mean",
+                            "hrv_rmssd",
+                            "spo2_mean",
+                        ],
+                        "mqtt_publish": {
+                            "enabled": True,
+                            "status": "published",
+                            "attempted": 3,
+                            "published": 3,
+                            "queued": 0,
+                            "queue_depth": 0,
+                            "errors": [],
+                        },
+                    }
+                },
+            )
+        )
+        session.add(
             FeatureWindow(
                 message_id="window-001",
                 patient_id="patient-001",
@@ -93,6 +142,24 @@ def seed_database(engine) -> None:
                     "bedroom_minutes": 1.0,
                 },
             )
+        )
+        session.add_all(
+            [
+                SensorStatus(
+                    patient_id="patient-001",
+                    sensor_type="watch",
+                    status="active",
+                    last_seen_at=now,
+                    details={},
+                ),
+                SensorStatus(
+                    patient_id="patient-001",
+                    sensor_type="ble",
+                    status="active",
+                    last_seen_at=now,
+                    details={},
+                ),
+            ]
         )
         session.add(
             Decision(
@@ -161,7 +228,12 @@ def test_windows_decisions_and_system_status(client: TestClient) -> None:
 
     system_status = client.get("/api/v1/patients/patient-001/system-status", headers=headers)
     assert system_status.status_code == 200
-    assert system_status.json()["sensors"]["google_health"]["status"] == "active"
+    body = system_status.json()
+    assert body["sensors"]["google_health"]["status"] == "active"
+    assert body["edge"]["last_cycle_at"] is not None
+    assert body["edge"]["quality_status"] == "warning"
+    assert body["edge"]["mqtt"]["status"] == "published"
+    assert body["sensors"]["ble"]["samples_collected"] == 12
 
 
 def test_alert_acknowledge_and_resolve(client: TestClient) -> None:

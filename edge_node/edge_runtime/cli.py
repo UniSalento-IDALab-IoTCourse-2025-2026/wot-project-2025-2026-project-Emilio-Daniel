@@ -460,8 +460,12 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     )
     if baseline_session is not None:
         status["baseline_session_status"] = baseline_session.status
+        status["baseline_session_started_at"] = baseline_session.started_at
+        status["baseline_session_planned_days"] = baseline_session.planned_days
+        status["baseline_session_target_end_at"] = baseline_session.target_end_at
         status["baseline_session_accepted_windows"] = baseline_session.accepted_windows
         status["baseline_session_rejected_windows"] = baseline_session.rejected_windows
+        status["baseline_session_min_training_windows"] = 1000
         status["baseline_session_state"] = str(args.baseline_state)
 
     auto_train_payload = None

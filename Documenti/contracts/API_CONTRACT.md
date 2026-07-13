@@ -235,6 +235,94 @@ GET /api/v1/patients/{patient_id}/decisions?limit=8
 
 Supportano anche filtri temporali `date_from` e `date_to`.
 
+### Stato tecnico e baseline
+
+```text
+GET /api/v1/patients/{patient_id}/system-status
+```
+
+Response minima:
+
+```json
+{
+  "patient_id": "patient-001",
+  "updated_at": "2026-07-13T10:00:00Z",
+  "mode": "routine",
+  "edge": {
+    "online": true,
+    "quality_status": "ok",
+    "quality_issue_count": 0,
+    "quality_error_count": 0,
+    "quality_warning_count": 0,
+    "mqtt_queue_depth": 0,
+    "last_seen_at": "2026-07-13T10:00:00Z",
+    "last_cycle_at": "2026-07-13T10:00:00Z",
+    "cycle_status": "cycle_completed",
+    "window_start": "2026-07-13T09:56:00Z",
+    "window_end": "2026-07-13T10:00:00Z",
+    "window_minutes": 4,
+    "mqtt": {
+      "enabled": true,
+      "status": "published",
+      "attempted": 3,
+      "published": 3,
+      "queued": 0,
+      "queue_depth": 0,
+      "errors": []
+    }
+  },
+  "ai": {
+    "fusion_mode": "generic_spatial_plus_generic_wearable",
+    "inference": "completed_generic_spatial_plus_generic_wearable",
+    "personal_model_available": false,
+    "baseline": {
+      "available": true,
+      "status": "collecting",
+      "started_at": "2026-07-12T09:11:33Z",
+      "planned_days": 7,
+      "target_end_at": "2026-07-19T09:11:33Z",
+      "accepted_windows": 320,
+      "rejected_windows": 12,
+      "min_training_windows": 1000,
+      "ready_by_time": false,
+      "trained": false,
+      "reason": "baseline_not_ready"
+    }
+  },
+  "sensors": {
+    "watch": {
+      "status": "active",
+      "present": true,
+      "battery_pct": 72,
+      "last_seen_at": "2026-07-13T10:00:00Z"
+    },
+    "ble": {
+      "status": "active",
+      "current_room": "kitchen",
+      "last_seen_at": "2026-07-13T10:00:00Z",
+      "samples_collected": 12
+    },
+    "google_health": {
+      "status": "active",
+      "enabled": true,
+      "samples_logged": true,
+      "available_feature_count": 3,
+      "available_features": ["heart_rate_mean", "hrv_rmssd", "spo2_mean"],
+      "last_window_at": "2026-07-13T10:00:00Z",
+      "oauth_error": null
+    }
+  }
+}
+```
+
+Il blocco `ai.baseline` deriva dall'ultimo messaggio MQTT `edge/status`. Se il backend
+non ha ancora ricevuto uno stato Edge con baseline, `available` puo' essere `false` e i
+campi di avanzamento possono essere `null`.
+
+I campi `edge.mqtt.errors` e `sensors.google_health.oauth_error` devono contenere solo
+messaggi ripuliti. Non devono mai includere token OAuth, refresh token, password,
+`client_secret` o header `Authorization`.
+
 ## Alert
 
 ### Lista alert paziente

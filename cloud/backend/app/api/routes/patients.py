@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -16,7 +17,7 @@ from app.auth.dependencies import (
     require_patient_access,
     write_audit,
 )
-from app.db.models import Alert, AlertEvent, Decision, EdgeDevice, FeatureWindow, Patient, SensorStatus, Task
+from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Patient, SensorStatus, Task
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 
@@ -216,16 +217,30 @@ def patient_system_status(
     patient = get_patient_or_404(db, patient_id)
     current = current_payload(db, patient)
     latest_window = latest_feature_window(db, patient.patient_id)
+    latest_cycle = latest_edge_cycle(db, patient.patient_id)
+    cycle_status = latest_edge_cycle_status_payload(latest_cycle)
     watch_status = sensor_status(db, patient.patient_id, "watch")
     ble_status = sensor_status(db, patient.patient_id, "ble")
+    edge_payload = system_edge_payload(
+        current_edge=current["edge"],
+        latest_cycle=latest_cycle,
+        cycle_status=cycle_status,
+    )
     return {
         "patient_id": patient.patient_id,
         "updated_at": current["last_update"],
         "mode": current["signal_type"],
-        "edge": current["edge"],
+        "edge": edge_payload,
+        "ai": {
+            "fusion_mode": cycle_status.get("fusion_mode"),
+            "inference": cycle_status.get("inference"),
+            "personal_model_available": cycle_status.get("personal_model_exists"),
+            "baseline": baseline_status_from_cycle(cycle_status),
+        },
         "sensors": {
             "watch": {
                 "status": watch_status.status if watch_status else ("active" if current["watch"]["present"] else "missing"),
+                "present": current["watch"]["present"],
                 "battery_pct": current["watch"]["battery_pct"],
                 "last_seen_at": utc_iso(watch_status.last_seen_at) if watch_status else current["last_update"],
             },
@@ -233,11 +248,25 @@ def patient_system_status(
                 "status": ble_status.status if ble_status else ("active" if current["current_room"] else "stale"),
                 "current_room": current["current_room"],
                 "last_seen_at": utc_iso(ble_status.last_seen_at) if ble_status else current["last_update"],
+                "samples_collected": cycle_status.get("ble_samples_collected"),
             },
             "google_health": {
-                "status": "active" if current["watch"]["available_features"] else "stale",
-                "available_features": current["watch"]["available_features"],
+                "status": google_health_status(cycle_status, current),
+                "enabled": cycle_status.get("google_health_enabled"),
+                "samples_logged": cycle_status.get("google_health_samples_logged"),
+                "available_feature_count": cycle_status.get("google_health_available_feature_count"),
+                "available_features": first_present(
+                    cycle_status.get("google_health_available_features"),
+                    current["watch"]["available_features"],
+                ),
                 "last_window_at": utc_iso(latest_window.window_end) if latest_window else None,
+                "oauth_error": public_error_message(
+                    first_present(
+                        cycle_status.get("google_health_oauth_error"),
+                        cycle_status.get("google_health_error"),
+                        cycle_status.get("oauth_error"),
+                    )
+                ),
             },
         },
     }
@@ -331,6 +360,157 @@ def latest_feature_window(db: Session, patient_id: str) -> FeatureWindow | None:
         .order_by(desc(FeatureWindow.window_end), desc(FeatureWindow.id))
         .limit(1)
     ).scalar_one_or_none()
+
+
+def latest_edge_cycle(db: Session, patient_id: str) -> EdgeCycle | None:
+    return db.execute(
+        select(EdgeCycle)
+        .where(EdgeCycle.patient_id == patient_id)
+        .order_by(desc(EdgeCycle.timestamp), desc(EdgeCycle.id))
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def latest_edge_cycle_status_payload(cycle: EdgeCycle | None) -> dict[str, Any]:
+    if cycle is None or not isinstance(cycle.payload, dict):
+        return {}
+    payload = cycle.payload.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def baseline_status_from_cycle(cycle_status: dict[str, Any]) -> dict[str, Any]:
+    auto_train = cycle_status.get("baseline_auto_train")
+    if not isinstance(auto_train, dict):
+        auto_train = {}
+
+    accepted = first_present(
+        cycle_status.get("baseline_session_accepted_windows"),
+        auto_train.get("baseline_row_count"),
+    )
+    min_training_windows = first_present(
+        cycle_status.get("baseline_session_min_training_windows"),
+        auto_train.get("min_training_windows"),
+        1000,
+    )
+
+    return {
+        "available": bool(cycle_status),
+        "status": first_present(cycle_status.get("baseline_session_status"), auto_train.get("session_status")),
+        "started_at": first_present(cycle_status.get("baseline_session_started_at"), auto_train.get("started_at")),
+        "planned_days": first_present(cycle_status.get("baseline_session_planned_days"), auto_train.get("planned_days")),
+        "target_end_at": first_present(cycle_status.get("baseline_session_target_end_at"), auto_train.get("target_end_at")),
+        "accepted_windows": accepted,
+        "rejected_windows": cycle_status.get("baseline_session_rejected_windows"),
+        "min_training_windows": min_training_windows,
+        "ready_by_time": auto_train.get("ready_by_time"),
+        "trained": auto_train.get("trained"),
+        "reason": auto_train.get("reason"),
+    }
+
+
+def first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def system_edge_payload(
+    *,
+    current_edge: dict[str, Any],
+    latest_cycle: EdgeCycle | None,
+    cycle_status: dict[str, Any],
+) -> dict[str, Any]:
+    """Arricchisce lo stato Edge con dati tecnici dell'ultimo ciclo MQTT."""
+    edge = dict(current_edge)
+    edge["last_cycle_at"] = utc_iso(latest_cycle.timestamp) if latest_cycle else None
+    edge["cycle_status"] = first_present(
+        cycle_status.get("status"),
+        latest_cycle.event_type if latest_cycle else None,
+    )
+    edge["window_start"] = first_present(
+        cycle_status.get("window_start"),
+        utc_iso(latest_cycle.window_start) if latest_cycle else None,
+    )
+    edge["window_end"] = first_present(
+        cycle_status.get("window_end"),
+        utc_iso(latest_cycle.window_end) if latest_cycle else None,
+    )
+    edge["window_minutes"] = window_duration_minutes(
+        latest_cycle.window_start if latest_cycle else None,
+        latest_cycle.window_end if latest_cycle else None,
+    )
+    edge["quality_status"] = first_present(
+        cycle_status.get("quality_status"),
+        current_edge.get("quality_status"),
+    )
+    edge["quality_issue_count"] = cycle_status.get("quality_issue_count")
+    edge["quality_error_count"] = cycle_status.get("quality_error_count")
+    edge["quality_warning_count"] = cycle_status.get("quality_warning_count")
+    edge["mqtt"] = public_mqtt_payload(cycle_status.get("mqtt_publish"))
+    if edge["mqtt"] is not None:
+        edge["mqtt_queue_depth"] = first_present(
+            edge["mqtt"].get("queue_depth"),
+            current_edge.get("mqtt_queue_depth"),
+        )
+    return edge
+
+
+def public_mqtt_payload(value: Any) -> dict[str, Any] | None:
+    """Espone solo diagnostica MQTT non sensibile."""
+    if not isinstance(value, dict):
+        return None
+    errors = value.get("errors") if isinstance(value.get("errors"), list) else []
+    return {
+        "enabled": value.get("enabled"),
+        "status": value.get("status"),
+        "attempted": value.get("attempted"),
+        "published": value.get("published"),
+        "queued": value.get("queued"),
+        "queue_depth": value.get("queue_depth"),
+        "errors": [public_error_message(item) for item in errors if item],
+    }
+
+
+def google_health_status(cycle_status: dict[str, Any], current: dict[str, Any]) -> str:
+    """Calcola lo stato Google Health senza esporre dettagli OAuth sensibili."""
+    if cycle_status.get("google_health_enabled") is False:
+        return "disabled"
+    if first_present(
+        cycle_status.get("google_health_oauth_error"),
+        cycle_status.get("google_health_error"),
+        cycle_status.get("oauth_error"),
+    ):
+        return "error"
+    feature_count = cycle_status.get("google_health_available_feature_count")
+    if isinstance(feature_count, int | float) and feature_count > 0:
+        return "active"
+    if current["watch"]["available_features"]:
+        return "active"
+    return "stale"
+
+
+def public_error_message(value: Any) -> str | None:
+    """Rimuove token o segreti da errori tecnici prima di mandarli al frontend."""
+    if value is None:
+        return None
+    text = str(value)
+    text = re.sub(
+        r"(?i)(access_token|refresh_token|client_secret|password|authorization)\s*[:=]\s*[^,\s}\"']+",
+        r"\1=<redacted>",
+        text,
+    )
+    text = re.sub(r"(?i)bearer\s+[a-z0-9._\-]+", "Bearer <redacted>", text)
+    if len(text) > 240:
+        return f"{text[:237]}..."
+    return text
+
+
+def window_duration_minutes(start: datetime | None, end: datetime | None) -> float | None:
+    """Calcola la durata dell'ultima finestra Edge in minuti."""
+    if start is None or end is None:
+        return None
+    return round(max(0.0, (end - start).total_seconds() / 60.0), 2)
 
 
 def latest_edge_device(db: Session, patient_id: str) -> EdgeDevice | None:

@@ -10,9 +10,9 @@ Daniel D1-D9
 broker MQTT, backend FastAPI, PostgreSQL, subscriber MQTT, REST API, WebSocket,
 autenticazione, ruoli, alert e task.
 
-Emilio E1-E6
+Emilio E1-E8
 publisher MQTT Edge, mock di supporto, dashboard medico, overview pazienti, alert,
-dati wearable e dati spaziali.
+dati wearable, dati spaziali, spiegazione AI e stato tecnico del sistema.
 ```
 
 Il flusso principale da testare e':
@@ -1081,7 +1081,7 @@ patient-001-decision.json contiene level e anomaly_score
 last-quality-report.json contiene stato qualita
 ```
 
-## 9. Test Emilio E3-E6 - Dashboard medico con backend reale
+## 9. Test Emilio E3-E8 - Dashboard medico con backend reale
 
 La dashboard deve usare il backend reale, quindi `Dashboard\.env` deve contenere:
 
@@ -1104,7 +1104,7 @@ usa REST e WebSocket configurati nel file .env
 Cosa stiamo testando:
 
 ```text
-E3-E6: frontend medico collegato al backend reale
+E3-E8: frontend medico collegato al backend reale
 ```
 
 Comandi:
@@ -1270,10 +1270,6 @@ grafico SpO2
 grafico passi quando disponibili
 grafico sonno quando disponibile
 grafico sedentarieta quando disponibile
-grafico HRV RMSSD
-assi X e Y visibili sui grafici
-tooltip con valore e timestamp al passaggio del cursore
-ingrandimento leggero del grafico in hover/focus
 pannello HRV RMSSD
 provenienza HRV Google Health/Fitbit
 badge acquisito
@@ -1295,7 +1291,117 @@ Quando e' superato:
 la dashboard mostra andamento wearable e spaziale senza interpretare null come zero
 ```
 
-### 9.6 Build finale Dashboard
+### 9.6 Test E7 - Valutazione comportamentale
+
+Cosa fa:
+
+```text
+mostra in linguaggio clinico comprensibile come la valutazione e' stata composta dalle fonti disponibili
+```
+
+Cosa stiamo testando:
+
+```text
+indice complessivo, fonti, composizione, fattori principali e avanzamento del profilo personale
+```
+
+Verificare nel tab `Paziente`, sezione `Valutazione comportamentale`:
+
+```text
+indice di scostamento su 100
+livello e sintesi della valutazione in italiano
+Routine negli ambienti
+Parametri dal wearable
+Profilo personale quando disponibile
+incidenza effettiva delle fonti
+regola prevista 15/15/70 dopo baseline
+fattori principali con nomi leggibili e unita' di misura
+stato Misurato o Stima tecnica
+assenza di nomi interni con underscore nella vista principale
+pannello espandibile Dettagli tecnici del calcolo
+valore rilevato e valore usato nel calcolo
+scostamento standardizzato
+messaggio Profilo in preparazione quando manca
+giorni baseline trascorsi
+finestre valide su 1000
+finestre baseline scartate
+linguaggio da triage senza messaggi assoluti
+```
+
+Quando e' superato:
+
+```text
+il medico comprende subito quali fonti e indicatori hanno inciso sul risultato
+il modello personale risulta chiaramente disponibile o non disponibile
+la baseline mostra avanzamento reale quando il backend riceve edge/status
+i dettagli tecnici restano disponibili senza dominare la vista principale
+```
+
+### 9.7 Test E8 - Stato tecnico del sistema
+
+Cosa fa:
+
+```text
+mostra lo stato operativo di Raspberry, ultimo ciclo Edge, sensori, Google Health,
+MQTT, coda locale, WebSocket e qualita dati
+```
+
+Cosa stiamo testando:
+
+```text
+E8: distinzione tra problema tecnico e segnale comportamentale, senza mostrare segreti
+```
+
+Prima di testare questa sezione devono essere avviati:
+
+```text
+backend reale
+worker MQTT backend
+Edge completo con publisher MQTT
+dashboard
+```
+
+Verificare nel tab `Sistema`:
+
+```text
+stato generale Operativo / Attenzione tecnica / Guasto da verificare
+ultimo contatto Raspberry
+Raspberry online/offline
+ultimo ciclo Edge
+durata della finestra, ad esempio 4 min
+stato qualita dati
+conteggio errori e warning qualita
+stato wearable
+presenza wearable
+batteria wearable quando disponibile
+stato BLE
+stanza corrente BLE
+campioni BLE dell'ultimo ciclo quando disponibili
+stato Google Health
+feature Google Health disponibili
+eventuale errore OAuth senza token o segreti
+stato MQTT
+messaggi pubblicati
+messaggi rimasti nella coda locale
+warning temporanei separati dai guasti persistenti
+eventi realtime leggibili in italiano
+```
+
+Controllo REST diretto:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8080/api/v1/patients/patient-001/system-status" -Headers $headers
+```
+
+Quando e' superato:
+
+```text
+la pagina Sistema permette di capire se il dato manca per un guasto tecnico,
+per un ritardo temporaneo o per assenza reale del sensore
+nessun token OAuth, password, client_secret o header Authorization viene mostrato
+```
+
+### 9.8 Build finale Dashboard
 
 Cosa fa:
 
@@ -1476,6 +1582,7 @@ cd ..
 
 ```powershell
 cd "C:\Users\emili\OneDrive\Desktop\Secondo Semestre\IoT\Progetto IoT 2026\cloud\backend"
+Stop-Process -Id 20208
 .\.venv\Scripts\python.exe -m alembic upgrade head
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 ```

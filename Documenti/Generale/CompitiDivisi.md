@@ -272,24 +272,24 @@ del backend.
 
 ### E7. Spiegazione AI
 
-- [ ] Mostrare anomaly score finale e livello risultante.
-- [ ] Mostrare score di modello spaziale, wearable e personale.
-- [ ] Mostrare i pesi effettivi della fusione, inclusi 15/15/70 dopo la baseline.
-- [ ] Mostrare le feature principali con valore, direzione e z-score.
-- [ ] Spiegare che `model_value` e' il valore dopo il preprocessing.
-- [ ] Mostrare se il modello personale non e' ancora disponibile.
-- [ ] Mostrare avanzamento baseline, giorni trascorsi e finestre valide su 1000.
-- [ ] Evitare termini come diagnosi, malattia confermata o emergenza medica automatica.
+- [x] Mostrare anomaly score finale e livello risultante.
+- [x] Mostrare score di modello spaziale, wearable e personale.
+- [x] Mostrare i pesi effettivi della fusione, inclusi 15/15/70 dopo la baseline.
+- [x] Mostrare le feature principali con valore, direzione e z-score.
+- [x] Spiegare che `model_value` e' il valore dopo il preprocessing.
+- [x] Mostrare se il modello personale non e' ancora disponibile.
+- [x] Mostrare avanzamento baseline, giorni trascorsi e finestre valide su 1000.
+- [x] Evitare termini come diagnosi, malattia confermata o emergenza medica automatica.
 
 ### E8. Stato tecnico del sistema
 
-- [ ] Mostrare ultimo ciclo Edge e durata della finestra.
-- [ ] Mostrare stato BLE, Google Health, MQTT e qualita' dati.
-- [ ] Mostrare ultimo contatto del Raspberry e stato online/offline.
-- [ ] Mostrare batteria e presenza wearable quando disponibili.
-- [ ] Mostrare errori OAuth senza visualizzare token o segreti.
-- [ ] Mostrare eventuali messaggi rimasti nella coda MQTT locale.
-- [ ] Distinguere warning temporanei da guasti persistenti.
+- [x] Mostrare ultimo ciclo Edge e durata della finestra.
+- [x] Mostrare stato BLE, Google Health, MQTT e qualita' dati.
+- [x] Mostrare ultimo contatto del Raspberry e stato online/offline.
+- [x] Mostrare batteria e presenza wearable quando disponibili.
+- [x] Mostrare errori OAuth senza visualizzare token o segreti.
+- [x] Mostrare eventuali messaggi rimasti nella coda MQTT locale.
+- [x] Distinguere warning temporanei da guasti persistenti.
 
 ### E9. Task e test cognitivi nella dashboard medico
 
