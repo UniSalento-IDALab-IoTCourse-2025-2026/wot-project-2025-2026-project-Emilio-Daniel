@@ -45,8 +45,8 @@ export function App() {
 }
 
 function Login({ onLogin }) {
-  const [email, setEmail] = useState("doctor@example.test");
-  const [password, setPassword] = useState("password-demo");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -176,6 +176,7 @@ function Dashboard({ session, onLogout }) {
   useEffect(() => {
     if (!selectedPatientId) return undefined;
     return openPatientSocket(selectedPatientId, {
+      token: session?.access_token,
       onStatus: setWsStatus,
       onEvent: (event) => {
         setEvents((previous) => [event, ...previous].slice(0, 8));
@@ -193,7 +194,7 @@ function Dashboard({ session, onLogout }) {
         }
       },
     });
-  }, [selectedPatientId]);
+  }, [selectedPatientId, session?.access_token]);
 
   const selectedPatient = useMemo(
     () => patients.find((patient) => patient.patient_id === selectedPatientId),

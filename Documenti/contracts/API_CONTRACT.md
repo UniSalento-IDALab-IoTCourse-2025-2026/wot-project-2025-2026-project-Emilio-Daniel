@@ -76,8 +76,8 @@ Request:
 
 ```json
 {
-  "email": "doctor@example.test",
-  "password": "password-demo"
+  "email": "<email configurata nel .env locale>",
+  "password": "<password non committata>"
 }
 ```
 
@@ -86,16 +86,19 @@ Response:
 ```json
 {
   "access_token": "jwt-access-token",
-  "refresh_token": "jwt-refresh-token",
+  "refresh_token": "opaque-refresh-token",
   "token_type": "bearer",
   "expires_in": 900,
   "user": {
-    "user_id": "user-doctor-001",
+    "user_id": "user-1",
     "role": "doctor",
-    "display_name": "Dr. Rossi"
+    "display_name": "Nome visualizzato"
   }
 }
 ```
+
+Il refresh token e' opaco: il backend salva solo il suo hash e puo' revocarlo con
+`POST /api/v1/auth/logout`.
 
 ### Current paziente
 
@@ -198,8 +201,11 @@ Request:
 Endpoint:
 
 ```text
-WS /ws/v1/patients/{patient_id}
+WS /ws/v1/patients/{patient_id}?token=<access_token>
 ```
+
+La connessione viene accettata solo se il token e' valido e l'utente puo' leggere
+quel `patient_id`.
 
 Ogni evento WebSocket ha questo formato:
 

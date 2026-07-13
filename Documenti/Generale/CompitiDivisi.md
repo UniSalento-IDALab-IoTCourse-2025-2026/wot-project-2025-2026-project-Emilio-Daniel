@@ -402,58 +402,84 @@ minimi e verificabili.
 
 ### D5. API REST per dashboard e app
 
-- [ ] Implementare tutti gli endpoint definiti nel contratto condiviso.
-- [ ] Aggiungere paginazione a finestre, decisioni, alert e task.
-- [ ] Aggiungere filtri temporali e per livello/stato.
-- [ ] Costruire `/current` aggregando ultima finestra, decisione e stato tecnico.
-- [ ] Restituire valori mancanti come null.
-- [ ] Impedire a caregiver e paziente di leggere dati non autorizzati.
-- [ ] Validare input, scadenze e transizioni di stato dei task.
-- [ ] Pubblicare esempi OpenAPI utilizzabili da Emilio.
-- [ ] Scrivere test di autorizzazione per ogni ruolo.
+- [x] Implementare tutti gli endpoint definiti nel contratto condiviso.
+- [x] Aggiungere paginazione a finestre, decisioni, alert e task.
+- [x] Aggiungere filtri temporali e per livello/stato.
+- [x] Costruire `/current` aggregando ultima finestra, decisione e stato tecnico.
+- [x] Restituire valori mancanti come null.
+- [x] Impedire a caregiver e paziente di leggere dati non autorizzati.
+- [x] Validare input, scadenze e transizioni di stato dei task.
+- [x] Pubblicare esempi OpenAPI utilizzabili da Emilio.
+- [x] Scrivere test di autorizzazione per ogni ruolo.
+- [x] Implementare endpoint profilo corrente `GET /api/v1/auth/me`.
+- [x] Implementare endpoint admin per creare pazienti.
+- [x] Implementare endpoint admin per creare utenti doctor, caregiver, patient e admin.
+- [x] Implementare endpoint admin per associare utenti ai pazienti autorizzati.
+- [x] Estendere paginazione con `page` e `page_size` coerenti su tutte le liste.
+- [x] Aggiungere filtri task per tipo, scadenza e priorita'.
 
 ### D6. WebSocket realtime
 
-- [ ] Implementare autenticazione della connessione WebSocket.
-- [ ] Iscrivere ogni connessione solo ai pazienti autorizzati.
-- [ ] Inviare gli eventi concordati con event_type e payload.
-- [ ] Gestire heartbeat, timeout e rimozione delle connessioni chiuse.
-- [ ] Evitare perdita del servizio quando un client e' lento.
-- [ ] Documentare riconnessione e recupero degli eventi persi tramite REST.
-- [ ] Testare piu' client collegati allo stesso paziente.
+- [x] Implementare autenticazione della connessione WebSocket.
+- [x] Iscrivere ogni connessione solo ai pazienti autorizzati.
+- [x] Inviare gli eventi concordati con event_type e payload.
+- [x] Gestire heartbeat, timeout e rimozione delle connessioni chiuse.
+- [x] Evitare perdita del servizio quando un client e' lento.
+- [x] Documentare riconnessione e recupero degli eventi persi tramite REST.
+- [x] Testare piu' client collegati allo stesso paziente.
+- [x] Implementare ping/pong applicativo esplicito per verificare client vivi.
+- [x] Documentare e testare recupero eventi persi dopo riconnessione tramite REST.
+- [x] Documentare in modo esplicito evento `task_completed`.
 
 ### D7. Autenticazione, autorizzazione e audit
 
-- [ ] Implementare login e password hash sicuro.
-- [ ] Implementare access token breve e refresh token revocabile.
-- [ ] Definire ruoli doctor, caregiver, patient e admin.
-- [ ] Associare ogni utente ai soli pazienti autorizzati.
-- [ ] Registrare login, creazione task, ack, resolve e modifiche amministrative.
-- [ ] Non registrare password, token Google Health o token FCM nei log.
-- [ ] Preparare utenti demo separati per Emilio e Daniel.
-- [ ] Documentare come revocare un dispositivo smarrito.
+- [x] Implementare login e password hash sicuro.
+- [x] Implementare access token breve e refresh token revocabile.
+- [x] Definire ruoli doctor, caregiver, patient e admin.
+- [x] Associare ogni utente ai soli pazienti autorizzati.
+- [x] Registrare login, creazione/completamento task, ack e resolve; predisporre helper audit per modifiche amministrative future.
+- [x] Non registrare password, token Google Health o token FCM nei log.
+- [x] Preparare utenti demo separati per Emilio e Daniel.
+- [x] Documentare come revocare un dispositivo smarrito.
+- [x] Implementare cambio password utente.
+- [x] Implementare revoca refresh token per dispositivo/sessione specifica.
+- [x] Salvare `last_login_at` sugli utenti.
+- [x] Registrare audit dei login falliti senza salvare password.
+- [x] Aggiungere rate limit base sul login.
 
 ### D8. Logica alert e presa in carico
 
-- [ ] Creare un alert quando arriva un evento pubblicabile dal Raspberry.
-- [ ] Non trasformare automaticamente ogni livello yellow in notifica urgente.
-- [ ] Supportare stati new, acknowledged e resolved.
-- [ ] Salvare utente, ruolo, timestamp e nota per ogni cambio stato.
-- [ ] Rendere idempotente la presa in carico ripetuta.
-- [ ] Inviare aggiornamenti WebSocket dopo ogni cambiamento.
-- [ ] Definire quali livelli vengono notificati a medico e caregiver.
-- [ ] Mantenere separati alert clinical/behavioral e technical.
+- [x] Creare un alert quando arriva un evento pubblicabile dal Raspberry.
+- [x] Non trasformare automaticamente ogni livello yellow in notifica urgente.
+- [x] Supportare stati new, acknowledged e resolved.
+- [x] Salvare utente, ruolo, timestamp e nota per ogni cambio stato.
+- [x] Rendere idempotente la presa in carico ripetuta.
+- [x] Inviare aggiornamenti WebSocket dopo ogni cambiamento.
+- [x] Definire quali livelli vengono notificati a medico e caregiver.
+- [x] Mantenere separati alert clinical/behavioral e technical.
+- [x] Aggiungere anti-spam per non creare alert simili gia' aperti da poco.
+- [x] Separare severita' clinica da severita' tecnica.
+- [x] Aggiungere campo sorgente alert: `ai`, `edge`, `manual`, `system`.
+- [x] Implementare escalation se un alert resta `new` troppo a lungo.
+- [x] Definire destinatari diversi per alert clinici, comportamentali e tecnici.
 
 ### D9. Task, test e risultati
 
-- [ ] Implementare creazione, invio, visualizzazione, completamento e scadenza dei task.
-- [ ] Validare che solo il medico possa creare determinati test clinici.
-- [ ] Salvare contenuto del task con versione per mantenere lo storico.
-- [ ] Impedire risultati duplicati per lo stesso completamento.
-- [ ] Calcolare score solo quando la regola del test e' definita e verificata.
-- [ ] Inviare evento WebSocket quando il risultato viene ricevuto.
-- [ ] Rendere disponibili task e risultati tramite API filtrate per ruolo.
-- [ ] Conservare un audit delle modifiche e delle note del medico.
+- [x] Implementare creazione, invio, visualizzazione, completamento e scadenza dei task.
+- [x] Validare che solo il medico possa creare determinati test clinici.
+- [x] Salvare contenuto del task con versione per mantenere lo storico.
+- [x] Impedire risultati duplicati per lo stesso completamento.
+- [x] Calcolare score solo quando la regola del test e' definita e verificata.
+- [x] Inviare evento WebSocket quando il risultato viene ricevuto.
+- [x] Rendere disponibili task e risultati tramite API filtrate per ruolo.
+- [x] Conservare un audit delle modifiche e delle note del medico.
+- [x] Implementare annullamento task non ancora completato.
+- [x] Supportare stato `cancelled`.
+- [x] Aggiornare o calcolare automaticamente stato `expired`.
+- [x] Assegnare task a destinatario specifico: paziente o caregiver.
+- [x] Restituire dettagli score, ad esempio `correct`, `total` e motivazione.
+- [x] Salvare note medico associate al task.
+- [x] Strutturare risultati diversi per tipo test.
 
 ### D10. Firebase Cloud Messaging
 

@@ -14,6 +14,16 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", pattern="^(development|test|production)$")
     debug: bool = False
     log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    cors_allowed_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
+    auth_secret_key: str = "CAMBIA_AUTH_SECRET_KEY_IN_PRODUZIONE"
+    access_token_minutes: int = Field(default=15, ge=1)
+    refresh_token_days: int = Field(default=30, ge=1)
+    demo_auth_enabled: bool = False
+    demo_auth_password: str = ""
+    demo_doctor_email: str = ""
+    demo_caregiver_email: str = ""
+    demo_patient_email: str = ""
+    demo_admin_email: str = ""
 
     mqtt_host: str = "localhost"
     mqtt_port: int = Field(default=8883, ge=1, le=65535)
@@ -37,6 +47,7 @@ class Settings(BaseSettings):
         required_values = {
             "IOT_BACKEND_MQTT_PASSWORD": self.mqtt_password,
             "IOT_BACKEND_DATABASE_URL": self.database_url,
+            "IOT_BACKEND_AUTH_SECRET_KEY": self.auth_secret_key,
         }
         for env_name, value in required_values.items():
             if not value:
