@@ -9,21 +9,35 @@ rompere l'integrazione.
 ## File principali
 
 ```text
-API_CONTRACT.md       Endpoint REST, WebSocket, errori e regole payload
+API_CONTRACT.md       Endpoint REST, WebSocket, auth, alert e task
 MQTT_CONTRACT.md      Topic MQTT, QoS, sicurezza e payload Edge
-openapi.json          OpenAPI generato dal backend FastAPI
-examples/            Esempi JSON condivisi
-schemas/             Spazio per JSON Schema/OpenAPI, se necessari
+openapi.json          OpenAPI generato dal backend FastAPI reale
+examples/            Esempi JSON condivisi e anonimizzati
+schemas/             Spazio per JSON Schema aggiuntivi, se necessari
 ```
 
 ## Regola operativa
 
-- Emilio prepara esempi reali anonimizzati prodotti dall'Edge.
-- Daniel stabilizza contratti API/MQTT e aggiunge esempi backend/task/alert.
-- Quando un payload reale cambia, il contratto va aggiornato prima di modificare frontend
-  o backend.
+- Emilio mantiene aggiornati gli esempi reali anonimizzati prodotti dall'Edge.
+- Daniel mantiene aggiornati OpenAPI, REST, WebSocket e regole backend.
+- Quando un payload reale cambia, il contratto va aggiornato nella stessa modifica di
+  frontend/backend/Edge.
 
-## Stato iniziale
+## Stato attuale
 
-Gli esempi lato Daniel sono gia' presenti. Gli esempi Edge reali sono placeholder finche'
-Emilio non fornisce i file anonimizzati.
+Gli esempi Edge iniziali sono stati sostituiti con payload reali anonimizzati basati su:
+
+```text
+edge_node/outputs/last-cycle.json
+edge_node/outputs/patient-001-decision.json
+edge_node/data/processed/latest_window.csv
+```
+
+Il backend reale D5-D9 e la dashboard devono usare questi contratti come riferimento.
+
+## Rigenerare OpenAPI
+
+```powershell
+cd cloud/backend
+.\.venv\Scripts\python.exe -m scripts.export_openapi
+```

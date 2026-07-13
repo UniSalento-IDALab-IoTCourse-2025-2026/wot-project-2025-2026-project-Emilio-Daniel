@@ -1,6 +1,0 @@
-{
-  "todo": "Emilio deve sostituire questo placeholder con esempi green, yellow, orange, red e technical",
-  "expected_owner": "Emilio",
-  "levels": ["green", "yellow", "orange", "red", "technical"],
-  "schema_version": 1
-}

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "message_id": "decision-demo-yellow-001",
+  "event_type": "decision_updated",
+  "patient_id": "patient-001",
+  "edge_id": "edge-rpi5-001",
+  "timestamp": "2026-07-12T09:08:00Z",
+  "payload": {
+    "patient_id": "patient-001",
+    "window_start": "2026-07-12T09:04:00+00:00",
+    "window_end": "2026-07-12T09:08:00+00:00",
+    "should_publish": false,
+    "model_label": "contract_example",
+    "evidence": {
+      "fusion": {
+        "mode": "generic_spatial_plus_generic_wearable"
+      }
+    },
+    "window_start_local": "2026-07-12T11:04:00+02:00",
+    "window_end_local": "2026-07-12T11:08:00+02:00",
+    "inference_status": "completed_generic_spatial_plus_generic_wearable",
+    "level": "yellow",
+    "anomaly_score": 48.0,
+    "reasons": [
+      "Score sopra soglia attenzione, senza pubblicazione alert."
+    ]
+  }
+}

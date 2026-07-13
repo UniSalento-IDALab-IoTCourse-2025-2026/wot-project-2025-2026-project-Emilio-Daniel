@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "message_id": "decision-demo-green-001",
+  "event_type": "decision_updated",
+  "patient_id": "patient-001",
+  "edge_id": "edge-rpi5-001",
+  "timestamp": "2026-07-12T09:08:00Z",
+  "payload": {
+    "patient_id": "patient-001",
+    "window_start": "2026-07-12T09:04:00+00:00",
+    "window_end": "2026-07-12T09:08:00+00:00",
+    "level": "green",
+    "should_publish": false,
+    "anomaly_score": 0.0,
+    "reasons": [
+      "Routine inside learned baseline"
+    ],
+    "model_label": "agreement_normal",
+    "evidence": {
+      "fusion": {
+        "mode": "generic_spatial_plus_generic_wearable",
+        "score": 0.0,
+        "label": "agreement_normal",
+        "reasons": [
+          "Available models report routine-compatible behavior"
+        ],
+        "weights": {
+          "generic_spatial": 0.5,
+          "generic_wearable": 0.5
+        },
+        "models": {
+          "generic_spatial": {
+            "available": true,
+            "score": 0.0,
+            "label": "normal",
+            "decision_value": 0.154725,
+            "feature_explanation": {
+              "available": true,
+              "method": "largest_absolute_z_scores_after_training_preprocessing",
+              "top_features": [
+                {
+                  "feature": "kitchen_minutes",
+                  "value": null,
+                  "model_value": 0.0,
+                  "z_score": -0.702,
+                  "abs_z_score": 0.702,
+                  "direction": "below_training",
+                  "imputed": true
+                },
+                {
+                  "feature": "bedroom_minutes",
+                  "value": null,
+                  "model_value": 0.0,
+                  "z_score": -0.699,
+                  "abs_z_score": 0.699,
+                  "direction": "below_training",
+                  "imputed": true
+                },
+                {
+                  "feature": "living_room_minutes",
+                  "value": null,
+                  "model_value": 0.0,
+                  "z_score": -0.674,
+                  "abs_z_score": 0.674,
+                  "direction": "below_training",
+                  "imputed": true
+                },
+                {
+                  "feature": "room_changes",
+                  "value": null,
+                  "model_value": 0.0,
+                  "z_score": -0.593,
+                  "abs_z_score": 0.593,
+                  "direction": "below_training",
+                  "imputed": true
+                },
+                {
+                  "feature": "longest_single_room_minutes",
+                  "value": null,
+                  "model_value": 3.7725,
+                  "z_score": 0.495,
+                  "abs_z_score": 0.495,
+                  "direction": "above_training",
+                  "imputed": true
+                },
+                {
+                  "feature": "bathroom_minutes",
+                  "value": null,
+                  "model_value": 0.0,
+                  "z_score": -0.472,
+                  "abs_z_score": 0.472,
+                  "direction": "below_training",
+                  "imputed": true
+                }
+              ]
+            }
+          },
+          "generic_wearable": {
+            "available": true,
+            "score": 0.0,
+            "label": "normal",
+            "decision_value": 0.228294,
+            "feature_explanation": {
+              "available": true,
+              "method": "largest_absolute_z_scores_after_training_preprocessing",
+              "top_features": [
+                {
+                  "feature": "steps",
+                  "value": null,
+                  "model_value": 5.0,
+                  "z_score": -0.568,
+                  "abs_z_score": 0.568,
+                  "direction": "below_training",
+                  "imputed": true
+                },
+                {
+                  "feature": "sedentary_minutes",
+                  "value": null,
+                  "model_value": 3.9583,
+                  "z_score": 0.568,
+                  "abs_z_score": 0.568,
+                  "direction": "above_training",
+                  "imputed": true
+                },
+                {
+                  "feature": "hrv_rmssd",
+                  "value": 84.65,
+                  "model_value": 45.0,
+                  "z_score": 0.418,
+                  "abs_z_score": 0.418,
+                  "direction": "above_training",
+                  "imputed": false
+                },
+                {
+                  "feature": "spo2_mean",
+                  "value": 96.0,
+                  "model_value": 96.0,
+                  "z_score": 0.372,
+                  "abs_z_score": 0.372,
+                  "direction": "above_training",
+                  "imputed": false
+                },
+                {
+                  "feature": "heart_rate_mean",
+                  "value": null,
+                  "model_value": 75.3769,
+                  "z_score": -0.219,
+                  "abs_z_score": 0.219,
+                  "direction": "below_training",
+                  "imputed": true
+                },
+                {
+                  "feature": "heart_rate_std",
+                  "value": null,
+                  "model_value": 5.126,
+                  "z_score": -0.165,
+                  "abs_z_score": 0.165,
+                  "direction": "below_training",
+                  "imputed": true
+                }
+              ]
+            }
+          },
+          "personal": {
+            "available": false
+          }
+        }
+      }
+    },
+    "window_start_local": "2026-07-12T11:04:00+02:00",
+    "window_end_local": "2026-07-12T11:08:00+02:00",
+    "inference_status": "completed_generic_spatial_plus_generic_wearable"
+  }
+}

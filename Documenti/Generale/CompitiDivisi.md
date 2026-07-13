@@ -136,13 +136,12 @@ iot/patients/{patient_id}/telemetry/decision
 iot/patients/{patient_id}/alerts/critical
 iot/patients/{patient_id}/sensors/watch
 iot/patients/{patient_id}/sensors/ble
-iot/patients/{patient_id}/commands/task
-iot/patients/{patient_id}/commands/ack
 ```
 
-Per la prima versione, i topic `commands` possono essere pubblicati dal backend. Il
-Raspberry deve ricevere soltanto i comandi che riguardano davvero il funzionamento Edge;
-i task destinati all'app paziente rimangono gestiti dal backend e dalle notifiche push.
+Per la prima versione MQTT e' usato soltanto nel verso Edge -> Cloud. I task destinati
+all'app paziente rimangono gestiti dal backend tramite REST, WebSocket e notifiche push.
+Eventuali comandi diretti al Raspberry saranno definiti in un contratto separato solo se
+serviranno davvero per la gestione tecnica dell'Edge.
 
 ### 3.3 API minime condivise
 
@@ -158,8 +157,7 @@ PATCH  /api/v1/alerts/{alert_id}/resolve
 POST   /api/v1/patients/{patient_id}/tasks
 GET    /api/v1/patients/{patient_id}/tasks
 POST   /api/v1/tasks/{task_id}/results
-POST   /api/v1/devices/push-token
-POST   /api/v1/patients/{patient_id}/app-status
+PATCH  /api/v1/tasks/{task_id}/cancel
 GET    /api/v1/patients/{patient_id}/system-status
 WS     /ws/v1/patients/{patient_id}
 ```
@@ -174,17 +172,18 @@ alert_created
 alert_acknowledged
 alert_resolved
 task_created
-task_seen
 task_completed
+task_cancelled
+pong
 system_status_updated
 ```
 
 ### 3.5 File di esempio per lavorare senza dipendenze
 
-- [ ] Emilio prepara payload anonimizzati da `last-cycle.json`.
-- [ ] Emilio prepara payload anonimizzati da `patient-001-decision.json`.
-- [ ] Emilio prepara una riga JSON equivalente a `latest_window.csv`.
-- [ ] Emilio prepara esempi green, yellow, orange, red e technical.
+- [x] Emilio prepara payload anonimizzati da `last-cycle.json`.
+- [x] Emilio prepara payload anonimizzati da `patient-001-decision.json`.
+- [x] Emilio prepara una riga JSON equivalente a `latest_window.csv`.
+- [x] Emilio prepara esempi green, yellow, orange, red e technical.
 - [x] Daniel prepara il file OpenAPI prodotto dal backend.
 - [x] Daniel prepara esempi di task, risultato test, alert e acknowledgement.
 - [x] I file condivisi vengono salvati in `Documenti/contracts/examples/`.
@@ -262,14 +261,14 @@ del backend.
 
 ### E6. Dati wearable e spaziali
 
-- [ ] Creare grafici per frequenza cardiaca media e deviazione standard.
-- [ ] Creare grafici per SpO2, passi, sonno e sedentarieta' quando disponibili.
-- [ ] Mostrare HRV specificando la provenienza e la disponibilita' del dato.
-- [ ] Creare timeline delle stanze e grafico dei minuti per stanza.
-- [ ] Mostrare cambi stanza, cambi notturni e permanenza massima.
-- [ ] Consentire intervalli temporali giornalieri e settimanali.
-- [ ] Non interpretare automaticamente un valore mancante come zero.
-- [ ] Indicare visivamente quando una feature e' stata imputata o non acquisita.
+- [x] Creare grafici per frequenza cardiaca media e deviazione standard.
+- [x] Creare grafici per SpO2, passi, sonno e sedentarieta' quando disponibili.
+- [x] Mostrare HRV specificando la provenienza e la disponibilita' del dato.
+- [x] Creare timeline delle stanze e grafico dei minuti per stanza.
+- [x] Mostrare cambi stanza, cambi notturni e permanenza massima.
+- [x] Consentire intervalli temporali giornalieri e settimanali.
+- [x] Non interpretare automaticamente un valore mancante come zero.
+- [x] Indicare visivamente quando una feature e' stata imputata o non acquisita.
 
 ### E7. Spiegazione AI
 

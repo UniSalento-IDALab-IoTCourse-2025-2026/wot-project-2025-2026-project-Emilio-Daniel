@@ -55,7 +55,12 @@ export const api = {
   login: (credentials) => request("/auth/login", { method: "POST", body: credentials }),
   patients: (session) => request("/patients", { token: session?.access_token }),
   current: (patientId, session) => request(`/patients/${patientId}/current`, { token: session?.access_token }),
-  windows: (patientId, session) => request(`/patients/${patientId}/windows?limit=12`, { token: session?.access_token }),
+  windows: (patientId, session, options = {}) => {
+    const params = new URLSearchParams({ limit: String(options.limit ?? 200) });
+    if (options.date_from) params.set("date_from", options.date_from);
+    if (options.date_to) params.set("date_to", options.date_to);
+    return request(`/patients/${patientId}/windows?${params.toString()}`, { token: session?.access_token });
+  },
   decisions: (patientId, session) => request(`/patients/${patientId}/decisions?limit=8`, { token: session?.access_token }),
   alerts: (patientId, session) => request(`/patients/${patientId}/alerts`, { token: session?.access_token }),
   tasks: (patientId, session) => request(`/patients/${patientId}/tasks`, { token: session?.access_token }),
@@ -79,4 +84,3 @@ export const api = {
       body: task,
     }),
 };
-

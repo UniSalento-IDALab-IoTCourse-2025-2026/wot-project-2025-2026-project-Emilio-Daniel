@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "message_id": "window-demo-001",
+  "event_type": "patient_window_updated",
+  "patient_id": "patient-001",
+  "edge_id": "edge-rpi5-001",
+  "timestamp": "2026-07-12T09:08:00Z",
+  "payload": {
+    "window_start": "2026-07-12T09:04:00+00:00",
+    "window_end": "2026-07-12T09:08:00+00:00",
+    "features": {
+      "wearable_present": true,
+      "wearable_battery_pct": 14,
+      "heart_rate_mean": null,
+      "heart_rate_std": null,
+      "resting_heart_rate": 51,
+      "hrv_rmssd": 84.65,
+      "spo2_mean": 96,
+      "sleep_minutes": 400,
+      "awake_minutes": 35,
+      "steps": null,
+      "sedentary_minutes": null,
+      "room_changes": null,
+      "night_room_changes": null,
+      "bedroom_minutes": null,
+      "kitchen_minutes": null,
+      "bathroom_minutes": null,
+      "living_room_minutes": null,
+      "longest_single_room_minutes": null,
+      "nilm_total_wh": null,
+      "nilm_kitchen_events": null,
+      "nilm_tv_minutes": null,
+      "nilm_coffee_events": null,
+      "nilm_stove_events": null,
+      "fall_events": null
+    }
+  }
+}

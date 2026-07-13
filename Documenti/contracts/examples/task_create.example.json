@@ -1,9 +1,12 @@
 {
   "type": "check_in",
+  "schema_version": 1,
   "priority": "normal",
-  "expires_at": "2026-07-10T18:00:00Z",
+  "assigned_to": "patient",
+  "expires_at": "2026-07-13T18:00:00Z",
   "title": "Controllo benessere",
   "instructions": "Rispondi a queste brevi domande.",
+  "medical_note": "Task dimostrativo di triage.",
   "payload": {
     "questions": [
       {
@@ -18,5 +21,6 @@
         "text": "Hai avuto capogiri?"
       }
     ]
-  }
+  },
+  "scoring": null
 }

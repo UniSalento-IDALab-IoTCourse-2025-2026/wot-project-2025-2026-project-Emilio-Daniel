@@ -441,6 +441,9 @@ function PatientView({ data }) {
   const { current, windows, decisions } = data;
   const stale = isStale(current.last_update);
   const latestDecision = decisions.at(-1);
+  const [rangeMode, setRangeMode] = useState("day");
+  const visibleWindows = useMemo(() => filterWindowsByRange(windows, rangeMode), [windows, rangeMode]);
+  const chartWindows = visibleWindows.length > 0 ? visibleWindows : windows;
 
   return (
     <div className="content-grid">
@@ -455,6 +458,32 @@ function PatientView({ data }) {
           <Metric label="Stanza" value={current.current_room ?? "n/d"} />
           <Metric label="Ultimo update" value={formatDateTime(current.last_update)} />
         </div>
+      </section>
+
+      <section className="panel span-2">
+        <div className="panel-heading">
+          <div>
+            <h3>Dati wearable e spaziali</h3>
+            <p className="panel-subtitle">Finestra visualizzata: {rangeLabel(rangeMode)}. I valori mancanti restano non acquisiti.</p>
+          </div>
+          <div className="segmented-control range-control" aria-label="Intervallo dati">
+            <button
+              className={rangeMode === "day" ? "active" : ""}
+              type="button"
+              onClick={() => setRangeMode("day")}
+            >
+              Giorno
+            </button>
+            <button
+              className={rangeMode === "week" ? "active" : ""}
+              type="button"
+              onClick={() => setRangeMode("week")}
+            >
+              Settimana
+            </button>
+          </div>
+        </div>
+        <WearableSpatialDashboard windows={chartWindows} current={current} />
       </section>
 
       <section className="panel">
@@ -508,6 +537,441 @@ function PatientView({ data }) {
       </section>
     </div>
   );
+}
+
+function WearableSpatialDashboard({ windows, current }) {
+  const latestFeatures = latestFeaturesFromWindows(windows);
+
+  return (
+    <div className="sensor-dashboard">
+      <section className="sensor-block">
+        <div className="sensor-block-heading">
+          <HeartPulse size={18} />
+          <h4>Wearable</h4>
+        </div>
+        <div className="chart-grid">
+          <FeatureTrendCard
+            title="Frequenza cardiaca media"
+            feature="heart_rate_mean"
+            unit="bpm"
+            windows={windows}
+            color="#c83532"
+          />
+          <FeatureTrendCard
+            title="Deviazione frequenza cardiaca"
+            feature="heart_rate_std"
+            unit="bpm"
+            windows={windows}
+            color="#c05621"
+          />
+          <FeatureTrendCard title="SpO2 media" feature="spo2_mean" unit="%" windows={windows} color="#17686c" />
+          <FeatureTrendCard title="Passi" feature="steps" unit="" windows={windows} color="#4452ba" />
+          <FeatureTrendCard title="Sonno" feature="sleep_minutes" unit="min" windows={windows} color="#6271d9" />
+          <FeatureTrendCard title="Sedentarieta" feature="sedentary_minutes" unit="min" windows={windows} color="#744d00" />
+          <FeatureTrendCard title="HRV RMSSD" feature="hrv_rmssd" unit="ms" windows={windows} color="#6f4bb8" />
+        </div>
+        <HrvPanel windows={windows} current={current} latestFeatures={latestFeatures} />
+      </section>
+
+      <section className="sensor-block">
+        <div className="sensor-block-heading">
+          <Home size={18} />
+          <h4>Spazio domestico</h4>
+        </div>
+        <RoomTimeline windows={windows} />
+        <RoomMinutesChart windows={windows} />
+        <SpatialSummary latestFeatures={latestFeatures} />
+      </section>
+    </div>
+  );
+}
+
+function FeatureTrendCard({ title, feature, unit, windows, color }) {
+  const status = featureStatus(windows, feature);
+  const latest = latestFeatureValue(windows, feature);
+
+  return (
+    <article className={`chart-card ${status.kind}`}>
+      <div className="chart-card-header">
+        <div>
+          <span>{title}</span>
+          <strong>{formatFeatureValue(latest, unit)}</strong>
+        </div>
+        <FeatureStatusBadge status={status} />
+      </div>
+      <TrendChart windows={windows} feature={feature} color={color} unit={unit} title={title} />
+    </article>
+  );
+}
+
+function HrvPanel({ windows, current, latestFeatures }) {
+  const status = featureStatus(windows, "hrv_rmssd");
+  const latest = latestFeatureValue(windows, "hrv_rmssd");
+  const hrvDeclared = (current.watch.available_features ?? []).includes("hrv_rmssd");
+  const source = status.kind === "missing"
+    ? "Google Health / Fitbit: non acquisito nelle finestre caricate"
+    : hrvDeclared
+      ? "Google Health / Fitbit: feature dichiarata disponibile dal wearable"
+      : "Google Health / Fitbit: valore presente nelle finestre Edge";
+
+  return (
+    <article className={`hrv-panel ${status.kind}`}>
+      <div>
+        <div className="sensor-block-heading compact-heading">
+          <Watch size={17} />
+          <h4>HRV RMSSD</h4>
+        </div>
+        <p>{source}</p>
+      </div>
+      <div className="hrv-value">
+        <strong>{formatFeatureValue(latest, "ms")}</strong>
+        <FeatureStatusBadge status={status} />
+      </div>
+      <dl className="mini-detail-list">
+        <Detail label="Batteria watch" value={formatFeatureValue(latestFeatures.wearable_battery_pct, "%")} />
+        <Detail label="Wearable presente" value={latestFeatures.wearable_present === true ? "Si" : latestFeatures.wearable_present === false ? "No" : "n/d"} />
+      </dl>
+    </article>
+  );
+}
+
+function TrendChart({ windows, feature, color, unit, title }) {
+  const [hoverPoint, setHoverPoint] = useState(null);
+  const values = windows.map((window, index) => ({
+    index,
+    value: numericFeature(window.features, feature),
+    label: formatDateTime(window.window_end),
+    shortLabel: formatShortDateTime(window.window_end),
+    status: featureStatusForWindow(window.features, feature),
+  }));
+  const numericValues = values.filter((point) => point.value !== null);
+  if (numericValues.length === 0) {
+    return <div className="chart-empty">Dato non acquisito</div>;
+  }
+
+  const width = 360;
+  const height = 154;
+  const padding = { top: 16, right: 14, bottom: 34, left: 46 };
+  const min = Math.min(...numericValues.map((point) => point.value));
+  const max = Math.max(...numericValues.map((point) => point.value));
+  const spread = max - min || 1;
+  const xStep = values.length > 1 ? (width - padding.left - padding.right) / (values.length - 1) : 0;
+  const points = values.map((point) => {
+    const x = padding.left + point.index * xStep;
+    if (point.value === null) return { ...point, x, y: null };
+    const y = height - padding.bottom - ((point.value - min) / spread) * (height - padding.top - padding.bottom);
+    return { ...point, x, y };
+  });
+  const segments = splitChartSegments(points);
+  const yTicks = [
+    { label: formatAxisValue(max), value: max },
+    { label: formatAxisValue((min + max) / 2), value: (min + max) / 2 },
+    { label: formatAxisValue(min), value: min },
+  ];
+  const firstLabel = values[0]?.shortLabel ?? "";
+  const lastLabel = values.at(-1)?.shortLabel ?? "";
+
+  function yForValue(value) {
+    return height - padding.bottom - ((value - min) / spread) * (height - padding.top - padding.bottom);
+  }
+
+  function updateHover(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const svgX = ((event.clientX - rect.left) / rect.width) * width;
+    const nearest = numericValues
+      .map((point) => points[point.index])
+      .filter((point) => point?.value !== null)
+      .reduce((best, point) => (Math.abs(point.x - svgX) < Math.abs(best.x - svgX) ? point : best));
+    setHoverPoint(nearest);
+  }
+
+  return (
+    <div className="chart-shell">
+      <svg
+        className="trend-chart"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`Andamento ${title}`}
+        tabIndex={0}
+        onMouseMove={updateHover}
+        onMouseLeave={() => setHoverPoint(null)}
+        onFocus={() => setHoverPoint(points[numericValues.at(-1)?.index] ?? null)}
+        onBlur={() => setHoverPoint(null)}
+      >
+        {yTicks.map((tick) => {
+          const y = yForValue(tick.value);
+          return (
+            <g key={`${feature}-${tick.label}-${y}`}>
+              <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} className="chart-grid-line" />
+              <text x={padding.left - 8} y={y + 4} className="chart-tick-label" textAnchor="end">{tick.label}</text>
+            </g>
+          );
+        })}
+        <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} className="chart-axis" />
+        <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} className="chart-axis" />
+        <text x={(padding.left + width - padding.right) / 2} y={height - 4} className="chart-axis-title" textAnchor="middle">tempo</text>
+        <text x={12} y={height / 2} className="chart-axis-title y-title" textAnchor="middle">valore</text>
+        <text x={padding.left} y={height - 18} className="chart-tick-label" textAnchor="start">{firstLabel}</text>
+        <text x={width - padding.right} y={height - 18} className="chart-tick-label" textAnchor="end">{lastLabel}</text>
+        {segments.map((segment, index) => (
+          <polyline
+            key={`${feature}-${index}`}
+            points={segment.map((point) => `${point.x},${point.y}`).join(" ")}
+            fill="none"
+            stroke={color}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+        {hoverPoint && (
+          <line
+            x1={hoverPoint.x}
+            y1={padding.top}
+            x2={hoverPoint.x}
+            y2={height - padding.bottom}
+            className="chart-hover-line"
+          />
+        )}
+        {points.filter((point) => point.y !== null).map((point) => (
+          <circle
+            key={`${feature}-${point.index}`}
+            cx={point.x}
+            cy={point.y}
+            r={hoverPoint?.index === point.index ? 6 : point.status === "imputed" ? 5 : 3.8}
+            fill={point.status === "imputed" ? "#ffffff" : color}
+            stroke={color}
+            strokeWidth="2"
+          />
+        ))}
+        <rect
+          x={padding.left}
+          y={padding.top}
+          width={width - padding.left - padding.right}
+          height={height - padding.top - padding.bottom}
+          fill="transparent"
+        />
+      </svg>
+      {hoverPoint && (
+        <div
+          className={`chart-tooltip ${hoverPoint.x > width / 2 ? "left" : "right"}`}
+          style={{ left: `${(hoverPoint.x / width) * 100}%` }}
+        >
+          <strong>{formatFeatureValue(hoverPoint.value, unit)}</strong>
+          <span>{hoverPoint.label}</span>
+          <small>{hoverPoint.status === "imputed" ? "dato imputato" : "dato acquisito"}</small>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoomTimeline({ windows }) {
+  const rooms = windows.map((window) => ({
+    room: dominantRoom(window.features),
+    start: window.window_start,
+    end: window.window_end,
+  }));
+
+  if (rooms.length === 0) {
+    return <p className="empty-text">Nessuna finestra spaziale disponibile.</p>;
+  }
+
+  return (
+    <div className="room-timeline" aria-label="Timeline stanze">
+      {rooms.map((item, index) => (
+        <span
+          key={`${item.end}-${index}`}
+          className={`room-segment ${item.room ?? "unknown"}`}
+          title={`${roomLabel(item.room)} - ${formatDateTime(item.start)} / ${formatDateTime(item.end)}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function RoomMinutesChart({ windows }) {
+  const totals = roomKeys.map((room) => ({
+    room,
+    minutes: sumFeature(windows, `${room}_minutes`),
+    status: featureStatus(windows, `${room}_minutes`),
+  }));
+  const max = Math.max(1, ...totals.map((item) => item.minutes ?? 0));
+
+  return (
+    <div className="room-bars" aria-label="Minuti per stanza">
+      {totals.map((item) => (
+        <div key={item.room} className="room-bar-row">
+          <span>{roomLabel(item.room)}</span>
+          <div className="room-bar-track">
+            {item.minutes === null ? (
+              <span className="room-bar-missing">n/d</span>
+            ) : (
+              <span className={`room-bar-fill ${item.room}`} style={{ width: `${Math.max(4, (item.minutes / max) * 100)}%` }} />
+            )}
+          </div>
+          <strong>{item.minutes === null ? "n/d" : `${item.minutes.toFixed(1)} min`}</strong>
+          <FeatureStatusBadge status={item.status} compact />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SpatialSummary({ latestFeatures }) {
+  return (
+    <div className="spatial-summary">
+      <Metric label="Cambi stanza" value={formatFeatureValue(latestFeatures.room_changes, "")} />
+      <Metric label="Cambi notturni" value={formatFeatureValue(latestFeatures.night_room_changes, "")} />
+      <Metric label="Permanenza max" value={formatFeatureValue(latestFeatures.longest_single_room_minutes, "min")} />
+    </div>
+  );
+}
+
+function FeatureStatusBadge({ status, compact = false }) {
+  return <span className={`feature-status ${status.kind} ${compact ? "compact-status" : ""}`}>{status.label}</span>;
+}
+
+const roomKeys = ["kitchen", "bedroom", "bathroom", "living_room"];
+
+function filterWindowsByRange(windows, rangeMode) {
+  if (!Array.isArray(windows) || windows.length === 0) return [];
+  const latestTimestamp = Math.max(...windows.map((window) => new Date(window.window_end).getTime()).filter(Number.isFinite));
+  if (!Number.isFinite(latestTimestamp)) return windows;
+  const days = rangeMode === "week" ? 7 : 1;
+  const minTimestamp = latestTimestamp - days * 24 * 60 * 60 * 1000;
+  return windows.filter((window) => {
+    const timestamp = new Date(window.window_end).getTime();
+    return Number.isFinite(timestamp) && timestamp >= minTimestamp;
+  });
+}
+
+function rangeLabel(rangeMode) {
+  return rangeMode === "week" ? "ultimi 7 giorni" : "ultimo giorno";
+}
+
+function latestFeaturesFromWindows(windows) {
+  return [...windows].reverse().find((window) => window.features)?.features ?? {};
+}
+
+function latestFeatureValue(windows, feature) {
+  for (const window of [...windows].reverse()) {
+    const value = featureValue(window.features, feature);
+    if (!isMissingValue(value)) return value;
+  }
+  return null;
+}
+
+function featureValue(features, feature) {
+  if (!features) return null;
+  return features[feature];
+}
+
+function numericFeature(features, feature) {
+  const value = featureValue(features, feature);
+  if (isMissingValue(value)) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function isMissingValue(value) {
+  if (value === null || value === undefined || value === "") return true;
+  if (typeof value === "number" && Number.isNaN(value)) return true;
+  if (typeof value === "string" && ["nan", "null", "none", "n/d"].includes(value.trim().toLowerCase())) return true;
+  return false;
+}
+
+function formatFeatureValue(value, unit) {
+  if (isMissingValue(value)) return "n/d";
+  if (typeof value === "boolean") return value ? "Si" : "No";
+  const numeric = Number(value);
+  const formatted = Number.isFinite(numeric) ? Number(numeric.toFixed(2)).toString() : String(value);
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function formatAxisValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "n/d";
+  if (Math.abs(numeric) >= 1000) return Math.round(numeric).toString();
+  if (Math.abs(numeric) >= 100) return numeric.toFixed(0);
+  if (Math.abs(numeric) >= 10) return numeric.toFixed(1);
+  return numeric.toFixed(2);
+}
+
+function formatShortDateTime(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function featureStatus(windows, feature) {
+  if (!windows.length) return { kind: "missing", label: "non acquisito" };
+  if (windows.some((window) => featureStatusForWindow(window.features, feature) === "imputed")) {
+    return { kind: "imputed", label: "imputato" };
+  }
+  if (windows.some((window) => !isMissingValue(featureValue(window.features, feature)))) {
+    return { kind: "acquired", label: "acquisito" };
+  }
+  return { kind: "missing", label: "non acquisito" };
+}
+
+function featureStatusForWindow(features, feature) {
+  if (!features || isMissingValue(features[feature])) return "missing";
+  const imputed = features.imputed_features ?? features.imputed ?? features.feature_imputed ?? {};
+  if (Array.isArray(imputed) && imputed.includes(feature)) return "imputed";
+  if (typeof imputed === "object" && imputed?.[feature] === true) return "imputed";
+  return "acquired";
+}
+
+function splitChartSegments(points) {
+  const segments = [];
+  let current = [];
+  for (const point of points) {
+    if (point.y === null) {
+      if (current.length > 0) segments.push(current);
+      current = [];
+    } else {
+      current.push(point);
+    }
+  }
+  if (current.length > 0) segments.push(current);
+  return segments;
+}
+
+function sumFeature(windows, feature) {
+  let total = 0;
+  let found = false;
+  for (const window of windows) {
+    const value = numericFeature(window.features, feature);
+    if (value !== null) {
+      total += value;
+      found = true;
+    }
+  }
+  return found ? total : null;
+}
+
+function dominantRoom(features) {
+  const values = roomKeys
+    .map((room) => ({ room, minutes: numericFeature(features, `${room}_minutes`) }))
+    .filter((item) => item.minutes !== null);
+  if (values.length === 0) return null;
+  values.sort((a, b) => b.minutes - a.minutes);
+  return values[0].minutes > 0 ? values[0].room : null;
+}
+
+function roomLabel(room) {
+  return {
+    kitchen: "Cucina",
+    bedroom: "Camera",
+    bathroom: "Bagno",
+    living_room: "Soggiorno",
+    unknown: "Non acquisita",
+  }[room ?? "unknown"] ?? room;
 }
 
 function AlertsView({ data, session, patientId, onChanged }) {
