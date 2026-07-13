@@ -435,14 +435,14 @@ minimi e verificabili.
 
 ### D8. Logica alert e presa in carico
 
-- [ ] Creare un alert quando arriva un evento pubblicabile dal Raspberry.
-- [ ] Non trasformare automaticamente ogni livello yellow in notifica urgente.
-- [ ] Supportare stati new, acknowledged e resolved.
-- [ ] Salvare utente, ruolo, timestamp e nota per ogni cambio stato.
-- [ ] Rendere idempotente la presa in carico ripetuta.
-- [ ] Inviare aggiornamenti WebSocket dopo ogni cambiamento.
-- [ ] Definire quali livelli vengono notificati a medico e caregiver.
-- [ ] Mantenere separati alert clinical/behavioral e technical.
+- [x] Creare un alert quando arriva un evento pubblicabile dal Raspberry.
+- [x] Non trasformare automaticamente ogni livello yellow in notifica urgente.
+- [x] Supportare stati new, acknowledged e resolved.
+- [x] Salvare utente, ruolo, timestamp e nota per ogni cambio stato.
+- [x] Rendere idempotente la presa in carico ripetuta.
+- [x] Inviare aggiornamenti WebSocket dopo ogni cambiamento.
+- [x] Definire quali livelli vengono notificati a medico e caregiver.
+- [x] Mantenere separati alert clinical/behavioral e technical.
 
 ### D9. Task, test e risultati
 

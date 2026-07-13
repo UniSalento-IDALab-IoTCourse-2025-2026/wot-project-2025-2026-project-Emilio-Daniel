@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -20,6 +21,8 @@ from app.db.models import (
 from app.mqtt.events import InternalEvent, event_bus
 from app.mqtt.schemas import EdgeMqttPayload, decode_payload
 from app.mqtt.topics import ParsedTopic, parse_topic
+
+ALERT_LEVELS_FROM_DECISION = {"orange", "red"}
 
 
 @dataclass(frozen=True)
@@ -152,21 +155,85 @@ def store_decision(db: Session, payload: EdgeMqttPayload) -> None:
     if not level:
         raise ValueError("decision payload requires level.")
 
+    decision = Decision(
+        message_id=payload.message_id,
+        patient_id=payload.patient_id,
+        edge_id=payload.edge_id,
+        timestamp=payload.timestamp,
+        window_start=parse_optional_datetime(payload.payload.get("window_start")),
+        window_end=parse_optional_datetime(payload.payload.get("window_end")),
+        level=level,
+        should_publish=bool(payload.payload.get("should_publish", extra.get("should_publish", False))),
+        anomaly_score=parse_optional_float(payload.payload.get("anomaly_score")),
+        model_label=optional_str(payload.payload.get("model_label")),
+        payload=payload.model_dump(mode="json"),
+    )
+    db.add(decision)
+    db.flush()
+    create_alert_from_decision_if_needed(db, decision)
+
+
+def create_alert_from_decision_if_needed(db: Session, decision: Decision) -> None:
+    """Crea un alert automatico solo per decisioni pubblicabili e importanti."""
+    level = decision.level.lower()
+    if not decision.should_publish or level not in ALERT_LEVELS_FROM_DECISION:
+        return
+    message_id = alert_message_id_from_decision(decision.message_id)
+    existing = db.execute(select(Alert.id).where(Alert.message_id == message_id)).first()
+    if existing is not None:
+        return
+
     db.add(
-        Decision(
-            message_id=payload.message_id,
-            patient_id=payload.patient_id,
-            edge_id=payload.edge_id,
-            timestamp=payload.timestamp,
-            window_start=parse_optional_datetime(payload.payload.get("window_start")),
-            window_end=parse_optional_datetime(payload.payload.get("window_end")),
+        Alert(
+            message_id=message_id,
+            patient_id=decision.patient_id,
+            decision_id=decision.id,
             level=level,
-            should_publish=bool(payload.payload.get("should_publish", extra.get("should_publish", False))),
-            anomaly_score=parse_optional_float(payload.payload.get("anomaly_score")),
-            model_label=optional_str(payload.payload.get("model_label")),
-            payload=payload.model_dump(mode="json"),
+            status="new",
+            category=alert_category_from_decision(decision),
+            title=alert_title_from_decision(decision),
+            description=alert_description_from_decision(decision),
+            opened_at=decision.timestamp,
         )
     )
+
+
+def alert_message_id_from_decision(decision_message_id: str) -> str:
+    """Deriva un id stabile per deduplicare l'alert generato dalla decisione."""
+    digest = hashlib.sha256(decision_message_id.encode("utf-8")).hexdigest()[:24]
+    return f"alert-from-decision-{digest}"
+
+
+def alert_category_from_decision(decision: Decision) -> str:
+    """Classifica l'alert mantenendo separati tecnico, clinico e comportamentale."""
+    payload = decision.payload.get("payload", {}) if isinstance(decision.payload, dict) else {}
+    explicit = str(payload.get("category") or "").strip().lower()
+    if explicit in {"clinical", "behavioral", "technical"}:
+        return explicit
+    model_label = (decision.model_label or "").lower()
+    serialized = str(payload).lower()
+    if any(token in serialized for token in {"edge_offline", "oauth", "battery", "sensor", "stale"}):
+        return "technical"
+    if any(token in f"{model_label} {serialized}" for token in {"wearable", "heart", "spo2", "health", "watch"}):
+        return "clinical"
+    return "behavioral"
+
+
+def alert_title_from_decision(decision: Decision) -> str:
+    if decision.level.lower() == "red":
+        return "Alert severo AI"
+    return "Alert importante AI"
+
+
+def alert_description_from_decision(decision: Decision) -> str:
+    payload = decision.payload.get("payload", {}) if isinstance(decision.payload, dict) else {}
+    reasons = payload.get("reasons") if isinstance(payload, dict) else None
+    parts = [f"Decisione AI {decision.level}"]
+    if decision.anomaly_score is not None:
+        parts.append(f"score {decision.anomaly_score:.1f}")
+    if isinstance(reasons, list) and reasons:
+        parts.append("; ".join(str(reason) for reason in reasons[:3]))
+    return " - ".join(parts)
 
 
 def store_alert(db: Session, payload: EdgeMqttPayload) -> None:

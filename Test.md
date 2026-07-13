@@ -1444,13 +1444,14 @@ Mock backend: http://127.0.0.1:8090/docs
 Nota importante:
 
 ```text
-La Dashboard puo' puntare al backend reale per REST D5 e WebSocket D6. Il mock resta
+La Dashboard puo' puntare al backend reale per REST D5, WebSocket D6, auth D7 e alert
+D8. Il mock resta
 utile per simulare scenari controllati.
 ```
 
-## 14. Usare backend reale D5/D6/D7
+## 14. Usare backend reale D5/D6/D7/D8
 
-Le REST reali D5, il WebSocket reale D6 e l'auth D7 sono disponibili. Modificare la Dashboard per
+Le REST reali D5, il WebSocket reale D6, l'auth D7 e gli alert automatici D8 sono disponibili. Modificare la Dashboard per
 puntare interamente al backend reale.
 
 Creare o modificare `Dashboard\.env`:
@@ -1459,6 +1460,13 @@ Creare o modificare `Dashboard\.env`:
 VITE_API_BASE_URL=http://127.0.0.1:8080/api/v1
 VITE_WS_BASE_URL=ws://127.0.0.1:8080/ws/v1
 VITE_DATA_SOURCE=real
+```
+
+Per verificare D8 lato backend:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend
+.\.venv\Scripts\python -m pytest tests\test_mqtt_ingest.py
 ```
 
 Riavviare Vite:

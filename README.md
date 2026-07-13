@@ -200,6 +200,8 @@ Documenti/
     D4.md                 Subscriber MQTT e ingestione
     D5.md                 API REST reali per dashboard e app
     D6.md                 WebSocket realtime
+    D7.md                 Autenticazione, autorizzazione e audit
+    D8.md                 Logica alert e presa in carico
   contracts/
     API_CONTRACT.md       Contratto API REST/WebSocket
     MQTT_CONTRACT.md      Contratto topic e payload MQTT
@@ -264,6 +266,8 @@ L'app iOS si crea su Mac con Xcode usando i file in
 - Ho aggiunto autenticazione e autorizzazione D7: password hash, access token breve,
   refresh token revocabile, ruoli doctor/caregiver/patient/admin, WebSocket protetta
   e audit delle azioni importanti.
+- Ho aggiunto la logica alert D8: decisioni AI pubblicabili `orange/red` creano alert
+  automatici deduplicati, mentre `yellow` resta attenzione visibile ma non urgente.
 - Ho aggiunto `edge_runtime`, il comando unico che aggrega la finestra e fa inferenza
   automaticamente se trova un modello addestrato.
 - Ho aggiunto `edge_quality`, che controlla se i dati sono utilizzabili prima di salvarli
@@ -1544,7 +1548,7 @@ python -m edge_baseline.cli --config config/edge.yml status
 
 1. Emilio: implementare publisher MQTT sull'Edge/Raspberry usando i contratti in
    `Documenti/contracts/MQTT_CONTRACT.md`.
-2. Daniel: passare a D8, logica alert e presa in carico.
+2. Daniel: passare a D9, task clinici, risultati e scadenze.
 3. Collegare `last-cycle.json`, `latest_window.csv` e `patient-001-decision.json` ai
    topic MQTT definitivi.
 4. Collegare dashboard/app alle API D5 reali e verificare i dati con PostgreSQL.

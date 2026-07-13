@@ -192,8 +192,76 @@ def test_ingest_window_decision_alert_and_sensor_status() -> None:
         assert {window.status, decision.status, alert.status, sensor.status} == {"stored"}
         assert session.execute(select(FeatureWindow)).scalar_one().features["heart_rate_mean"] == 70.0
         assert session.execute(select(Decision)).scalar_one().level == "orange"
-        assert session.execute(select(Alert)).scalar_one().title == "Critical alert"
+        explicit_alert = session.execute(select(Alert).where(Alert.message_id == "alert-001")).scalar_one()
+        assert explicit_alert.title == "Critical alert"
         assert session.execute(select(SensorStatus)).scalar_one().status == "active"
+
+
+def test_publishable_orange_decision_creates_automatic_alert() -> None:
+    with make_session() as session:
+        result = ingest_mqtt_message(
+            session,
+            "iot/patients/patient-001/telemetry/decision",
+            payload(
+                message_id="decision-auto-alert",
+                event_type="decision_updated",
+                body={
+                    "level": "orange",
+                    "should_publish": True,
+                    "anomaly_score": 78.4,
+                    "model_label": "generic_wearable_anomaly_only",
+                    "reasons": ["Score elevato"],
+                },
+            ),
+        )
+
+        alert = session.execute(select(Alert)).scalar_one()
+        decision = session.execute(select(Decision)).scalar_one()
+        assert result.status == "stored"
+        assert alert.decision_id == decision.id
+        assert alert.level == "orange"
+        assert alert.status == "new"
+        assert alert.category == "clinical"
+        assert alert.title == "Alert importante AI"
+        assert "Score elevato" in (alert.description or "")
+
+
+def test_yellow_decision_does_not_create_urgent_alert() -> None:
+    with make_session() as session:
+        result = ingest_mqtt_message(
+            session,
+            "iot/patients/patient-001/telemetry/decision",
+            payload(
+                message_id="decision-yellow",
+                event_type="decision_updated",
+                body={
+                    "level": "yellow",
+                    "should_publish": True,
+                    "anomaly_score": 45.0,
+                    "model_label": "generic_wearable_attention",
+                },
+            ),
+        )
+
+        assert result.status == "stored"
+        assert session.execute(select(Decision)).scalar_one().level == "yellow"
+        assert session.execute(select(Alert)).scalars().all() == []
+
+
+def test_duplicate_publishable_decision_does_not_create_duplicate_alert() -> None:
+    with make_session() as session:
+        raw_payload = payload(
+            message_id="decision-auto-duplicate",
+            event_type="decision_updated",
+            body={"level": "red", "should_publish": True, "anomaly_score": 99.0},
+        )
+
+        first = ingest_mqtt_message(session, "iot/patients/patient-001/telemetry/decision", raw_payload)
+        second = ingest_mqtt_message(session, "iot/patients/patient-001/telemetry/decision", raw_payload)
+
+        assert first.status == "stored"
+        assert second.status == "duplicate"
+        assert len(session.execute(select(Alert)).scalars().all()) == 1
 
 
 def test_out_of_order_sensor_status_does_not_overwrite_newer_state() -> None:
