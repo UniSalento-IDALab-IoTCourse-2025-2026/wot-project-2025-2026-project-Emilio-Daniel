@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 
 router = APIRouter()
+ALERT_ESCALATION_MINUTES = 30
 
 
 @router.get("/status", summary="Alerts module status")
@@ -146,6 +147,11 @@ def alert_payload(db: Session, alert: Alert) -> dict[str, Any]:
         "level": alert.level,
         "status": alert.status,
         "category": alert.category,
+        "source": alert.source,
+        "clinical_severity": alert.clinical_severity,
+        "technical_severity": alert.technical_severity,
+        "escalated": is_escalated(alert),
+        "escalated_at": utc_iso(alert.escalated_at) or (utc_iso(escalation_time(alert)) if is_escalated(alert) else None),
         "title": alert.title,
         "description": alert.description,
         "opened_at": utc_iso(alert.opened_at),
@@ -174,6 +180,21 @@ def latest_event(db: Session, alert_id: int, event_type: str) -> AlertEvent | No
 def anomaly_score(alert: Alert) -> float | None:
     """Estrae lo score se il publisher lo ha incluso nel payload descrittivo."""
     return None
+
+
+def escalation_time(alert: Alert) -> datetime:
+    return alert.opened_at + timedelta(minutes=ALERT_ESCALATION_MINUTES)
+
+
+def is_escalated(alert: Alert) -> bool:
+    if alert.status != "new":
+        return False
+    if alert.escalated_at is not None:
+        return True
+    opened_at = alert.opened_at
+    if opened_at.tzinfo is None:
+        opened_at = opened_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) >= opened_at + timedelta(minutes=ALERT_ESCALATION_MINUTES)
 
 
 def parse_prefixed_id(value: str, prefix: str) -> int | None:

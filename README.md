@@ -271,6 +271,8 @@ L'app iOS si crea su Mac con Xcode usando i file in
   automatici deduplicati, mentre `yellow` resta attenzione visibile ma non urgente.
 - Ho aggiunto le regole task D9: tipi task validati, test clinici riservati al medico,
   scadenze, blocco duplicati e scoring solo con regola esplicita.
+- Ho completato le estensioni D5-D8: API admin, profilo utente, cambio password,
+  revoca sessioni, ping/pong WebSocket, anti-spam alert ed escalation.
 - Ho aggiunto `edge_runtime`, il comando unico che aggrega la finestra e fa inferenza
   automaticamente se trova un modello addestrato.
 - Ho aggiunto `edge_quality`, che controlla se i dati sono utilizzabili prima di salvarli

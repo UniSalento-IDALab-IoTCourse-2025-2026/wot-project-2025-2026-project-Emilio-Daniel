@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -21,10 +21,13 @@ from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 
 router = APIRouter()
+ALERT_ESCALATION_MINUTES = 30
 
 
 @router.get("", summary="List dashboard patients")
 def list_patients(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -37,7 +40,7 @@ def list_patients(
         query = query.where(Patient.patient_id.in_(allowed))
     patients = db.execute(query.order_by(Patient.patient_id)).scalars().all()
     items = [patient_summary(db, patient) for patient in patients]
-    return paginated(items, page_size=20)
+    return paginated(items, page=page, page_size=page_size)
 
 
 @router.get("/{patient_id}/current", summary="Current patient state")
@@ -55,6 +58,8 @@ def patient_current(
 def patient_windows(
     patient_id: str,
     limit: int = Query(default=20, ge=1, le=200),
+    page: int = Query(default=1, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=200),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     _current_user: CurrentUser = Depends(require_patient_access),
@@ -69,13 +74,15 @@ def patient_windows(
         query = query.where(FeatureWindow.window_end <= date_to)
     rows = db.execute(query.order_by(desc(FeatureWindow.window_end), desc(FeatureWindow.id)).limit(limit)).scalars().all()
     items = [window_payload(row) for row in reversed(rows)]
-    return paginated(items, page_size=limit)
+    return paginated(items, page=page, page_size=page_size or limit)
 
 
 @router.get("/{patient_id}/decisions", summary="Patient AI decisions")
 def patient_decisions(
     patient_id: str,
     limit: int = Query(default=20, ge=1, le=200),
+    page: int = Query(default=1, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=200),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     _current_user: CurrentUser = Depends(require_patient_access),
@@ -90,7 +97,7 @@ def patient_decisions(
         query = query.where(Decision.timestamp <= date_to)
     rows = db.execute(query.order_by(desc(Decision.timestamp), desc(Decision.id)).limit(limit)).scalars().all()
     items = [decision_payload(row) for row in reversed(rows)]
-    return paginated(items, page_size=limit)
+    return paginated(items, page=page, page_size=page_size or limit)
 
 
 @router.get("/{patient_id}/alerts", summary="Patient alerts")
@@ -100,6 +107,8 @@ def patient_alerts(
     status: str | None = Query(default=None),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
     _current_user: CurrentUser = Depends(require_patient_access),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -115,13 +124,19 @@ def patient_alerts(
     if date_to is not None:
         query = query.where(Alert.opened_at <= date_to)
     rows = db.execute(query.order_by(desc(Alert.opened_at), desc(Alert.id))).scalars().all()
-    return paginated([alert_payload(db, row) for row in rows])
+    return paginated([alert_payload(db, row) for row in rows], page=page, page_size=page_size)
 
 
 @router.get("/{patient_id}/tasks", summary="Patient tasks")
 def patient_tasks(
     patient_id: str,
     status: str | None = Query(default=None),
+    task_type: str | None = Query(default=None),
+    due_before: datetime | None = Query(default=None),
+    due_after: datetime | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
     _current_user: CurrentUser = Depends(require_patient_access),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -130,8 +145,17 @@ def patient_tasks(
     query = select(Task).where(Task.patient_id == patient_id)
     if status:
         query = query.where(Task.status == status)
+    if task_type:
+        query = query.where(Task.task_type == task_type)
+    if due_before is not None:
+        query = query.where(Task.due_at <= due_before)
+    if due_after is not None:
+        query = query.where(Task.due_at >= due_after)
     rows = db.execute(query.order_by(desc(Task.created_at), desc(Task.id))).scalars().all()
-    return paginated([task_payload(row) for row in rows])
+    items = [task_payload(row) for row in rows]
+    if priority:
+        items = [item for item in items if item.get("priority") == priority]
+    return paginated(items, page=page, page_size=page_size)
 
 
 @router.post("/{patient_id}/tasks", summary="Create patient task")
@@ -374,6 +398,11 @@ def alert_payload(db: Session, alert: Alert) -> dict[str, Any]:
         "level": alert.level,
         "status": alert.status,
         "category": alert.category,
+        "source": alert.source,
+        "clinical_severity": alert.clinical_severity,
+        "technical_severity": alert.technical_severity,
+        "escalated": is_alert_escalated(alert),
+        "escalated_at": utc_iso(alert.escalated_at) or (utc_iso(alert.opened_at + timedelta(minutes=ALERT_ESCALATION_MINUTES)) if is_alert_escalated(alert) else None),
         "title": alert.title,
         "description": alert.description,
         "opened_at": utc_iso(alert.opened_at),
@@ -397,6 +426,18 @@ def latest_alert_event(db: Session, alert_id: int, event_type: str) -> AlertEven
         .order_by(desc(AlertEvent.timestamp), desc(AlertEvent.id))
         .limit(1)
     ).scalar_one_or_none()
+
+
+def is_alert_escalated(alert: Alert) -> bool:
+    """Segnala alert rimasti nuovi troppo a lungo senza mutare il DB in lettura."""
+    if alert.status != "new":
+        return False
+    if alert.escalated_at is not None:
+        return True
+    opened_at = alert.opened_at
+    if opened_at.tzinfo is None:
+        opened_at = opened_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) >= opened_at + timedelta(minutes=ALERT_ESCALATION_MINUTES)
 
 
 def task_payload(task: Task) -> dict[str, Any]:

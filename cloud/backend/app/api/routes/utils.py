@@ -16,10 +16,14 @@ def utc_iso(value: datetime | None) -> str | None:
 
 def paginated(items: list[dict[str, Any]], page: int = 1, page_size: int | None = None) -> dict[str, Any]:
     """Costruisce una risposta paginata compatibile con dashboard e app."""
-    effective_page_size = len(items) if page_size is None else page_size
+    effective_page_size = len(items) if page_size is None else max(page_size, 1)
+    effective_page = max(page, 1)
+    start = (effective_page - 1) * effective_page_size
+    end = start + effective_page_size
+    page_items = items[start:end] if page_size is not None else items
     return {
-        "items": items,
-        "page": page,
+        "items": page_items,
+        "page": effective_page,
         "page_size": effective_page_size,
         "total": len(items),
     }

@@ -58,7 +58,15 @@ async def patient_websocket(websocket: WebSocket, patient_id: str) -> None:
             snapshot = new_snapshot
 
             try:
-                await asyncio.wait_for(websocket.receive_text(), timeout=2.0)
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=2.0)
+                if message.strip().lower() == "ping":
+                    await websocket.send_json(
+                        websocket_event(
+                            event_type="pong",
+                            patient_id=patient_id,
+                            payload={"reason": "client_ping"},
+                        )
+                    )
             except TimeoutError:
                 continue
     except WebSocketDisconnect:

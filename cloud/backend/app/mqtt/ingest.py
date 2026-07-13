@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -23,6 +23,7 @@ from app.mqtt.schemas import EdgeMqttPayload, decode_payload
 from app.mqtt.topics import ParsedTopic, parse_topic
 
 ALERT_LEVELS_FROM_DECISION = {"orange", "red"}
+ALERT_SPAM_WINDOW_MINUTES = 30
 
 
 @dataclass(frozen=True)
@@ -182,6 +183,10 @@ def create_alert_from_decision_if_needed(db: Session, decision: Decision) -> Non
     existing = db.execute(select(Alert.id).where(Alert.message_id == message_id)).first()
     if existing is not None:
         return
+    category = alert_category_from_decision(decision)
+    source = alert_source_from_decision(decision)
+    if has_similar_open_alert(db, decision.patient_id, decision.level, category, source, decision.timestamp):
+        return
 
     db.add(
         Alert(
@@ -190,7 +195,10 @@ def create_alert_from_decision_if_needed(db: Session, decision: Decision) -> Non
             decision_id=decision.id,
             level=level,
             status="new",
-            category=alert_category_from_decision(decision),
+            category=category,
+            source=source,
+            clinical_severity=decision.level if category in {"clinical", "behavioral"} else None,
+            technical_severity=decision.level if category == "technical" else None,
             title=alert_title_from_decision(decision),
             description=alert_description_from_decision(decision),
             opened_at=decision.timestamp,
@@ -219,6 +227,35 @@ def alert_category_from_decision(decision: Decision) -> str:
     return "behavioral"
 
 
+def alert_source_from_decision(decision: Decision) -> str:
+    payload = decision.payload.get("payload", {}) if isinstance(decision.payload, dict) else {}
+    source = str(payload.get("source") or "ai").strip().lower()
+    return source if source in {"ai", "edge", "manual", "system"} else "ai"
+
+
+def has_similar_open_alert(
+    db: Session,
+    patient_id: str,
+    level: str,
+    category: str,
+    source: str,
+    opened_at: datetime,
+) -> bool:
+    window_start = normalize_utc(opened_at) - timedelta(minutes=ALERT_SPAM_WINDOW_MINUTES)
+    return db.execute(
+        select(Alert.id)
+        .where(
+            Alert.patient_id == patient_id,
+            Alert.status != "resolved",
+            Alert.level == level,
+            Alert.category == category,
+            Alert.source == source,
+            Alert.opened_at >= window_start,
+        )
+        .limit(1)
+    ).first() is not None
+
+
 def alert_title_from_decision(decision: Decision) -> str:
     if decision.level.lower() == "red":
         return "Alert severo AI"
@@ -238,13 +275,17 @@ def alert_description_from_decision(decision: Decision) -> str:
 
 def store_alert(db: Session, payload: EdgeMqttPayload) -> None:
     level = str(payload.payload.get("level") or payload.model_extra.get("level") or "red")
+    category = str(payload.payload.get("category") or "behavioral")
     db.add(
         Alert(
             message_id=payload.message_id,
             patient_id=payload.patient_id,
             level=level,
             status=str(payload.payload.get("status") or "new"),
-            category=str(payload.payload.get("category") or "behavioral"),
+            category=category,
+            source=str(payload.payload.get("source") or "edge"),
+            clinical_severity=payload.payload.get("clinical_severity") or (level if category in {"clinical", "behavioral"} else None),
+            technical_severity=payload.payload.get("technical_severity") or (level if category == "technical" else None),
             title=str(payload.payload.get("title") or "Edge alert"),
             description=optional_str(payload.payload.get("description")),
             opened_at=parse_optional_datetime(payload.payload.get("opened_at")) or payload.timestamp,

@@ -18,6 +18,7 @@ class User(TimestampMixin, Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     display_name: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class Patient(TimestampMixin, Base):
@@ -185,10 +186,14 @@ class Alert(TimestampMixin, Base):
     level: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), default="new", nullable=False, index=True)
     category: Mapped[str] = mapped_column(String(64), default="behavioral", nullable=False)
+    source: Mapped[str] = mapped_column(String(32), default="edge", nullable=False)
+    clinical_severity: Mapped[str | None] = mapped_column(String(32))
+    technical_severity: Mapped[str | None] = mapped_column(String(32))
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AlertEvent(TimestampMixin, Base):

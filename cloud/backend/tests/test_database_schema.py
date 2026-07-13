@@ -82,12 +82,15 @@ def test_role_and_auth_columns_exist() -> None:
     _, inspector = build_sqlite_schema()
     user_columns = {column["name"] for column in inspector.get_columns("users")}
 
-    assert {"email", "password_hash", "role", "is_active"}.issubset(user_columns)
+    assert {"email", "password_hash", "role", "is_active", "last_login_at"}.issubset(user_columns)
 
     refresh_columns = {column["name"] for column in inspector.get_columns("refresh_tokens")}
     audit_columns = {column["name"] for column in inspector.get_columns("audit_logs")}
     assert {"token_hash", "expires_at", "revoked_at"}.issubset(refresh_columns)
     assert {"actor_user_id", "actor_role", "action", "patient_id", "details"}.issubset(audit_columns)
+
+    alert_columns = {column["name"] for column in inspector.get_columns("alerts")}
+    assert {"source", "clinical_severity", "technical_severity", "escalated_at"}.issubset(alert_columns)
 
 
 def test_message_id_duplicate_is_rejected() -> None:

@@ -411,12 +411,12 @@ minimi e verificabili.
 - [x] Validare input, scadenze e transizioni di stato dei task.
 - [x] Pubblicare esempi OpenAPI utilizzabili da Emilio.
 - [x] Scrivere test di autorizzazione per ogni ruolo.
-- [ ] Implementare endpoint profilo corrente `GET /api/v1/auth/me`.
-- [ ] Implementare endpoint admin per creare pazienti.
-- [ ] Implementare endpoint admin per creare utenti doctor, caregiver, patient e admin.
-- [ ] Implementare endpoint admin per associare utenti ai pazienti autorizzati.
-- [ ] Estendere paginazione con `page` e `page_size` coerenti su tutte le liste.
-- [ ] Aggiungere filtri task per tipo, scadenza e priorita'.
+- [x] Implementare endpoint profilo corrente `GET /api/v1/auth/me`.
+- [x] Implementare endpoint admin per creare pazienti.
+- [x] Implementare endpoint admin per creare utenti doctor, caregiver, patient e admin.
+- [x] Implementare endpoint admin per associare utenti ai pazienti autorizzati.
+- [x] Estendere paginazione con `page` e `page_size` coerenti su tutte le liste.
+- [x] Aggiungere filtri task per tipo, scadenza e priorita'.
 
 ### D6. WebSocket realtime
 
@@ -427,9 +427,9 @@ minimi e verificabili.
 - [x] Evitare perdita del servizio quando un client e' lento.
 - [x] Documentare riconnessione e recupero degli eventi persi tramite REST.
 - [x] Testare piu' client collegati allo stesso paziente.
-- [ ] Implementare ping/pong applicativo esplicito per verificare client vivi.
-- [ ] Documentare e testare recupero eventi persi dopo riconnessione tramite REST.
-- [ ] Documentare in modo esplicito evento `task_completed`.
+- [x] Implementare ping/pong applicativo esplicito per verificare client vivi.
+- [x] Documentare e testare recupero eventi persi dopo riconnessione tramite REST.
+- [x] Documentare in modo esplicito evento `task_completed`.
 
 ### D7. Autenticazione, autorizzazione e audit
 
@@ -441,11 +441,11 @@ minimi e verificabili.
 - [x] Non registrare password, token Google Health o token FCM nei log.
 - [x] Preparare utenti demo separati per Emilio e Daniel.
 - [x] Documentare come revocare un dispositivo smarrito.
-- [ ] Implementare cambio password utente.
-- [ ] Implementare revoca refresh token per dispositivo/sessione specifica.
-- [ ] Salvare `last_login_at` sugli utenti.
-- [ ] Registrare audit dei login falliti senza salvare password.
-- [ ] Aggiungere rate limit base sul login.
+- [x] Implementare cambio password utente.
+- [x] Implementare revoca refresh token per dispositivo/sessione specifica.
+- [x] Salvare `last_login_at` sugli utenti.
+- [x] Registrare audit dei login falliti senza salvare password.
+- [x] Aggiungere rate limit base sul login.
 
 ### D8. Logica alert e presa in carico
 
@@ -457,11 +457,11 @@ minimi e verificabili.
 - [x] Inviare aggiornamenti WebSocket dopo ogni cambiamento.
 - [x] Definire quali livelli vengono notificati a medico e caregiver.
 - [x] Mantenere separati alert clinical/behavioral e technical.
-- [ ] Aggiungere anti-spam per non creare alert simili gia' aperti da poco.
-- [ ] Separare severita' clinica da severita' tecnica.
-- [ ] Aggiungere campo sorgente alert: `ai`, `edge`, `manual`, `system`.
-- [ ] Implementare escalation se un alert resta `new` troppo a lungo.
-- [ ] Definire destinatari diversi per alert clinici, comportamentali e tecnici.
+- [x] Aggiungere anti-spam per non creare alert simili gia' aperti da poco.
+- [x] Separare severita' clinica da severita' tecnica.
+- [x] Aggiungere campo sorgente alert: `ai`, `edge`, `manual`, `system`.
+- [x] Implementare escalation se un alert resta `new` troppo a lungo.
+- [x] Definire destinatari diversi per alert clinici, comportamentali e tecnici.
 
 ### D9. Task, test e risultati
 

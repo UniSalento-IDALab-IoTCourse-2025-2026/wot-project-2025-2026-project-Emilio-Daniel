@@ -24,6 +24,15 @@ D8 -> logica alert, presa in carico e alert automatici da decisioni AI
 D9 -> task clinici, risultati, scadenze e scoring controllato
 ```
 
+Estensioni completate su D5-D8:
+
+```text
+API admin -> utenti, pazienti e associazioni
+Auth avanzata -> me, cambio password, revoca sessioni, last_login_at, rate limit
+WebSocket -> ping/pong applicativo
+Alert -> anti-spam, source, severita' clinica/tecnica, escalation
+```
+
 ## Struttura
 
 ```text
