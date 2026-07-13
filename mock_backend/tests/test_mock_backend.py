@@ -18,7 +18,7 @@ def test_health_and_current_patient() -> None:
 def test_login_and_task_flow() -> None:
     login = client.post(
         "/api/v1/auth/login",
-        json={"email": "doctor@example.test", "password": "demo"},
+        json={"email": "doctor.unit.test@example.invalid", "password": "unit-test-password-not-secret"},
     )
     assert login.status_code == 200
     assert login.json()["user"]["role"] == "doctor"

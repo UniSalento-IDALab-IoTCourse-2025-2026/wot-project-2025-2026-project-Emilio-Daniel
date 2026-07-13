@@ -25,11 +25,10 @@ Aprire:
 http://127.0.0.1:5173
 ```
 
-Login demo:
+Login locale:
 
 ```text
-doctor@example.test
-password-demo
+Usare email e password configurate nel file .env locale del backend.
 ```
 
 ## Configurazione

@@ -13,3 +13,6 @@ api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(realtime.router, prefix="/realtime", tags=["realtime"])
+
+ws_router = APIRouter()
+ws_router.include_router(realtime.router, prefix="/ws/v1", tags=["realtime"])

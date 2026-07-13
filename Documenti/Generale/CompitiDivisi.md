@@ -402,36 +402,36 @@ minimi e verificabili.
 
 ### D5. API REST per dashboard e app
 
-- [ ] Implementare tutti gli endpoint definiti nel contratto condiviso.
-- [ ] Aggiungere paginazione a finestre, decisioni, alert e task.
-- [ ] Aggiungere filtri temporali e per livello/stato.
-- [ ] Costruire `/current` aggregando ultima finestra, decisione e stato tecnico.
-- [ ] Restituire valori mancanti come null.
-- [ ] Impedire a caregiver e paziente di leggere dati non autorizzati.
-- [ ] Validare input, scadenze e transizioni di stato dei task.
-- [ ] Pubblicare esempi OpenAPI utilizzabili da Emilio.
-- [ ] Scrivere test di autorizzazione per ogni ruolo.
+- [x] Implementare tutti gli endpoint definiti nel contratto condiviso.
+- [x] Aggiungere paginazione a finestre, decisioni, alert e task.
+- [x] Aggiungere filtri temporali e per livello/stato.
+- [x] Costruire `/current` aggregando ultima finestra, decisione e stato tecnico.
+- [x] Restituire valori mancanti come null.
+- [x] Impedire a caregiver e paziente di leggere dati non autorizzati.
+- [x] Validare input, scadenze e transizioni di stato dei task.
+- [x] Pubblicare esempi OpenAPI utilizzabili da Emilio.
+- [x] Scrivere test di autorizzazione per ogni ruolo.
 
 ### D6. WebSocket realtime
 
-- [ ] Implementare autenticazione della connessione WebSocket.
-- [ ] Iscrivere ogni connessione solo ai pazienti autorizzati.
-- [ ] Inviare gli eventi concordati con event_type e payload.
-- [ ] Gestire heartbeat, timeout e rimozione delle connessioni chiuse.
-- [ ] Evitare perdita del servizio quando un client e' lento.
-- [ ] Documentare riconnessione e recupero degli eventi persi tramite REST.
-- [ ] Testare piu' client collegati allo stesso paziente.
+- [x] Implementare autenticazione della connessione WebSocket.
+- [x] Iscrivere ogni connessione solo ai pazienti autorizzati.
+- [x] Inviare gli eventi concordati con event_type e payload.
+- [x] Gestire heartbeat, timeout e rimozione delle connessioni chiuse.
+- [x] Evitare perdita del servizio quando un client e' lento.
+- [x] Documentare riconnessione e recupero degli eventi persi tramite REST.
+- [x] Testare piu' client collegati allo stesso paziente.
 
 ### D7. Autenticazione, autorizzazione e audit
 
-- [ ] Implementare login e password hash sicuro.
-- [ ] Implementare access token breve e refresh token revocabile.
-- [ ] Definire ruoli doctor, caregiver, patient e admin.
-- [ ] Associare ogni utente ai soli pazienti autorizzati.
-- [ ] Registrare login, creazione task, ack, resolve e modifiche amministrative.
-- [ ] Non registrare password, token Google Health o token FCM nei log.
-- [ ] Preparare utenti demo separati per Emilio e Daniel.
-- [ ] Documentare come revocare un dispositivo smarrito.
+- [x] Implementare login e password hash sicuro.
+- [x] Implementare access token breve e refresh token revocabile.
+- [x] Definire ruoli doctor, caregiver, patient e admin.
+- [x] Associare ogni utente ai soli pazienti autorizzati.
+- [x] Registrare login, creazione/completamento task, ack e resolve; predisporre helper audit per modifiche amministrative future.
+- [x] Non registrare password, token Google Health o token FCM nei log.
+- [x] Preparare utenti demo separati per Emilio e Daniel.
+- [x] Documentare come revocare un dispositivo smarrito.
 
 ### D8. Logica alert e presa in carico
 

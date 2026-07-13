@@ -5,7 +5,7 @@ Backend FastAPI unico per dashboard medico, app paziente, caregiver e integrazio
 ## Scopo
 
 Questa cartella contiene il backend Cloud del progetto. Al momento copre i blocchi D2,
-D3 e D4 della scaletta di Daniel:
+D3, D4, D5, D6 e D7 della scaletta di Daniel:
 
 ```text
 MQTT broker -> backend -> database -> dashboard/app
@@ -17,6 +17,9 @@ Stato attuale:
 D2 -> struttura FastAPI, health/ready, OpenAPI, errori e log
 D3 -> PostgreSQL, SQLAlchemy models, Alembic migrations e test schema
 D4 -> subscriber MQTT, validazione payload Edge e ingestione nel database
+D5 -> API REST reali per dashboard e app
+D6 -> WebSocket realtime verso dashboard
+D7 -> autenticazione, autorizzazione per ruolo e audit
 ```
 
 ## Struttura
@@ -40,6 +43,9 @@ cloud/backend/
       config.py
       errors.py
       logging.py
+    auth/
+      security.py
+      dependencies.py
     db/
       base.py
       models.py
@@ -57,10 +63,14 @@ cloud/backend/
     env.py
     versions/
       20260710_0001_initial_schema.py
+      20260712_0002_auth_audit.py
   scripts/
     export_openapi.py
   tests/
     test_database_schema.py
+    test_d5_api.py
+    test_d6_realtime.py
+    test_d7_auth.py
     test_health.py
     test_mqtt_ingest.py
   alembic.ini
@@ -98,6 +108,42 @@ http://127.0.0.1:8080/docs
 http://127.0.0.1:8080/openapi.json
 ```
 
+Endpoint dashboard/app principali:
+
+```text
+POST   http://127.0.0.1:8080/api/v1/auth/login
+POST   http://127.0.0.1:8080/api/v1/auth/refresh
+POST   http://127.0.0.1:8080/api/v1/auth/logout
+GET    http://127.0.0.1:8080/api/v1/patients
+GET    http://127.0.0.1:8080/api/v1/patients/patient-001/current
+GET    http://127.0.0.1:8080/api/v1/patients/patient-001/windows
+GET    http://127.0.0.1:8080/api/v1/patients/patient-001/decisions
+GET    http://127.0.0.1:8080/api/v1/patients/patient-001/alerts
+GET    http://127.0.0.1:8080/api/v1/patients/patient-001/tasks
+GET    http://127.0.0.1:8080/api/v1/patients/patient-001/system-status
+WS     ws://127.0.0.1:8080/ws/v1/patients/patient-001?token=<access_token>
+```
+
+Le route REST principali richiedono:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Utenti demo locali opzionali:
+
+```text
+IOT_BACKEND_DEMO_AUTH_ENABLED=true
+IOT_BACKEND_DEMO_AUTH_PASSWORD=<password locale non committata>
+IOT_BACKEND_DEMO_DOCTOR_EMAIL=<email medico locale>
+IOT_BACKEND_DEMO_CAREGIVER_EMAIL=<email caregiver locale>
+IOT_BACKEND_DEMO_PATIENT_EMAIL=<email paziente locale>
+IOT_BACKEND_DEMO_ADMIN_EMAIL=<email admin locale>
+```
+
+Gli utenti demo vengono creati solo in ambiente `development`/`test`, solo se
+abilitati nel `.env` locale. Non inserire password reali nei file versionati.
+
 ## Subscriber MQTT
 
 Il worker MQTT del backend si collega al broker, si iscrive ai topic Edge, valida i
@@ -132,9 +178,9 @@ cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend
 .\.venv\Scripts\python -m pytest
 ```
 
-I test unitari non richiedono broker MQTT o database reale. Lo schema DB e l'ingestione
-MQTT vengono verificati con SQLite in memoria; PostgreSQL reale viene testato applicando
-Alembic sul servizio Docker.
+I test unitari non richiedono broker MQTT o database reale. Lo schema DB, l'ingestione
+MQTT e le API D5 vengono verificati con SQLite in memoria; PostgreSQL reale viene testato
+applicando Alembic sul servizio Docker.
 
 Test completo locale con broker MQTT, PostgreSQL e worker reale:
 
@@ -237,4 +283,4 @@ Get-Content backups\progetto_iot_backup.sql | docker compose exec -T postgres ps
 
 ## Prossimi passi
 
-- D5: implementare API reali per dashboard e app.
+- D8: completare la logica alert e la presa in carico multi-ruolo.

@@ -198,6 +198,8 @@ Documenti/
     D2.md                 Struttura backend FastAPI
     D3.md                 Database PostgreSQL
     D4.md                 Subscriber MQTT e ingestione
+    D5.md                 API REST reali per dashboard e app
+    D6.md                 WebSocket realtime
   contracts/
     API_CONTRACT.md       Contratto API REST/WebSocket
     MQTT_CONTRACT.md      Contratto topic e payload MQTT
@@ -255,6 +257,13 @@ L'app iOS si crea su Mac con Xcode usando i file in
   backup/restore.
 - Ho aggiunto il subscriber MQTT backend D4: ascolta i topic Edge, valida i payload,
   salva finestre/decisioni/alert/stato sensori nel database e pubblica eventi interni.
+- Ho aggiunto le API REST backend D5: login, lista pazienti, current, finestre,
+  decisioni, alert, task, risultati task e system-status letti da PostgreSQL.
+- Ho aggiunto il WebSocket realtime D6: la dashboard si collega a `/ws/v1/patients/{id}`
+  e riceve eventi su decisioni, alert, task e stato sistema.
+- Ho aggiunto autenticazione e autorizzazione D7: password hash, access token breve,
+  refresh token revocabile, ruoli doctor/caregiver/patient/admin, WebSocket protetta
+  e audit delle azioni importanti.
 - Ho aggiunto `edge_runtime`, il comando unico che aggrega la finestra e fa inferenza
   automaticamente se trova un modello addestrato.
 - Ho aggiunto `edge_quality`, che controlla se i dati sono utilizzabili prima di salvarli
@@ -1535,11 +1544,11 @@ python -m edge_baseline.cli --config config/edge.yml status
 
 1. Emilio: implementare publisher MQTT sull'Edge/Raspberry usando i contratti in
    `Documenti/contracts/MQTT_CONTRACT.md`.
-2. Daniel: implementare D5, API REST reali per dashboard e app.
+2. Daniel: passare a D8, logica alert e presa in carico.
 3. Collegare `last-cycle.json`, `latest_window.csv` e `patient-001-decision.json` ai
    topic MQTT definitivi.
-4. Collegare dashboard/app alle API D5.
-5. Implementare D6, WebSocket realtime backend -> dashboard.
+4. Collegare dashboard/app alle API D5 reali e verificare i dati con PostgreSQL.
+5. Collegare e verificare dashboard reale con REST D5, WebSocket D6 e auth D7.
 6. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
 7. Configurare la mappa reale dei 3 BlueBeacon nell'app Android.
 8. Preparare `edge_node/config/edge.yml` reale per Raspberry Pi 5.
@@ -1881,6 +1890,5 @@ Mancano ancora:
 - credenziali Google Health OAuth reali e consenso account;
 - eventuale Shelly o alternativa per consumi;
 - publisher MQTT sull'Edge;
-- API reali per dashboard/app;
-- WebSocket realtime;
+- autorizzazione reale per ruoli doctor/caregiver/patient;
 - dashboard medico e dashboard/app paziente finali.

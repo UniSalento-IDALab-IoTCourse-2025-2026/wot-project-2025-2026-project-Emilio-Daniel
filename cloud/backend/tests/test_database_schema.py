@@ -27,6 +27,9 @@ def test_d3_tables_exist() -> None:
         "caregivers",
         "doctor_patients",
         "caregiver_patients",
+        "patient_users",
+        "refresh_tokens",
+        "audit_logs",
         "edge_devices",
         "edge_cycles",
         "feature_windows",
@@ -67,6 +70,8 @@ def test_patient_timestamp_level_status_indexes_exist() -> None:
         "alerts": {"ix_alerts_patient_status_level"},
         "tasks": {"ix_tasks_patient_status_due"},
         "notifications": {"ix_notifications_patient_status"},
+        "refresh_tokens": {"ix_refresh_tokens_user_revoked"},
+        "audit_logs": {"ix_audit_logs_actor_timestamp", "ix_audit_logs_patient_timestamp"},
     }
     for table, index_names in expected_indexes.items():
         indexes = {item["name"] for item in inspector.get_indexes(table)}
@@ -78,6 +83,11 @@ def test_role_and_auth_columns_exist() -> None:
     user_columns = {column["name"] for column in inspector.get_columns("users")}
 
     assert {"email", "password_hash", "role", "is_active"}.issubset(user_columns)
+
+    refresh_columns = {column["name"] for column in inspector.get_columns("refresh_tokens")}
+    audit_columns = {column["name"] for column in inspector.get_columns("audit_logs")}
+    assert {"token_hash", "expires_at", "revoked_at"}.issubset(refresh_columns)
+    assert {"actor_user_id", "actor_role", "action", "patient_id", "details"}.issubset(audit_columns)
 
 
 def test_message_id_duplicate_is_rejected() -> None:

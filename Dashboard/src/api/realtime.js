@@ -1,6 +1,6 @@
 import { config } from "../config.js";
 
-export function openPatientSocket(patientId, { onEvent, onStatus }) {
+export function openPatientSocket(patientId, { token, onEvent, onStatus }) {
   if (!patientId) return () => {};
 
   let closedByClient = false;
@@ -8,7 +8,8 @@ export function openPatientSocket(patientId, { onEvent, onStatus }) {
 
   const connect = () => {
     onStatus?.("connecting");
-    socket = new WebSocket(`${config.wsBaseUrl}/patients/${patientId}`);
+    const encodedToken = token ? `?token=${encodeURIComponent(token)}` : "";
+    socket = new WebSocket(`${config.wsBaseUrl}/patients/${patientId}${encodedToken}`);
 
     socket.onopen = () => onStatus?.("connected");
     socket.onmessage = (message) => {

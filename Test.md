@@ -426,8 +426,8 @@ Aprire anche:
 http://127.0.0.1:8080/docs
 ```
 
-Nota: per ora molte route REST reali sono placeholder. Questo e' normale finche' Daniel
-non completa D5 e D6.
+Nota: le route REST principali sono disponibili con D5, il WebSocket realtime reale e'
+disponibile con D6 e l'autorizzazione completa e' stata aggiunta con D7.
 
 ## 5. Test Daniel D3 - PostgreSQL e migrazioni
 
@@ -932,8 +932,8 @@ CTRL+C
 
 ## 10. Test Emilio E2 - Mock backend
 
-E2 serve per sviluppare la Dashboard anche quando il backend reale di Daniel non ha
-ancora D5/D6 completi.
+E2 resta utile per sviluppare la Dashboard con scenari controllati, anche se REST D5 e
+WebSocket D6 reali sono disponibili.
 
 ### 10.1 Avviare mock backend
 
@@ -943,7 +943,7 @@ Cosa fa:
 
 ```text
 avvia un backend finto sulla porta 8090
-simula le API REST e WebSocket che Daniel esporra' con D5/D6
+simula API REST e WebSocket; il backend reale ora espone REST D5 e WebSocket D6
 ```
 
 Cosa stiamo testando:
@@ -1057,11 +1057,10 @@ Aprire:
 http://127.0.0.1:5173
 ```
 
-Credenziali demo:
+Credenziali locali:
 
 ```text
-doctor@example.test
-password-demo
+Usare email e password configurate nel .env locale del backend.
 ```
 
 ### 11.2 Test E3 - Struttura navigabile
@@ -1171,11 +1170,10 @@ Aprire la dashboard:
 http://127.0.0.1:5173
 ```
 
-Credenziali demo:
+Credenziali locali:
 
 ```text
-doctor@example.test
-password-demo
+Usare email e password configurate nel .env locale del backend.
 ```
 
 Passaggi UI:
@@ -1415,7 +1413,7 @@ Cosa fa:
 fornisce API REST/WebSocket simulate alla dashboard
 ```
 
-Finche' D5/D6 non sono completi, la dashboard usa il mock:
+La dashboard puo' ancora usare il mock quando vogliamo scenari controllati:
 
 ```powershell
 cd mock_backend
@@ -1446,14 +1444,14 @@ Mock backend: http://127.0.0.1:8090/docs
 Nota importante:
 
 ```text
-La Dashboard usa ancora mock_backend finche' Daniel non completa D5 REST e D6 WebSocket.
-Il Cloud reale D1-D4 si testa invece tramite MQTT, subscriber e database.
+La Dashboard puo' puntare al backend reale per REST D5 e WebSocket D6. Il mock resta
+utile per simulare scenari controllati.
 ```
 
-## 14. Quando D5 e D6 saranno pronti
+## 14. Usare backend reale D5/D6/D7
 
-Quando Daniel completa REST e WebSocket reali, modificare la Dashboard per puntare al
-backend reale.
+Le REST reali D5, il WebSocket reale D6 e l'auth D7 sono disponibili. Modificare la Dashboard per
+puntare interamente al backend reale.
 
 Creare o modificare `Dashboard\.env`:
 

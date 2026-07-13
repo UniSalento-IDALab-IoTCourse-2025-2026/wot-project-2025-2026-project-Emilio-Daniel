@@ -182,7 +182,7 @@ def ready() -> dict[str, Any]:
 
 @app.post("/api/v1/auth/login")
 def login(payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
-    email = str(payload.get("email") or "doctor@example.test")
+    email = str(payload.get("email") or "")
     role = "doctor" if "caregiver" not in email else "caregiver"
     return {
         "access_token": f"mock-access-{uuid.uuid4().hex}",
