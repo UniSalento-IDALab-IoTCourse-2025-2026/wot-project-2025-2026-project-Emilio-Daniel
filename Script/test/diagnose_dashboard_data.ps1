@@ -42,6 +42,10 @@ if (Test-Path $lastCyclePath) {
     Write-Host "Decisione: $($lastCycle.decision_level)"
     if ($mqtt) {
         Write-Host "MQTT: enabled=$($mqtt.enabled), status=$($mqtt.status), published=$($mqtt.published), queued=$($mqtt.queued), queue_depth=$($mqtt.queue_depth)"
+        if ($mqtt.errors -and @($mqtt.errors).Count -gt 0) {
+            Write-Host "Errori MQTT ultimo ciclo:" -ForegroundColor Yellow
+            @($mqtt.errors) | ForEach-Object { Write-Host " - $_" -ForegroundColor Yellow }
+        }
         if ($mqtt.enabled -and $mqtt.published -gt 0) {
             Write-Ok "Edge sta pubblicando su MQTT."
         } elseif (-not $mqtt.enabled) {
