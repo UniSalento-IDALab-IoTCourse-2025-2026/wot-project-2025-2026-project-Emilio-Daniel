@@ -2,26 +2,39 @@ import {
   Activity,
   AlertTriangle,
   ArrowDownUp,
+  Bell,
   BrainCircuit,
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Clock3,
   ClipboardList,
+  Eye,
+  EyeOff,
   Gauge,
   HeartPulse,
   Home,
   Info,
+  LoaderCircle,
+  LockKeyhole,
   LogOut,
+  Mail,
   MapPin,
+  Menu,
   MonitorCog,
+  Plus,
   RefreshCcw,
+  Search,
   Server,
   ShieldCheck,
   Stethoscope,
+  UserRound,
   UserRoundCheck,
   Users,
   Watch,
   Wifi,
+  X,
 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { api, clearSession, loadSession, saveSession } from "./api/client.js";
@@ -31,10 +44,10 @@ import { config } from "./config.js";
 import { formatDateTime, isStale, levelLabel, scoreText } from "./utils/format.js";
 
 const tabs = [
-  { id: "patient", label: "Paziente", icon: HeartPulse },
-  { id: "alerts", label: "Alert", icon: AlertTriangle },
-  { id: "tasks", label: "Task", icon: ClipboardList },
-  { id: "system", label: "Sistema", icon: MonitorCog },
+  { id: "patient", label: "Quadro clinico", shortLabel: "Paziente", icon: HeartPulse },
+  { id: "alerts", label: "Segnalazioni", shortLabel: "Alert", icon: AlertTriangle },
+  { id: "tasks", label: "Attivita", shortLabel: "Task", icon: ClipboardList },
+  { id: "system", label: "Stato sistema", shortLabel: "Sistema", icon: MonitorCog },
 ];
 
 export function App() {
@@ -53,6 +66,7 @@ export function App() {
 function Login({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -73,38 +87,98 @@ function Login({ onLogin }) {
 
   return (
     <main className="login-shell">
-      <section className="login-panel" aria-labelledby="login-title">
-        <div className="brand-row">
-          <div className="brand-mark"><Stethoscope size={24} /></div>
-          <div>
-            <p className="eyebrow">Triage IoT</p>
-            <h1 id="login-title">Dashboard medico</h1>
+      <section className="login-layout" aria-labelledby="login-title">
+        <div className="login-brand-panel" aria-hidden="true">
+          <div className="login-brand-content">
+            <div className="login-brand-lockup">
+              <div className="brand-mark brand-mark-inverse"><Stethoscope size={26} /></div>
+              <div>
+                <span>Triage IoT</span>
+                <strong>Clinical workspace</strong>
+              </div>
+            </div>
+            <div className="login-brand-message">
+              <span className="login-kicker">Continuita assistenziale</span>
+              <h2>Il quadro del paziente, chiaro quando serve.</h2>
+            </div>
+            <div className="login-signal-board">
+              <div className="login-signal-row">
+                <span className="signal-icon"><HeartPulse size={18} /></span>
+                <span>Parametri fisiologici</span>
+                <span className="signal-state active">Attivo</span>
+              </div>
+              <div className="login-signal-row">
+                <span className="signal-icon"><MapPin size={18} /></span>
+                <span>Routine domestica</span>
+                <span className="signal-state active">Attivo</span>
+              </div>
+              <div className="login-signal-row">
+                <span className="signal-icon"><ShieldCheck size={18} /></span>
+                <span>Elaborazione protetta</span>
+                <span className="signal-state">Edge</span>
+              </div>
+            </div>
           </div>
         </div>
-        <p className="muted">
-          Accesso dimostrativo per monitorare routine, alert e stato tecnico del sistema.
-        </p>
-        <form className="login-form" onSubmit={submit}>
-          <label>
-            Email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
-          </label>
-          <label>
-            Password
-            <input
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              type="password"
-              autoComplete="current-password"
-            />
-          </label>
-          {error && <p className="error-text" role="alert">{error}</p>}
-          <button className="primary-button" type="submit" disabled={loading}>
-            <ShieldCheck size={18} />
-            {loading ? "Accesso..." : "Accedi"}
-          </button>
-        </form>
-        <p className="tiny-note">Fonte dati: {config.dataSource}</p>
+        <div className="login-form-panel">
+          <div className="login-mobile-brand">
+            <div className="brand-mark"><Stethoscope size={22} /></div>
+            <strong>Triage IoT</strong>
+          </div>
+          <div className="login-heading">
+            <span className="secure-access"><LockKeyhole size={14} /> Accesso riservato</span>
+            <h1 id="login-title">Bentornato</h1>
+            <p>Accedi alla console clinica.</p>
+          </div>
+          <form className="login-form" onSubmit={submit}>
+            <label>
+              Email
+              <span className="input-shell">
+                <Mail size={18} />
+                <input
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  type="email"
+                  autoComplete="email"
+                  placeholder="nome@struttura.it"
+                  required
+                />
+              </span>
+            </label>
+            <label>
+              Password
+              <span className="input-shell">
+                <LockKeyhole size={18} />
+                <input
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  placeholder="Password"
+                  required
+                />
+                <button
+                  className="input-action"
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  title={showPassword ? "Nascondi password" : "Mostra password"}
+                  aria-label={showPassword ? "Nascondi password" : "Mostra password"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
+            </label>
+            {error && <p className="error-text login-error" role="alert"><AlertTriangle size={17} />{error}</p>}
+            <button className="primary-button login-submit" type="submit" disabled={loading}>
+              {loading ? <LoaderCircle className="spin" size={19} /> : <ShieldCheck size={19} />}
+              {loading ? "Accesso in corso" : "Accedi alla dashboard"}
+            </button>
+          </form>
+          <div className="login-footer">
+            <span className="environment-dot" />
+            Ambiente {config.dataSource === "real" ? "operativo" : "dimostrativo"}
+          </div>
+        </div>
       </section>
     </main>
   );
@@ -116,6 +190,9 @@ function Dashboard({ session, onLogout }) {
   const [activeTab, setActiveTab] = useState("patient");
   const [patientSort, setPatientSort] = useState("severity");
   const [patientFilter, setPatientFilter] = useState("all");
+  const [patientSearch, setPatientSearch] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [state, setState] = useState({ loading: true, error: "", data: null });
   const [wsStatus, setWsStatus] = useState("idle");
   const [events, setEvents] = useState([]);
@@ -138,6 +215,7 @@ function Dashboard({ session, onLogout }) {
   async function loadPatientData(patientId, options = {}) {
     if (!patientId) return;
     const background = options.background === true;
+    if (background) setRefreshing(true);
     if (!background) {
       setState({ loading: true, error: "", data: null });
     }
@@ -168,6 +246,8 @@ function Dashboard({ session, onLogout }) {
       } else {
         setState({ loading: false, error: readableApiError(error), data: null });
       }
+    } finally {
+      if (background) setRefreshing(false);
     }
   }
 
@@ -208,26 +288,93 @@ function Dashboard({ session, onLogout }) {
   );
 
   const visiblePatients = useMemo(
-    () => sortPatients(filterPatients(patients, patientFilter), patientSort),
-    [patients, patientFilter, patientSort]
+    () => {
+      const normalizedSearch = patientSearch.trim().toLocaleLowerCase("it");
+      const filtered = filterPatients(patients, patientFilter).filter((patient) => (
+        !normalizedSearch || patient.display_name?.toLocaleLowerCase("it").includes(normalizedSearch)
+      ));
+      return sortPatients(filtered, patientSort);
+    },
+    [patients, patientFilter, patientSearch, patientSort]
   );
+
+  const activeView = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
+  const activeAlertCount = state.data?.alerts?.filter((alert) => alert.status !== "resolved").length ?? 0;
+  const activeTaskCount = state.data?.tasks?.filter((task) => !["completed", "cancelled"].includes(task.status)).length ?? 0;
+  const userLabel = session?.user?.display_name ?? session?.user?.email ?? "Medico";
+
+  function selectPatient(patientId) {
+    setSelectedPatientId(patientId);
+    setSidebarOpen(false);
+  }
+
+  function selectTab(tabId) {
+    setActiveTab(tabId);
+    setSidebarOpen(false);
+  }
 
   return (
     <main className="app-shell">
-      <aside className="sidebar" aria-label="Navigazione principale">
+      <button
+        className={`sidebar-scrim ${sidebarOpen ? "visible" : ""}`}
+        type="button"
+        onClick={() => setSidebarOpen(false)}
+        aria-label="Chiudi navigazione"
+        tabIndex={sidebarOpen ? 0 : -1}
+      />
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`} aria-label="Navigazione principale">
         <div className="sidebar-header">
           <div className="brand-mark"><Stethoscope size={22} /></div>
           <div>
-            <p className="eyebrow">IoT ADL</p>
-            <h1>Medico</h1>
+            <p className="eyebrow">Console clinica</p>
+            <h1>Triage IoT</h1>
           </div>
+          <button className="sidebar-close" type="button" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu">
+            <X size={19} />
+          </button>
         </div>
 
-        <section className="sidebar-section">
+        <section className="sidebar-section navigation-section">
+          <div className="section-title">Area di lavoro</div>
+          <nav className="tab-list">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const count = tab.id === "alerts" ? activeAlertCount : tab.id === "tasks" ? activeTaskCount : 0;
+              return (
+                <button
+                  key={tab.id}
+                  className={`tab-button ${activeTab === tab.id ? "active" : ""}`}
+                  type="button"
+                  onClick={() => selectTab(tab.id)}
+                >
+                  <span className="tab-icon"><Icon size={18} /></span>
+                  <span>{tab.label}</span>
+                  {count > 0 && <span className="nav-count">{count}</span>}
+                  <ChevronRight className="tab-chevron" size={16} />
+                </button>
+              );
+            })}
+          </nav>
+        </section>
+
+        <section className="sidebar-section patients-section">
           <div className="section-title">
             <Users size={16} />
-            Pazienti
+            Pazienti assegnati
+            <span className="section-count">{patients.length}</span>
           </div>
+          <label className="patient-search">
+            <Search size={16} />
+            <input
+              value={patientSearch}
+              onChange={(event) => setPatientSearch(event.target.value)}
+              placeholder="Cerca paziente"
+              aria-label="Cerca paziente"
+            />
+            {patientSearch && (
+              <button type="button" onClick={() => setPatientSearch("")} aria-label="Cancella ricerca"><X size={15} /></button>
+            )}
+          </label>
           <PatientListControls
             sortMode={patientSort}
             filterMode={patientFilter}
@@ -244,10 +391,10 @@ function Dashboard({ session, onLogout }) {
                 key={patient.patient_id}
                 className={`patient-button ${patient.patient_id === selectedPatientId ? "active" : ""} ${isStale(patient.last_update) ? "stale" : ""}`}
                 type="button"
-                onClick={() => setSelectedPatientId(patient.patient_id)}
+                onClick={() => selectPatient(patient.patient_id)}
               >
-                <span className={`level-dot ${patient.level}`} />
-                <span>
+                <span className={`patient-avatar ${patient.level}`}>{patientInitials(patient.display_name)}</span>
+                <span className="patient-button-copy">
                   <strong>{patient.display_name}</strong>
                   <small className="patient-meta-line">
                     <Home size={13} />
@@ -266,69 +413,63 @@ function Dashboard({ session, onLogout }) {
                     {isStale(patient.last_update) && <span className="stale-chip">obsoleto</span>}
                   </small>
                 </span>
+                <ChevronRight className="patient-chevron" size={16} />
               </button>
             ))}
           </div>
         </section>
 
-        <section className="sidebar-section">
-          <div className="section-title">Vista</div>
-          <nav className="tab-list">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  className={`tab-button ${activeTab === tab.id ? "active" : ""}`}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                >
-                  <Icon size={17} />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
-        </section>
+        <div className="sidebar-user">
+          <span className="user-avatar"><UserRound size={18} /></span>
+          <span><strong>{userLabel}</strong><small>Sessione protetta</small></span>
+          <button type="button" onClick={onLogout} title="Esci" aria-label="Esci"><LogOut size={17} /></button>
+        </div>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Ambiente {config.dataSource}</p>
-            <h2>{selectedPatient?.display_name ?? "Paziente"}</h2>
+          <div className="topbar-title-group">
+            <button className="mobile-menu-button" type="button" onClick={() => setSidebarOpen(true)} aria-label="Apri menu">
+              <Menu size={21} />
+            </button>
+            <div>
+              <div className="breadcrumb"><span>{selectedPatient?.display_name ?? "Paziente"}</span><ChevronRight size={14} /><strong>{activeView.shortLabel}</strong></div>
+              <h2>{activeView.label}</h2>
+            </div>
           </div>
           <div className="topbar-actions">
             <StatusPill status={wsStatus} />
-            <button className="icon-button" type="button" onClick={() => loadPatientData(selectedPatientId)} title="Aggiorna dati">
-              <RefreshCcw size={18} />
+            <button className="notification-button" type="button" onClick={() => selectTab("alerts")} title="Apri segnalazioni" aria-label="Apri segnalazioni">
+              <Bell size={18} />
+              {activeAlertCount > 0 && <span>{activeAlertCount}</span>}
             </button>
-            <button className="secondary-button" type="button" onClick={onLogout}>
-              <LogOut size={17} />
-              Esci
+            <button className="icon-button" type="button" onClick={() => loadPatientData(selectedPatientId, { background: true })} title="Aggiorna dati" aria-label="Aggiorna dati">
+              <RefreshCcw className={refreshing ? "spin" : ""} size={18} />
             </button>
           </div>
         </header>
 
         {state.loading && <LoadingState />}
-        {!state.loading && state.error && <ErrorState message={state.error} />}
+        {!state.loading && state.error && <ErrorState message={state.error} onRetry={() => loadPatientData(selectedPatientId)} />}
         {!state.loading && !state.error && !state.data && <EmptyState />}
         {!state.loading && !state.error && state.data && (
-          <>
+          <div className="workspace-content">
             <OverviewStrip patients={patients} selectedPatientId={selectedPatientId} />
             <TriageNotice />
-            {activeTab === "patient" && <PatientView data={state.data} />}
-            {activeTab === "alerts" && (
-              <AlertsView
-                data={state.data}
-                session={session}
-                patientId={selectedPatientId}
-                onChanged={() => loadPatientData(selectedPatientId)}
-              />
-            )}
-            {activeTab === "tasks" && <TasksView data={state.data} session={session} patientId={selectedPatientId} onChanged={() => loadPatientData(selectedPatientId)} />}
-            {activeTab === "system" && <SystemView data={state.data} events={events} wsStatus={wsStatus} />}
-          </>
+            <div className="view-stage" key={`${activeTab}-${selectedPatientId}`}>
+              {activeTab === "patient" && <PatientView data={state.data} />}
+              {activeTab === "alerts" && (
+                <AlertsView
+                  data={state.data}
+                  session={session}
+                  patientId={selectedPatientId}
+                  onChanged={() => loadPatientData(selectedPatientId, { background: true })}
+                />
+              )}
+              {activeTab === "tasks" && <TasksView data={state.data} session={session} patientId={selectedPatientId} onChanged={() => loadPatientData(selectedPatientId, { background: true })} />}
+              {activeTab === "system" && <SystemView data={state.data} events={events} wsStatus={wsStatus} />}
+            </div>
+          </div>
         )}
       </section>
     </main>
@@ -338,22 +479,35 @@ function Dashboard({ session, onLogout }) {
 function TriageNotice() {
   return (
     <div className="notice">
-      <Activity size={18} />
-      <span>Indicatori per triage e priorita di revisione. La valutazione clinica resta al medico.</span>
+      <span className="notice-icon"><ShieldCheck size={17} /></span>
+      <span><strong>Supporto al triage</strong> Gli indicatori orientano la priorita di revisione; la valutazione resta al medico.</span>
     </div>
   );
 }
 
 function LoadingState() {
-  return <div className="state-card">Caricamento dati paziente...</div>;
+  return (
+    <div className="loading-layout" aria-live="polite" aria-label="Caricamento dati paziente">
+      <div className="loading-topline"><LoaderCircle className="spin" size={18} /> Sincronizzazione del quadro paziente</div>
+      <div className="skeleton-overview">{Array.from({ length: 5 }, (_, index) => <span key={index} />)}</div>
+      <div className="skeleton-panel"><span /><span /><span /></div>
+      <div className="skeleton-grid"><div /><div /><div /></div>
+    </div>
+  );
 }
 
-function ErrorState({ message }) {
-  return <div className="state-card error-state" role="alert">{message}</div>;
+function ErrorState({ message, onRetry }) {
+  return (
+    <div className="state-card error-state" role="alert">
+      <span className="state-icon"><AlertTriangle size={22} /></span>
+      <div><strong>Impossibile aggiornare i dati</strong><p>{message}</p></div>
+      <button className="secondary-button" type="button" onClick={onRetry}><RefreshCcw size={17} /> Riprova</button>
+    </div>
+  );
 }
 
 function EmptyState() {
-  return <div className="state-card">Nessun dato disponibile per questa vista.</div>;
+  return <div className="state-card empty-state"><span className="state-icon"><Info size={22} /></span><div><strong>Nessun dato disponibile</strong><p>Il quadro si popolera alla ricezione della prima finestra Edge.</p></div></div>;
 }
 
 function PatientListControls({ sortMode, filterMode, onSortChange, onFilterChange }) {
@@ -418,12 +572,12 @@ function OverviewStrip({ patients, selectedPatientId }) {
 
   return (
     <section className="overview-strip" aria-label="Overview pazienti">
-      <OverviewMetric label="Monitorati" value={counts.total} />
-      <OverviewMetric label="Alta priorita" value={counts.red + counts.orange} tone={counts.red ? "red" : "orange"} />
-      <OverviewMetric label="Tecnici" value={counts.technicalSignals} tone="technical" />
-      <OverviewMetric label="Obsoleti" value={counts.stale} tone={counts.stale ? "yellow" : "green"} />
+      <OverviewMetric icon={<Users size={17} />} label="Monitorati" value={counts.total} />
+      <OverviewMetric icon={<AlertTriangle size={17} />} label="Alta priorita" value={counts.red + counts.orange} tone={counts.red ? "red" : "orange"} />
+      <OverviewMetric icon={<MonitorCog size={17} />} label="Tecnici" value={counts.technicalSignals} tone="technical" />
+      <OverviewMetric icon={<Clock3 size={17} />} label="Obsoleti" value={counts.stale} tone={counts.stale ? "yellow" : "green"} />
       <div className="selected-summary">
-        <span className={`level-dot ${selected?.level ?? "green"}`} />
+        <span className={`selected-patient-avatar ${selected?.level ?? "green"}`}>{patientInitials(selected?.display_name)}</span>
         <div>
           <strong>{selected?.display_name ?? "Nessun paziente selezionato"}</strong>
           <small>{selected ? `${levelLabel(selected.level)} - ${signalLabel(selected)}` : "Seleziona dalla lista"}</small>
@@ -433,11 +587,11 @@ function OverviewStrip({ patients, selectedPatientId }) {
   );
 }
 
-function OverviewMetric({ label, value, tone }) {
+function OverviewMetric({ icon, label, value, tone }) {
   return (
     <div className={`overview-metric ${tone ?? ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <span className="overview-icon">{icon}</span>
+      <div><span>{label}</span><strong>{value}</strong></div>
     </div>
   );
 }
@@ -452,16 +606,22 @@ function PatientView({ data }) {
 
   return (
     <div className="content-grid">
-      <section className="panel span-2">
+      <section className={`panel span-2 current-overview ${current.level ?? "green"}`}>
         <div className="panel-heading">
-          <h3>Stato corrente</h3>
+          <div className="section-heading-group">
+            <span className="section-heading-icon"><HeartPulse size={20} /></span>
+            <div>
+              <h3>Stato corrente</h3>
+              <p className="panel-subtitle">Ultima valutazione consolidata dai flussi disponibili.</p>
+            </div>
+          </div>
           {stale && <span className="badge warning">Dati obsoleti</span>}
         </div>
         <div className="metric-row">
-          <Metric label="Livello" value={levelLabel(current.level)} tone={current.level} />
-          <Metric label="Indice di scostamento" value={scoreText(current.anomaly_score)} />
-          <Metric label="Stanza" value={roomLabel(current.current_room)} />
-          <Metric label="Ultimo aggiornamento" value={formatDateTime(current.last_update)} />
+          <Metric icon={<Gauge size={18} />} label="Priorita di revisione" value={levelLabel(current.level)} tone={current.level} />
+          <Metric icon={<BrainCircuit size={18} />} label="Indice di scostamento" value={scoreText(current.anomaly_score)} />
+          <Metric icon={<MapPin size={18} />} label="Posizione rilevata" value={roomLabel(current.current_room)} />
+          <Metric icon={<Clock3 size={18} />} label="Ultimo aggiornamento" value={formatDateTime(current.last_update)} />
         </div>
       </section>
 
@@ -495,23 +655,57 @@ function PatientView({ data }) {
         <WearableSpatialDashboard windows={chartWindows} current={current} />
       </section>
 
-      <section className="panel">
-        <h3>Wearable</h3>
+      <section className="panel acquisition-panel">
+        <div className="panel-heading compact-heading">
+          <div className="section-heading-group">
+            <span className="section-heading-icon soft"><Watch size={19} /></span>
+            <h3>Wearable</h3>
+          </div>
+          <span className={`technical-status-chip ${current.watch?.present ? "good" : "warning"}`}>
+            {current.watch?.present ? "Rilevato" : "Non rilevato"}
+          </span>
+        </div>
         <dl className="detail-list">
-          <Detail label="Presente" value={current.watch.present ? "Si" : "No"} />
-          <Detail label="Batteria" value={current.watch.battery_pct ?? "n/d"} suffix={current.watch.battery_pct ? "%" : ""} />
-          <Detail label="Feature" value={(current.watch.available_features ?? []).join(", ") || "n/d"} />
+          <Detail label="Presenza" value={current.watch?.present ? "Si" : "No"} />
+          <Detail label="Batteria" value={current.watch?.battery_pct ?? "n/d"} suffix={current.watch?.battery_pct !== null && current.watch?.battery_pct !== undefined ? "%" : ""} />
+          <Detail label="Dati disponibili" value={(current.watch?.available_features ?? []).map(clinicalFeatureName).join(", ") || "n/d"} />
+        </dl>
+      </section>
+
+      <section className="panel acquisition-panel">
+        <div className="panel-heading compact-heading">
+          <div className="section-heading-group">
+            <span className="section-heading-icon soft"><Server size={19} /></span>
+            <h3>Continuita acquisizione</h3>
+          </div>
+          <span className={`technical-status-chip ${data.system?.edge?.online ? "good" : "warning"}`}>
+            {data.system?.edge?.online ? "Operativa" : "Da verificare"}
+          </span>
+        </div>
+        <dl className="detail-list">
+          <Detail label="Raspberry" value={data.system?.edge?.online ? "Online" : "Offline"} />
+          <Detail label="Qualita dati" value={qualityStatusLabel(data.system?.edge?.quality_status)} />
+          <Detail label="Ultimo ciclo" value={formatDateTime(data.system?.edge?.last_cycle_at)} />
         </dl>
       </section>
 
       <section className="panel span-2">
-        <h3>Finestre recenti</h3>
+        <div className="panel-heading">
+          <div className="section-heading-group">
+            <span className="section-heading-icon soft"><CalendarClock size={19} /></span>
+            <div>
+              <h3>Finestre recenti</h3>
+              <p className="panel-subtitle">Serie temporale consolidata ogni quattro minuti.</p>
+            </div>
+          </div>
+          <span className="badge">{windows.length} finestre</span>
+        </div>
         <div className="table-wrap">
-          <table>
+          <table className="data-table">
             <thead>
               <tr>
                 <th>Fine finestra</th>
-                <th>HR media</th>
+                <th>Frequenza cardiaca</th>
                 <th>SpO2</th>
                 <th>Cucina</th>
                 <th>Cambi stanza</th>
@@ -521,10 +715,10 @@ function PatientView({ data }) {
               {windows.map((window) => (
                 <tr key={window.window_id ?? window.window_end}>
                   <td>{formatDateTime(window.window_end)}</td>
-                  <td>{window.features.heart_rate_mean ?? "n/d"}</td>
-                  <td>{window.features.spo2_mean ?? "n/d"}</td>
-                  <td>{window.features.kitchen_minutes ?? "n/d"} min</td>
-                  <td>{window.features.room_changes ?? "n/d"}</td>
+                  <td>{formatFeatureValue(window.features.heart_rate_mean, "bpm")}</td>
+                  <td>{formatFeatureValue(window.features.spo2_mean, "%")}</td>
+                  <td>{formatFeatureValue(window.features.kitchen_minutes, "min")}</td>
+                  <td>{formatFeatureValue(window.features.room_changes, "")}</td>
                 </tr>
               ))}
             </tbody>
@@ -1484,6 +1678,8 @@ function AlertsView({ data, session, patientId, onChanged }) {
   const [notes, setNotes] = useState({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [dialog, setDialog] = useState(null);
 
   const filteredAlerts = useMemo(
     () => filterAlerts(data.alerts, { levelFilter, statusFilter, rangeFilter }),
@@ -1500,12 +1696,13 @@ function AlertsView({ data, session, patientId, onChanged }) {
   }
 
   async function acknowledge(alert) {
-    const confirmed = window.confirm(`Prendere in carico l'alert ${alert.alert_id}?`);
-    if (!confirmed) return;
     setBusy(`${alert.alert_id}:ack`);
     setError("");
+    setSuccess("");
     try {
       await api.acknowledgeAlert(alert.alert_id, session);
+      setSuccess("Segnalazione presa in carico correttamente.");
+      setDialog(null);
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -1520,13 +1717,14 @@ function AlertsView({ data, session, patientId, onChanged }) {
       setError("Inserisci una nota clinica prima di risolvere l'alert.");
       return;
     }
-    const confirmed = window.confirm(`Segnare come risolto l'alert ${alert.alert_id}?`);
-    if (!confirmed) return;
     setBusy(`${alert.alert_id}:resolve`);
     setError("");
+    setSuccess("");
     try {
       await api.resolveAlert(alert.alert_id, note, session);
       updateNote(alert.alert_id, "");
+      setSuccess("Segnalazione risolta e nota registrata.");
+      setDialog(null);
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -1538,6 +1736,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
   async function createAlertTask(alert) {
     setBusy(`${alert.alert_id}:task`);
     setError("");
+    setSuccess("");
     try {
       await api.createTask(alert.patient_id ?? patientId, {
         type: "custom",
@@ -1553,6 +1752,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
           source_score: alertScore(alert),
         },
       }, session);
+      setSuccess("Attivita di follow-up creata per il paziente.");
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -1562,20 +1762,30 @@ function AlertsView({ data, session, patientId, onChanged }) {
   }
 
   return (
-    <section className="panel">
-      <div className="panel-heading">
-        <h3>Alert</h3>
-        <span className="badge">{activeAlerts} attivi</span>
+    <section className="panel page-panel alerts-page">
+      <div className="view-heading">
+        <div className="view-heading-copy">
+          <span className="view-heading-icon alert"><AlertTriangle size={22} /></span>
+          <div>
+            <h3>Segnalazioni cliniche e tecniche</h3>
+            <p>Revisione, presa in carico e chiusura documentata degli eventi.</p>
+          </div>
+        </div>
+        <div className="view-heading-stats">
+          <span><strong>{activeAlerts}</strong> attive</span>
+          <span><strong>{data.alerts.filter((alert) => alert.status === "resolved").length}</strong> risolte</span>
+        </div>
       </div>
-      <div className="alert-toolbar" aria-label="Filtri alert">
+      <div className="filter-toolbar alert-toolbar" aria-label="Filtri alert">
+        <div className="filter-toolbar-title"><ArrowDownUp size={17} /><span>Filtra elenco</span></div>
         <label>
           Livello
           <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
             <option value="all">Tutti</option>
-            <option value="yellow">Yellow</option>
-            <option value="orange">Orange</option>
-            <option value="red">Red</option>
-            <option value="technical">Technical</option>
+            <option value="yellow">Attenzione</option>
+            <option value="orange">Anomalia</option>
+            <option value="red">Priorita alta</option>
+            <option value="technical">Problema tecnico</option>
           </select>
         </label>
         <label>
@@ -1595,13 +1805,14 @@ function AlertsView({ data, session, patientId, onChanged }) {
             <option value="7d">Ultimi 7 giorni</option>
           </select>
         </label>
-        <span className="badge">{filteredAlerts.length} visibili</span>
+        <span className="results-count"><strong>{filteredAlerts.length}</strong> risultati</span>
       </div>
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="inline-feedback error" role="alert"><AlertTriangle size={17} />{error}</p>}
+      {success && <p className="inline-feedback success" role="status"><CheckCircle2 size={17} />{success}</p>}
       {data.alerts.length === 0 ? (
-        <p className="empty-text">Nessun alert pubblicabile nello scenario corrente.</p>
+        <ViewEmptyState icon={<CheckCircle2 size={24} />} title="Nessuna segnalazione" text="Non risultano eventi che richiedono revisione." />
       ) : filteredAlerts.length === 0 ? (
-        <p className="empty-text">Nessun alert corrisponde ai filtri selezionati.</p>
+        <ViewEmptyState icon={<Search size={24} />} title="Nessun risultato" text="Modifica i filtri per visualizzare altre segnalazioni." />
       ) : (
         <div className="alert-list">
           {filteredAlerts.map((alert) => {
@@ -1609,19 +1820,23 @@ function AlertsView({ data, session, patientId, onChanged }) {
             const busyForAlert = busy.startsWith(`${alert.alert_id}:`);
             const reasons = alertReasonList(alert);
             return (
-            <article key={alert.alert_id} className={`alert-item ${alert.level}`}>
+            <article key={alert.alert_id} className={`alert-item ${alert.level} ${resolved ? "is-resolved" : ""}`}>
               <div className="alert-content">
-                <div className="alert-title-row">
-                  <span className={`badge ${alert.level}`}>{levelLabel(alert.level)}</span>
-                  <span className={`status-pill ${alert.status}`}>{alertStatusLabel(alert.status)}</span>
+                <div className="alert-card-header">
+                  <div className="alert-title-row">
+                    <span className={`alert-level-mark ${alert.level}`}><AlertTriangle size={16} /></span>
+                    <span className={`badge ${alert.level}`}>{levelLabel(alert.level)}</span>
+                    <span className={`status-pill ${alert.status}`}>{alertStatusLabel(alert.status)}</span>
+                  </div>
+                  <time>{formatDateTime(alertTimestamp(alert))}</time>
                 </div>
                 <h4>{alert.title}</h4>
                 <p>{alert.description}</p>
                 <dl className="alert-meta-grid">
-                  <Detail label="Timestamp" value={formatDateTime(alertTimestamp(alert))} />
-                  <Detail label="Score" value={scoreText(alertScore(alert))} />
-                  <Detail label="Categoria" value={alert.category ?? "n/d"} />
+                  <Detail label="Indice di scostamento" value={scoreText(alertScore(alert))} />
+                  <Detail label="Categoria" value={categoryLabel(alert.category)} />
                   <Detail label="Stato" value={alertStatusLabel(alert.status)} />
+                  <Detail label="Identificativo" value={alert.alert_id} />
                 </dl>
                 {reasons.length > 0 && (
                   <ul className="reason-list" aria-label="Motivi alert">
@@ -1631,37 +1846,29 @@ function AlertsView({ data, session, patientId, onChanged }) {
                   </ul>
                 )}
                 <div className="alert-ownership">
-                  <span>
-                    Presa in carico: {alert.acknowledged_by ?? "n/d"}
-                    {alert.acknowledged_at ? ` - ${formatDateTime(alert.acknowledged_at)}` : ""}
+                  <span className={alert.acknowledged_at ? "complete" : ""}>
+                    <UserRoundCheck size={15} />
+                    <span><strong>Presa in carico</strong>{alert.acknowledged_by ?? "In attesa"}{alert.acknowledged_at ? `, ${formatDateTime(alert.acknowledged_at)}` : ""}</span>
                   </span>
-                  <span>
-                    Risoluzione: {alert.resolved_by ?? "n/d"}
-                    {alert.resolved_at ? ` - ${formatDateTime(alert.resolved_at)}` : ""}
+                  <span className={alert.resolved_at ? "complete" : ""}>
+                    <CheckCircle2 size={15} />
+                    <span><strong>Risoluzione</strong>{alert.resolved_by ?? "Non risolta"}{alert.resolved_at ? `, ${formatDateTime(alert.resolved_at)}` : ""}</span>
                   </span>
                 </div>
                 <small>{formatDateTime(alert.opened_at)} · stato {alert.status}</small>
               </div>
               <div className="alert-actions">
-                <button className="secondary-button" type="button" disabled={resolved || busyForAlert} onClick={() => acknowledge(alert)}>
+                <button className="secondary-button" type="button" disabled={resolved || busyForAlert || alert.status === "acknowledged"} onClick={() => setDialog({ type: "acknowledge", alert })}>
                   <CheckCircle2 size={16} />
                   Prendi in carico
                 </button>
-                <label className="note-field">
-                  Nota risoluzione
-                  <textarea
-                    value={noteFor(alert.alert_id)}
-                    onChange={(event) => updateNote(alert.alert_id, event.target.value)}
-                    placeholder="Scrivi la motivazione della risoluzione"
-                    disabled={resolved}
-                  />
-                </label>
-                <button className="primary-button compact" type="button" disabled={resolved || busyForAlert} onClick={() => resolve(alert)}>
+                <button className="primary-button" type="button" disabled={resolved || busyForAlert} onClick={() => setDialog({ type: "resolve", alert })}>
+                  <CheckCircle2 size={16} />
                   Risolvi
                 </button>
-                <button className="secondary-button compact" type="button" disabled={busyForAlert} onClick={() => createAlertTask(alert)}>
+                <button className="text-button" type="button" disabled={busyForAlert} onClick={() => createAlertTask(alert)}>
                   <ClipboardList size={16} />
-                  Crea task
+                  Crea attivita di follow-up
                 </button>
               </div>
             </article>
@@ -1669,6 +1876,31 @@ function AlertsView({ data, session, patientId, onChanged }) {
           })}
         </div>
       )}
+      <ActionDialog
+        open={Boolean(dialog)}
+        icon={dialog?.type === "resolve" ? <CheckCircle2 size={22} /> : <UserRoundCheck size={22} />}
+        title={dialog?.type === "resolve" ? "Conferma risoluzione" : "Prendi in carico"}
+        description={dialog?.type === "resolve"
+          ? "La segnalazione verra chiusa e la nota restera nello storico clinico."
+          : "La segnalazione verra assegnata alla tua sessione corrente."}
+        confirmLabel={dialog?.type === "resolve" ? "Conferma risoluzione" : "Conferma presa in carico"}
+        busy={Boolean(dialog && busy.startsWith(`${dialog.alert.alert_id}:`))}
+        onClose={() => !busy && setDialog(null)}
+        onConfirm={() => dialog?.type === "resolve" ? resolve(dialog.alert) : acknowledge(dialog.alert)}
+      >
+        {dialog?.type === "resolve" && (
+          <label className="dialog-field">
+            Nota di risoluzione
+            <textarea
+              value={noteFor(dialog.alert.alert_id)}
+              onChange={(event) => updateNote(dialog.alert.alert_id, event.target.value)}
+              placeholder="Descrivi la verifica effettuata e l'esito"
+              autoFocus
+            />
+            <small>Obbligatoria per chiudere la segnalazione.</small>
+          </label>
+        )}
+      </ActionDialog>
     </section>
   );
 }
@@ -1676,17 +1908,45 @@ function AlertsView({ data, session, patientId, onChanged }) {
 function TasksView({ data, session, patientId, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [taskForm, setTaskForm] = useState({
+    type: "check_in",
+    priority: "normal",
+    title: "Controllo benessere",
+    instructions: "Rispondi a queste brevi domande.",
+    expiresAt: "",
+  });
 
-  async function createCheckIn() {
+  const visibleTasks = useMemo(
+    () => data.tasks.filter((task) => statusFilter === "all" || task.status === statusFilter),
+    [data.tasks, statusFilter]
+  );
+  const openTasks = data.tasks.filter((task) => !["completed", "cancelled"].includes(task.status)).length;
+  const completedTasks = data.tasks.filter((task) => task.status === "completed").length;
+
+  function updateTaskForm(field, value) {
+    setTaskForm((previous) => ({ ...previous, [field]: value }));
+  }
+
+  async function createTask() {
+    if (!taskForm.title.trim()) {
+      setError("Inserisci un titolo per l'attivita.");
+      return;
+    }
     setBusy(true);
     setError("");
+    setSuccess("");
     try {
-      await api.createTask(patientId, {
-        type: "check_in",
-        priority: "normal",
-        title: "Controllo benessere",
-        instructions: "Rispondi a queste brevi domande.",
-        payload: {
+      const payload = {
+        type: taskForm.type,
+        schema_version: 1,
+        priority: taskForm.priority,
+        assigned_to: "patient",
+        title: taskForm.title.trim(),
+        instructions: taskForm.instructions.trim() || null,
+        payload: taskForm.type === "check_in" ? {
           questions: [
             {
               id: "q1",
@@ -1695,8 +1955,12 @@ function TasksView({ data, session, patientId, onChanged }) {
               options: ["bene", "cosi_cosi", "male"],
             },
           ],
-        },
-      }, session);
+        } : { workflow: "clinical_follow_up" },
+      };
+      if (taskForm.expiresAt) payload.expires_at = new Date(taskForm.expiresAt).toISOString();
+      await api.createTask(patientId, payload, session);
+      setComposerOpen(false);
+      setSuccess("Attivita inviata correttamente al paziente.");
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -1706,31 +1970,151 @@ function TasksView({ data, session, patientId, onChanged }) {
   }
 
   return (
-    <section className="panel">
-      <div className="panel-heading">
-        <h3>Task paziente</h3>
-        <button className="primary-button compact" type="button" onClick={createCheckIn} disabled={busy}>
-          <ClipboardList size={16} />
-          Crea check-in
+    <section className="panel page-panel tasks-page">
+      <div className="view-heading">
+        <div className="view-heading-copy">
+          <span className="view-heading-icon task"><ClipboardList size={22} /></span>
+          <div>
+            <h3>Attivita per il paziente</h3>
+            <p>Check-in e follow-up inviati all'applicazione companion.</p>
+          </div>
+        </div>
+        <button className="primary-button" type="button" onClick={() => setComposerOpen(true)} disabled={busy}>
+          <Plus size={17} />
+          Nuova attivita
         </button>
       </div>
-      {error && <p className="error-text">{error}</p>}
+      <div className="task-overview">
+        <div><span>Totali</span><strong>{data.tasks.length}</strong></div>
+        <div><span>Da completare</span><strong>{openTasks}</strong></div>
+        <div><span>Completate</span><strong>{completedTasks}</strong></div>
+        <label>
+          Stato
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">Tutte</option>
+            <option value="created">Create</option>
+            <option value="delivered">Consegnate</option>
+            <option value="completed">Completate</option>
+            <option value="cancelled">Annullate</option>
+          </select>
+        </label>
+      </div>
+      {error && <p className="inline-feedback error" role="alert"><AlertTriangle size={17} />{error}</p>}
+      {success && <p className="inline-feedback success" role="status"><CheckCircle2 size={17} />{success}</p>}
       {data.tasks.length === 0 ? (
-        <p className="empty-text">Nessun task presente.</p>
+        <ViewEmptyState icon={<ClipboardList size={24} />} title="Nessuna attivita assegnata" text="Crea un check-in o un follow-up per iniziare." />
+      ) : visibleTasks.length === 0 ? (
+        <ViewEmptyState icon={<Search size={24} />} title="Nessun risultato" text="Non ci sono attivita con lo stato selezionato." />
       ) : (
         <div className="task-list">
-          {data.tasks.map((task) => (
-            <article key={task.task_id} className="task-item">
-              <div>
+          {visibleTasks.map((task) => (
+            <article key={task.task_id} className={`task-item priority-${task.priority ?? "normal"}`}>
+              <span className="task-type-icon">{task.type === "check_in" || task.task_type === "check_in" ? <HeartPulse size={19} /> : <ClipboardList size={19} />}</span>
+              <div className="task-main">
+                <div className="task-title-row">
+                  <span className={`priority-chip ${task.priority ?? "normal"}`}>{taskPriorityLabel(task.priority)}</span>
+                  <span className={`status-pill ${task.status}`}>{taskStatusLabel(task.status)}</span>
+                </div>
                 <h4>{task.title}</h4>
                 <p>{task.instructions ?? "Nessuna istruzione aggiuntiva."}</p>
+                <div className="task-meta">
+                  <span><CalendarClock size={14} /> Creata {formatDateTime(task.created_at)}</span>
+                  {task.due_at && <span><Clock3 size={14} /> Scadenza {formatDateTime(task.due_at)}</span>}
+                </div>
               </div>
-              <span className="badge">{task.status}</span>
+              <ChevronRight className="task-chevron" size={18} />
             </article>
           ))}
         </div>
       )}
+      <ActionDialog
+        open={composerOpen}
+        icon={<ClipboardList size={22} />}
+        title="Nuova attivita"
+        description="Prepara un contenuto da inviare al paziente tramite l'app companion."
+        confirmLabel="Crea e invia"
+        busy={busy}
+        wide
+        onClose={() => !busy && setComposerOpen(false)}
+        onConfirm={createTask}
+      >
+        <div className="task-form-grid">
+          <label>
+            Tipologia
+            <select value={taskForm.type} onChange={(event) => updateTaskForm("type", event.target.value)}>
+              <option value="check_in">Check-in benessere</option>
+              <option value="custom">Follow-up personalizzato</option>
+            </select>
+          </label>
+          <label>
+            Priorita
+            <select value={taskForm.priority} onChange={(event) => updateTaskForm("priority", event.target.value)}>
+              <option value="normal">Ordinaria</option>
+              <option value="high">Alta</option>
+              <option value="urgent">Urgente</option>
+            </select>
+          </label>
+          <label className="span-2">
+            Titolo
+            <input value={taskForm.title} onChange={(event) => updateTaskForm("title", event.target.value)} maxLength={120} />
+          </label>
+          <label className="span-2">
+            Istruzioni
+            <textarea value={taskForm.instructions} onChange={(event) => updateTaskForm("instructions", event.target.value)} placeholder="Indicazioni visibili al paziente" />
+          </label>
+          <label className="span-2">
+            Scadenza facoltativa
+            <input type="datetime-local" value={taskForm.expiresAt} onChange={(event) => updateTaskForm("expiresAt", event.target.value)} />
+          </label>
+        </div>
+      </ActionDialog>
     </section>
+  );
+}
+
+function ActionDialog({ open, icon, title, description, confirmLabel, busy, wide = false, onClose, onConfirm, children }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape" && !busy) onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.body.classList.add("dialog-open");
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.classList.remove("dialog-open");
+    };
+  }, [open, busy, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
+      <section className={`action-dialog ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+        <div className="dialog-header">
+          <span className="dialog-icon">{icon}</span>
+          <div><h3 id="dialog-title">{title}</h3><p>{description}</p></div>
+          <button className="dialog-close" type="button" onClick={onClose} disabled={busy} aria-label="Chiudi"><X size={19} /></button>
+        </div>
+        {children && <div className="dialog-body">{children}</div>}
+        <div className="dialog-actions">
+          <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>Annulla</button>
+          <button className="primary-button" type="button" onClick={onConfirm} disabled={busy}>
+            {busy ? <LoaderCircle className="spin" size={17} /> : <CheckCircle2 size={17} />}
+            {busy ? "Salvataggio" : confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ViewEmptyState({ icon, title, text }) {
+  return (
+    <div className="view-empty-state">
+      <span>{icon}</span>
+      <strong>{title}</strong>
+      <p>{text}</p>
+    </div>
   );
 }
 
@@ -2216,6 +2600,45 @@ function alertStatusLabel(status) {
   }[status] ?? status ?? "n/d";
 }
 
+function categoryLabel(category) {
+  const labels = {
+    behavioral: "Comportamentale",
+    clinical: "Clinica",
+    technical: "Tecnica",
+    wandering: "Spostamenti notturni",
+    inactivity: "Riduzione dell'attivita",
+    wearable: "Parametri wearable",
+    spatial: "Routine spaziale",
+  };
+  if (!category) return "Non specificata";
+  return labels[category] ?? String(category)
+    .replaceAll("_", " ")
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function taskStatusLabel(status) {
+  return {
+    created: "Creata",
+    sent: "Inviata",
+    delivered: "Consegnata",
+    opened: "Aperta",
+    completed: "Completata",
+    expired: "Scaduta",
+    cancelled: "Annullata",
+  }[status] ?? categoryLabel(status);
+}
+
+function taskPriorityLabel(priority) {
+  return {
+    low: "Bassa",
+    normal: "Ordinaria",
+    medium: "Media",
+    high: "Alta",
+    urgent: "Urgente",
+    technical: "Tecnica",
+  }[priority] ?? "Ordinaria";
+}
+
 function taskPriorityForAlert(level) {
   if (level === "red") return "high";
   if (level === "orange") return "medium";
@@ -2223,11 +2646,11 @@ function taskPriorityForAlert(level) {
   return "normal";
 }
 
-function Metric({ label, value, tone }) {
+function Metric({ icon, label, value, tone }) {
   return (
     <div className={`metric ${tone ?? ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+      {icon && <span className="metric-icon">{icon}</span>}
+      <div><span>{label}</span><strong>{value}</strong></div>
     </div>
   );
 }
@@ -2295,4 +2718,14 @@ function signalLabel(patient) {
   if (kind === "technical") return "guasto tecnico";
   if (kind === "clinical") return "segnale comportamentale";
   return "routine";
+}
+
+function patientInitials(name) {
+  if (!name) return "P";
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "P";
 }

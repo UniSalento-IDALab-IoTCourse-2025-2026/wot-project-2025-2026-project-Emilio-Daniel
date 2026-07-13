@@ -62,6 +62,22 @@ La dashboard usa solo queste variabili per passare da mock a backend reale.
 - Task con creazione check-in dimostrativo.
 - Stato tecnico del sistema con ultimo ciclo Edge, durata finestra, sensori, Google Health/OAuth, MQTT, coda locale e distinzione warning/guasti.
 
+## Esperienza dell'interfaccia
+
+La dashboard usa un design system clinico responsive condiviso da tutte le viste:
+
+- navigazione laterale con ricerca paziente, filtri e indicatori di attivita;
+- header realtime con aggiornamento manuale e accesso rapido alle segnalazioni;
+- gerarchia visiva uniforme per routine, attenzione, anomalie e guasti tecnici;
+- grafici interattivi, tabelle leggibili e pannelli AI con terminologia comprensibile;
+- dialoghi interni per presa in carico, risoluzione alert e creazione attivita;
+- feedback di caricamento, errore, esito operazione e assenza dati;
+- animazioni brevi disattivate automaticamente quando il sistema richiede movimento ridotto;
+- layout desktop, tablet e mobile senza scorrimento orizzontale della pagina.
+
+Gli stili di base restano in `src/styles.css`; il livello visuale moderno e le regole
+responsive sono isolati in `src/modern.css`.
+
 ## Nota clinica
 
 La UI usa sempre linguaggio da triage: segnala livelli, score e dati tecnici, ma non

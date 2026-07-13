@@ -1429,6 +1429,42 @@ Quando e' superato:
 build completata senza errori
 ```
 
+### 9.9 Verifica grafica, responsive e interazioni
+
+Cosa fa:
+
+```text
+controlla il design system moderno della dashboard nelle quattro aree operative
+verifica dialoghi, animazioni, stati vuoti, filtri e layout responsive
+```
+
+Cosa stiamo testando:
+
+```text
+la navigazione laterale resta utilizzabile e si trasforma in menu su tablet e telefono
+la pagina non genera scorrimento orizzontale
+testi, pulsanti, grafici e tabelle non si sovrappongono
+le animazioni non spostano il contenuto e rispettano la preferenza movimento ridotto
+```
+
+Passaggi:
+
+1. Aprire `http://127.0.0.1:5173` e accedere come medico.
+2. Cercare un paziente dalla barra laterale e cambiare ordinamento e filtro.
+3. Aprire Quadro clinico, Segnalazioni, Attivita e Stato sistema.
+4. In Segnalazioni aprire i dialoghi Prendi in carico e Risolvi, quindi chiuderli con Annulla e con il tasto `Esc`.
+5. In Attivita aprire Nuova attivita e controllare campi, priorita e scadenza.
+6. Ridimensionare il browser a circa `390 x 844` pixel e aprire il menu mobile.
+7. Passare il puntatore sui grafici e verificare tooltip, assi e ingrandimento.
+
+Quando e' superato:
+
+```text
+tutte le viste sono leggibili su desktop, tablet e telefono
+i dialoghi non usano finestre native del browser
+nessun dato tecnico grezzo sostituisce le etichette comprensibili al medico
+```
+
 ## 10. Test mock opzionale
 
 Il mock non e' piu' il backend principale. Serve solo se il backend reale e' spento o se
