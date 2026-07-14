@@ -15,223 +15,222 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_header"
-            android:orientation="vertical"
-            android:padding="20dp">
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="18dp">
+
+            <ImageView
+                android:layout_width="62dp"
+                android:layout_height="62dp"
+                android:contentDescription="@string/app_logo_description"
+                android:scaleType="centerCrop"
+                android:src="@drawable/app_logo" />
 
             <LinearLayout
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:layout_marginStart="14dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
 
-                <ImageView
-                    android:layout_width="58dp"
-                    android:layout_height="58dp"
-                    android:adjustViewBounds="true"
-                    android:contentDescription="@string/app_logo_description"
-                    android:scaleType="centerCrop"
-                    android:src="@drawable/app_logo" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
+                <TextView
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="14dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+                    android:text="IoT Companion"
+                    android:textColor="@color/on_primary"
+                    android:textSize="23sp"
+                    android:textStyle="bold" />
 
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:letterSpacing="0"
-                        android:text="@string/app_name"
-                        android:textColor="@color/on_primary"
-                        android:textSize="24sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:letterSpacing="0"
-                        android:text="Edge BLE companion"
-                        android:textColor="@color/on_primary_muted"
-                        android:textSize="14sp" />
-                </LinearLayout>
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Il tuo collegamento con il team di cura"
+                    android:textColor="@color/on_primary_muted"
+                    android:textSize="13sp" />
             </LinearLayout>
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/loginPanel"
             style="@style/Panel"
             android:layout_marginTop="14dp">
 
             <TextView
                 style="@style/SectionTitle"
-                android:text="Gateway" />
+                android:text="Accedi al tuo profilo" />
 
             <TextView
-                android:id="@+id/gatewaySummaryText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_beacon_summary"
-                android:letterSpacing="0"
-                android:minHeight="76dp"
-                android:padding="12dp"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/unlockGatewayConfigButton"
-                style="@style/ButtonSecondary"
-                android:text="Modifica gateway" />
-
-            <LinearLayout
-                android:id="@+id/gatewayConfigPanel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <TextView
-                    style="@style/InputLabel"
-                    android:text="Receiver Raspberry URL" />
-
-                <EditText
-                    android:id="@+id/receiverUrlInput"
-                    style="@style/InputField"
-                    android:inputType="textUri"
-                    android:singleLine="true" />
-
-                <TextView
-                    style="@style/InputLabel"
-                    android:text="Phone ID" />
-
-                <EditText
-                    android:id="@+id/phoneIdInput"
-                    style="@style/InputField"
-                    android:singleLine="true" />
-
-                <Button
-                    android:id="@+id/saveConfigButton"
-                    style="@style/ButtonPrimary"
-                    android:text="Salva gateway" />
-
-                <Button
-                    android:id="@+id/lockGatewayConfigButton"
-                    style="@style/ButtonSecondary"
-                    android:text="Blocca modifica" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout
-            style="@style/Panel"
-            android:layout_marginTop="12dp">
-
-            <TextView
-                style="@style/SectionTitle"
-                android:text="Mappa beacon" />
-
-            <TextView
-                android:id="@+id/beaconSummaryText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_beacon_summary"
-                android:fontFamily="monospace"
-                android:letterSpacing="0"
-                android:minHeight="78dp"
-                android:padding="12dp"
-                android:textColor="@color/text_primary"
+                android:layout_marginTop="6dp"
+                android:layout_marginBottom="16dp"
+                android:text="Usa le credenziali consegnate dalla struttura. Il paziente associato viene verificato dal server."
+                android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 
+            <TextView
+                style="@style/InputLabel"
+                android:text="Email" />
+
+            <EditText
+                android:id="@+id/emailInput"
+                style="@style/InputField"
+                android:autofillHints="emailAddress"
+                android:hint="nome@struttura.it"
+                android:inputType="textEmailAddress"
+                android:singleLine="true" />
+
+            <TextView
+                style="@style/InputLabel"
+                android:text="Password" />
+
+            <EditText
+                android:id="@+id/passwordInput"
+                style="@style/InputField"
+                android:autofillHints="password"
+                android:hint="Password"
+                android:inputType="textPassword"
+                android:singleLine="true" />
+
             <Button
-                android:id="@+id/unlockBeaconConfigButton"
+                android:id="@+id/loginButton"
+                style="@style/ButtonPrimary"
+                android:text="Accedi" />
+
+            <Button
+                android:id="@+id/loginAdminButton"
                 style="@style/ButtonSecondary"
-                android:text="Sblocca modifica" />
+                android:text="Impostazioni amministrative" />
+
+            <TextView
+                android:id="@+id/loginStatusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/dailyPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
 
             <LinearLayout
-                android:id="@+id/beaconConfigPanel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="vertical"
-                android:visibility="gone">
+                style="@style/Panel"
+                android:layout_marginTop="14dp">
 
-                <EditText
-                    android:id="@+id/beaconMapInput"
-                    style="@style/InputField"
-                    android:layout_height="132dp"
-                    android:fontFamily="monospace"
-                    android:gravity="top"
-                    android:inputType="textMultiLine" />
+                <TextView
+                    android:id="@+id/welcomeText"
+                    style="@style/SectionTitle"
+                    android:text="Buongiorno" />
+
+                <TextView
+                    android:id="@+id/patientBindingText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                style="@style/Panel"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    style="@style/SectionTitle"
+                    android:text="Monitoraggio" />
+
+                <TextView
+                    android:id="@+id/monitoringStatusText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/bg_status"
+                    android:padding="13dp"
+                    android:textColor="@color/status_text"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/connectionStatusText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:lineSpacingExtra="5dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
 
                 <Button
-                    android:id="@+id/saveBeaconMapButton"
-                    style="@style/ButtonPrimary"
-                    android:text="Salva mappa beacon" />
+                    android:id="@+id/refreshButton"
+                    style="@style/ButtonSecondary"
+                    android:text="Aggiorna ora" />
+            </LinearLayout>
+
+            <LinearLayout
+                style="@style/Panel"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    style="@style/SectionTitle"
+                    android:text="Messaggi" />
+
+                <LinearLayout
+                    android:id="@+id/notificationsContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+
+            <LinearLayout
+                style="@style/Panel"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    style="@style/SectionTitle"
+                    android:text="Attivita' per te" />
+
+                <LinearLayout
+                    android:id="@+id/tasksContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+
+            <LinearLayout
+                style="@style/Panel"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="18dp">
+
+                <TextView
+                    style="@style/SectionTitle"
+                    android:text="Gestione app" />
+
+                <TextView
+                    android:id="@+id/offlineQueueText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
 
                 <Button
-                    android:id="@+id/lockBeaconConfigButton"
-                    style="@style/ButtonDanger"
-                    android:text="Blocca modifica" />
+                    android:id="@+id/adminSettingsButton"
+                    style="@style/ButtonSecondary"
+                    android:text="Impostazioni amministrative" />
+
+                <Button
+                    android:id="@+id/logoutButton"
+                    style="@style/ButtonSecondary"
+                    android:text="Esci dal profilo" />
             </LinearLayout>
         </LinearLayout>
-
-        <LinearLayout
-            style="@style/Panel"
-            android:layout_marginTop="12dp">
-
-            <TextView
-                style="@style/SectionTitle"
-                android:text="Monitoraggio IoT" />
-
-            <Button
-                android:id="@+id/startScanButton"
-                style="@style/ButtonPrimary"
-                android:layout_marginTop="12dp"
-                android:text="Avvia monitoraggio IoT" />
-
-            <Button
-                android:id="@+id/stopScanButton"
-                style="@style/ButtonDanger"
-                android:text="Ferma monitoraggio IoT" />
-        </LinearLayout>
-
-        <LinearLayout
-            style="@style/Panel"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="16dp">
-
-            <TextView
-                style="@style/SectionTitle"
-                android:text="Stato" />
-
-            <TextView
-                android:id="@+id/statusText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_status"
-                android:letterSpacing="0"
-                android:minHeight="44dp"
-                android:padding="12dp"
-                android:text="Pronto"
-                android:textColor="@color/status_text"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/discoveredText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:fontFamily="monospace"
-                android:letterSpacing="0"
-                android:text=""
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
-        </LinearLayout>
-
     </LinearLayout>
 </ScrollView>

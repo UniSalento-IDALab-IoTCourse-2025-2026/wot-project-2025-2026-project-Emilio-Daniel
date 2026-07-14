@@ -617,3 +617,42 @@ Rigenerazione:
 cd cloud/backend
 .\.venv\Scripts\python.exe -m scripts.export_openapi
 ```
+
+## Estensione companion Android E10
+
+L'identita' paziente non viene accettata sulla fiducia dal client. Ogni endpoint usa il
+bearer token e verifica l'associazione `patient_users` prima di leggere o modificare i
+dati.
+
+```text
+PATCH /api/v1/tasks/{task_id}/state
+GET   /api/v1/notifications?patient_id={patient_id}
+PATCH /api/v1/notifications/{notification_id}/seen
+POST  /api/v1/notifications/devices/register
+POST  /api/v1/notifications/devices/status
+```
+
+Payload stato task:
+
+```json
+{
+  "state": "started",
+  "occurred_at": "2026-07-14T10:01:00Z",
+  "device_id": "android-uuid"
+}
+```
+
+Payload registrazione device:
+
+```json
+{
+  "patient_id": "patient-001",
+  "device_id": "android-uuid",
+  "platform": "android",
+  "app_version": "0.2.0",
+  "fcm_token": "valore-riservato",
+  "notifications_enabled": true
+}
+```
+
+La risposta espone soltanto `fcm_registered: true/false` e non restituisce il token.

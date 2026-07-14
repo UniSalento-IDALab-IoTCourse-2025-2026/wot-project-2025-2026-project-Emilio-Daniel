@@ -1,8 +1,70 @@
 # IoT Edge Companion Android
 
-Questa app e' il client mobile che useremo per la localizzazione indoor BLE.
+Questa app e' il client mobile del paziente. Mantiene la localizzazione indoor BLE,
+riceve messaggi e attivita' dal team di cura e invia i risultati al backend.
 
 Il receiver Python e il modello AI non sono in questa cartella: stanno in `../edge_node/`.
+
+## Versione 0.2: app paziente completa
+
+La schermata iniziale non espone piu' la configurazione tecnica. Presenta invece:
+
+- stato del monitoraggio BLE in background;
+- connessione del Raspberry e ultimo aggiornamento disponibile;
+- messaggi inviati dal medico;
+- task e test assegnati al paziente;
+- risultati ancora salvati sul telefono in attesa di rete.
+
+La configurazione di Raspberry, backend e beacon si trova nella schermata
+`Impostazioni amministrative`, protetta per il prototipo da `admin` / `admin`.
+
+### Associazione corretta tra account, paziente e telefono
+
+Il `patient_id` non viene scritto a mano nell'app. Il flusso e':
+
+```text
+amministratore crea patient-001 nel backend
+-> crea un account con ruolo patient
+-> associa quell'account a patient-001
+-> il paziente esegue il login sul telefono
+-> GET /patients restituisce soltanto patient-001
+-> l'app registra device_id + patient-001 nel backend
+```
+
+Se l'account non e' di tipo `patient`, non e' associato a nessun paziente o e'
+associato in modo ambiguo a piu' pazienti, l'app rifiuta l'accesso. Cambiare il valore
+nel traffico HTTP non permette di leggere o completare task altrui, perche' il backend
+ricontrolla l'associazione presente nel database a ogni richiesta.
+
+Il `device_id` viene generato una sola volta dall'app e non e' modificabile dal
+paziente. Access token e refresh token sono cifrati con Android Keystore.
+
+### Sincronizzazione e lavoro offline
+
+Il Foreground Service continua a:
+
+- inviare il BLE al Raspberry ogni 15 secondi;
+- sincronizzare task e messaggi ogni 60 secondi;
+- inviare stato app e batteria ogni 4 minuti;
+- ritentare i risultati rimasti nella coda locale quando torna la rete;
+- ripartire dopo il riavvio del telefono tramite `BootReceiver`.
+
+Un risultato viene prima salvato nella coda locale e poi inviato. Vengono trasmessi
+`patient_id`, `task_id`, `message_id`, `started_at`, `completed_at`, durata e
+`device_id`. Il backend registra gli stati `seen`, `started` e `completed`.
+
+### Firebase Cloud Messaging
+
+L'integrazione FCM e' predisposta. Senza Firebase l'app resta funzionante grazie alla
+sincronizzazione REST periodica. Per attivare le push reali:
+
+1. completare il compito Cloud D10;
+2. scaricare da Firebase `google-services.json`;
+3. inserirlo localmente in `app/google-services.json`;
+4. ricompilare l'app.
+
+Il file e' ignorato da Git. Il token FCM viene registrato nel backend senza comparire
+nei log e senza essere restituito dalle API.
 
 ## Scopo
 
@@ -38,7 +100,8 @@ I campi protetti sono:
 
 ```text
 Receiver URL
-Phone ID
+Backend clinico URL
+Device ID in sola lettura
 Mappa beacon
 ```
 

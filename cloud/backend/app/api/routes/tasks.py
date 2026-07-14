@@ -61,6 +61,14 @@ def create_task_result(
         result=result_payload,
     )
     task.status = "completed"
+    task.completed_at = completed_at
+    started_at = parse_optional_datetime(payload.get("started_at"))
+    if started_at is not None:
+        task.started_at = task.started_at or started_at
+        task.seen_at = task.seen_at or started_at
+    device_info = payload.get("device_info")
+    if isinstance(device_info, dict):
+        task.last_device_id = str(device_info.get("device_id") or "").strip() or task.last_device_id
     db.add(result)
     write_audit(
         db,
@@ -97,6 +105,61 @@ def create_task_result(
         "device_info": result.result.get("device_info", {}),
         "received_at": utc_iso(result.created_at),
     }
+
+
+@router.patch("/{task_id}/state", summary="Update patient task delivery state")
+def update_task_state(
+    task_id: str,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Registra quando l'app autorizzata vede o avvia un task."""
+    task = get_task_or_404(db, task_id)
+    if current_user.role not in {"patient", "admin"}:
+        raise HTTPException(status_code=403, detail="Only patient or admin can update task delivery state.")
+    if not can_access_patient(db, current_user, task.patient_id):
+        raise HTTPException(status_code=403, detail="Patient not authorized.")
+    if task.status in {"completed", "cancelled", "expired"}:
+        raise HTTPException(status_code=409, detail=f"Task is already {task.status}.")
+
+    requested_state = str(payload.get("state") or "").strip().lower()
+    if requested_state not in {"seen", "started"}:
+        raise HTTPException(status_code=422, detail="state must be seen or started.")
+    occurred_at = parse_optional_datetime(payload.get("occurred_at")) or datetime.now(timezone.utc)
+    device_id = str(payload.get("device_id") or "").strip() or None
+
+    if requested_state == "seen":
+        task.seen_at = task.seen_at or occurred_at
+        if task.status == "created":
+            task.status = "seen"
+    else:
+        task.seen_at = task.seen_at or occurred_at
+        task.started_at = task.started_at or occurred_at
+        task.status = "started"
+    if device_id:
+        task.last_device_id = device_id
+
+    write_audit(
+        db,
+        actor=current_user,
+        action=f"task.{requested_state}",
+        patient_id=task.patient_id,
+        target_type="task",
+        target_id=f"task-{task.id}",
+        details={"device_id": device_id},
+    )
+    db.commit()
+    db.refresh(task)
+    event_bus.publish(
+        InternalEvent(
+            event_type=f"task_{requested_state}",
+            patient_id=task.patient_id,
+            timestamp=occurred_at,
+            payload={"task_id": f"task-{task.id}", "state": requested_state},
+        )
+    )
+    return task_state_payload(task)
 
 
 @router.patch("/{task_id}/cancel", summary="Cancel task")
@@ -246,3 +309,28 @@ def parse_required_datetime(value: Any, field_name: str) -> datetime:
     if isinstance(value, str) and value.strip():
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     raise HTTPException(status_code=422, detail=f"{field_name} is required.")
+
+
+def parse_optional_datetime(value: Any) -> datetime | None:
+    """Converte un timestamp ISO opzionale usato dagli eventi dell'app."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    raise HTTPException(status_code=422, detail="occurred_at must be an ISO timestamp.")
+
+
+def task_state_payload(task: Task) -> dict[str, Any]:
+    """Restituisce lo stato di consegna senza esporre dati interni."""
+    return {
+        "task_id": f"task-{task.id}",
+        "patient_id": task.patient_id,
+        "status": task.status,
+        "seen_at": utc_iso(task.seen_at),
+        "started_at": utc_iso(task.started_at),
+        "completed_at": utc_iso(task.completed_at),
+        "device_id": task.last_device_id,
+        "updated_at": utc_iso(task.updated_at),
+    }

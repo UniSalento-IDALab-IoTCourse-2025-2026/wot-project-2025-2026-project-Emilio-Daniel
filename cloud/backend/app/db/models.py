@@ -234,6 +234,9 @@ class PatientAppStatus(TimestampMixin, Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     battery_pct: Mapped[float | None] = mapped_column(Float)
     app_version: Mapped[str | None] = mapped_column(String(64))
+    platform: Mapped[str] = mapped_column(String(32), default="android", nullable=False)
+    fcm_token: Mapped[str | None] = mapped_column(Text)
+    notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class Task(TimestampMixin, Base):
@@ -249,6 +252,10 @@ class Task(TimestampMixin, Base):
     instructions: Mapped[str | None] = mapped_column(Text)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_device_id: Mapped[str | None] = mapped_column(String(128))
 
 
 class TaskResult(TimestampMixin, Base):
@@ -277,3 +284,4 @@ class Notification(TimestampMixin, Base):
     body: Mapped[str | None] = mapped_column(Text)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

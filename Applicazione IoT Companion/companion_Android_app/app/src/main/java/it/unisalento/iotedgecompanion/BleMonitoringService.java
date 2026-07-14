@@ -47,6 +47,7 @@ public class BleMonitoringService extends Service {
     private static final long REPORT_INTERVAL_MS = 15000L;
     private static final long RESTART_SCAN_DELAY_MS = 3000L;
     private static final long OBSERVATION_TTL_MS = 45000L;
+    private static final long PATIENT_SYNC_INTERVAL_MS = 60000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -103,6 +104,7 @@ public class BleMonitoringService extends Service {
         super.onCreate();
         createNotificationChannel();
         acquireWakeLock();
+        AppPreferences.get(this).setServiceRunning(true);
         startAsForeground("Monitoraggio indoor in corso");
     }
 
@@ -118,6 +120,7 @@ public class BleMonitoringService extends Service {
             running = true;
             startContinuousScan();
             scheduleNextReport(0L);
+            schedulePatientSync(0L);
         }
         return START_STICKY;
     }
@@ -130,6 +133,7 @@ public class BleMonitoringService extends Service {
          * chiude l'executor di rete per evitare lavori residui.
          */
         running = false;
+        AppPreferences.get(this).setServiceRunning(false);
         stopCurrentScan();
         handler.removeCallbacksAndMessages(null);
         networkExecutor.shutdownNow();
@@ -325,10 +329,13 @@ public class BleMonitoringService extends Service {
                     outputStream.write(body);
                 }
                 int responseCode = connection.getResponseCode();
+                boolean success = responseCode >= 200 && responseCode < 300;
+                AppPreferences.get(this).setBleUploadStatus(success, observation.room);
                 handler.post(() -> startAsForeground(
                         "Inviata stanza: " + observation.room + " (" + responseCode + ")"
                 ));
             } catch (Exception exception) {
+                AppPreferences.get(this).setBleUploadStatus(false, observation.room);
                 handler.post(() -> startAsForeground("Errore invio BLE"));
             } finally {
                 if (connection != null) {
@@ -460,6 +467,17 @@ public class BleMonitoringService extends Service {
          * le osservazioni dei beacon.
          */
         handler.postDelayed(this::reportStrongestObservation, delayMs);
+    }
+
+    private void schedulePatientSync(long delayMs) {
+        /* Mantiene task, messaggi e heartbeat attivi anche a schermo spento. */
+        handler.postDelayed(() -> {
+            if (!running) {
+                return;
+            }
+            networkExecutor.execute(() -> PatientSyncManager.synchronize(this));
+            schedulePatientSync(PATIENT_SYNC_INTERVAL_MS);
+        }, delayMs);
     }
 
     private void removeStaleObservations() {

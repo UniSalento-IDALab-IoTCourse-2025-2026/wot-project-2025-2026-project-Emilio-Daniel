@@ -303,17 +303,17 @@ del backend.
 
 ### E10. Estensione dell'app Android paziente
 
-- [ ] Conservare il Foreground Service BLE e l'avvio automatico del monitoraggio.
-- [ ] Separare configurazione amministrativa e schermata quotidiana del paziente.
-- [ ] Mostrare monitoraggio attivo, connessione Raspberry e ultimo aggiornamento.
-- [ ] Mostrare notifiche e task ricevuti dal backend.
-- [ ] Registrare seen, started e completed per ogni task.
-- [ ] Realizzare l'interfaccia dei test concordati.
-- [ ] Inviare risultati, durata e identificatore dispositivo al backend.
-- [ ] Salvare localmente risultati non inviati e ritentare quando torna la rete.
-- [ ] Registrare il token FCM senza inserirlo nei log.
-- [ ] Inviare periodicamente lo stato dell'app e la batteria del telefono.
-- [ ] Mantenere protette da credenziali admin le impostazioni tecniche e lo stop del servizio.
+- [x] Conservare il Foreground Service BLE e l'avvio automatico del monitoraggio.
+- [x] Separare configurazione amministrativa e schermata quotidiana del paziente.
+- [x] Mostrare monitoraggio attivo, connessione Raspberry e ultimo aggiornamento.
+- [x] Mostrare notifiche e task ricevuti dal backend.
+- [x] Registrare seen, started e completed per ogni task.
+- [x] Realizzare l'interfaccia dei test concordati.
+- [x] Inviare risultati, durata e identificatore dispositivo al backend.
+- [x] Salvare localmente risultati non inviati e ritentare quando torna la rete.
+- [x] Registrare il token FCM senza inserirlo nei log.
+- [x] Inviare periodicamente lo stato dell'app e la batteria del telefono.
+- [x] Mantenere protette da credenziali admin le impostazioni tecniche e lo stop del servizio.
 - [ ] Testare blocco schermo, risparmio energetico, riavvio telefono e rete assente.
 
 ### E11. Interfaccia caregiver

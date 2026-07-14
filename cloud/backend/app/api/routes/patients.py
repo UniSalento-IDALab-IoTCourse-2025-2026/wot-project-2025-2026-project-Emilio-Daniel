@@ -640,6 +640,10 @@ def task_payload(task: Task, db: Session | None = None) -> dict[str, Any]:
         "payload": payload.get("content", payload),
         "scoring": payload.get("scoring"),
         "result": result,
+        "seen_at": utc_iso(task.seen_at),
+        "started_at": utc_iso(task.started_at),
+        "completed_at": utc_iso(task.completed_at),
+        "last_device_id": task.last_device_id,
         "created_at": utc_iso(task.created_at),
         "updated_at": utc_iso(task.updated_at),
     }

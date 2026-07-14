@@ -3,8 +3,10 @@ package it.unisalento.iotedgecompanion;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -12,384 +14,430 @@ import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.text.InputType;
-import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
+import androidx.core.content.ContextCompat;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+/** Schermata quotidiana del paziente, separata dalla configurazione tecnica. */
 public class MainActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 1001;
     private static final String ADMIN_USERNAME = "admin";
     private static final String ADMIN_PASSWORD = "admin";
-    private static final String DEFAULT_BEACON_MAP =
-            "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14592=kitchen\n" +
-            "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14582=bedroom\n" +
-            "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14599=bathroom";
-    private boolean startServiceAfterPermissionGrant = false;
 
-    private EditText receiverUrlInput;
-    private EditText phoneIdInput;
-    private EditText beaconMapInput;
-    private LinearLayout gatewayConfigPanel;
-    private TextView gatewaySummaryText;
-    private LinearLayout beaconConfigPanel;
-    private TextView beaconSummaryText;
-    private TextView statusText;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private AppPreferences preferences;
+    private LinearLayout loginPanel;
+    private LinearLayout dailyPanel;
+    private EditText emailInput;
+    private EditText passwordInput;
+    private TextView loginStatusText;
+    private TextView welcomeText;
+    private TextView patientBindingText;
+    private TextView monitoringStatusText;
+    private TextView connectionStatusText;
+    private TextView offlineQueueText;
+    private LinearLayout tasksContainer;
+    private LinearLayout notificationsContainer;
+
+    private final BroadcastReceiver syncReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            renderScreen();
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        /*
-         * Metodo principale dell'Activity Android.
-         * Inizializza la schermata, collega i campi XML alle variabili Java e
-         * associa i pulsanti alle azioni di configurazione e monitoraggio BLE.
-         */
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        receiverUrlInput = findViewById(R.id.receiverUrlInput);
-        phoneIdInput = findViewById(R.id.phoneIdInput);
-        beaconMapInput = findViewById(R.id.beaconMapInput);
-        gatewayConfigPanel = findViewById(R.id.gatewayConfigPanel);
-        gatewaySummaryText = findViewById(R.id.gatewaySummaryText);
-        beaconConfigPanel = findViewById(R.id.beaconConfigPanel);
-        beaconSummaryText = findViewById(R.id.beaconSummaryText);
-        statusText = findViewById(R.id.statusText);
-
-        Button saveConfigButton = findViewById(R.id.saveConfigButton);
-        Button unlockGatewayConfigButton = findViewById(R.id.unlockGatewayConfigButton);
-        Button lockGatewayConfigButton = findViewById(R.id.lockGatewayConfigButton);
-        Button unlockBeaconConfigButton = findViewById(R.id.unlockBeaconConfigButton);
-        Button saveBeaconMapButton = findViewById(R.id.saveBeaconMapButton);
-        Button lockBeaconConfigButton = findViewById(R.id.lockBeaconConfigButton);
-        Button startScanButton = findViewById(R.id.startScanButton);
-        Button stopScanButton = findViewById(R.id.stopScanButton);
-
-        loadConfig();
-
-        saveConfigButton.setOnClickListener(view -> saveConfig());
-        unlockGatewayConfigButton.setOnClickListener(view -> showAdminLoginDialog(
-                "Accesso gateway",
-                "Sblocca",
-                this::unlockGatewayConfigEditor
-        ));
-        lockGatewayConfigButton.setOnClickListener(view -> lockGatewayConfigEditor());
-        unlockBeaconConfigButton.setOnClickListener(view -> showAdminLoginDialog(
-                "Accesso mappa beacon",
-                "Sblocca",
-                this::unlockBeaconMapEditor
-        ));
-        saveBeaconMapButton.setOnClickListener(view -> saveBeaconMap());
-        lockBeaconConfigButton.setOnClickListener(view -> lockBeaconMapEditor());
-        startScanButton.setOnClickListener(view -> startMonitoringService());
-        stopScanButton.setOnClickListener(view -> showAdminLoginDialog(
-                "Ferma monitoraggio",
-                "Ferma",
-                this::stopMonitoringService
-        ));
-
-        startMonitoringService();
+        preferences = AppPreferences.get(this);
+        bindViews();
+        configureActions();
+        ensureMonitoringStarted();
         requestBatteryOptimizationExemptionIfNeeded();
         requestBackgroundLocationSettingsIfNeeded();
+        FcmRegistration.ensureToken(this);
+        renderScreen();
+        if (preferences.isAuthenticated()) {
+            synchronizeNow();
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        IntentFilter filter = new IntentFilter(PatientSyncManager.ACTION_SYNC_UPDATED);
+        ContextCompat.registerReceiver(
+                this,
+                syncReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+        );
+    }
+
+    @Override
+    protected void onStop() {
+        unregisterReceiver(syncReceiver);
+        super.onStop();
     }
 
     @Override
     protected void onDestroy() {
-        /*
-         * Chiusura controllata dell'Activity.
-         * L'Activity non mantiene risorse pesanti: il monitoraggio reale viene
-         * gestito dal Foreground Service separato.
-         */
+        executor.shutdownNow();
         super.onDestroy();
     }
 
-    private void loadConfig() {
-        /*
-         * Carica da SharedPreferences l'ultima configurazione salvata.
-         * In questo modo l'utente non deve reinserire ogni volta URL del
-         * Raspberry, identificativo telefono e mappa beacon-stanza.
-         */
-        SharedPreferences preferences = getSharedPreferences("iot-edge", MODE_PRIVATE);
-        receiverUrlInput.setText(preferences.getString("receiverUrl", "http://10.0.2.2:8000/ble/sample"));
-        phoneIdInput.setText(preferences.getString("phoneId", "android-emulator"));
-        String savedBeaconMap = preferences.getString("beaconMap", DEFAULT_BEACON_MAP);
-        if (shouldUseDefaultBeaconMap(savedBeaconMap)) {
-            savedBeaconMap = DEFAULT_BEACON_MAP;
-            preferences.edit().putString("beaconMap", DEFAULT_BEACON_MAP).apply();
+    private void bindViews() {
+        loginPanel = findViewById(R.id.loginPanel);
+        dailyPanel = findViewById(R.id.dailyPanel);
+        emailInput = findViewById(R.id.emailInput);
+        passwordInput = findViewById(R.id.passwordInput);
+        loginStatusText = findViewById(R.id.loginStatusText);
+        welcomeText = findViewById(R.id.welcomeText);
+        patientBindingText = findViewById(R.id.patientBindingText);
+        monitoringStatusText = findViewById(R.id.monitoringStatusText);
+        connectionStatusText = findViewById(R.id.connectionStatusText);
+        offlineQueueText = findViewById(R.id.offlineQueueText);
+        tasksContainer = findViewById(R.id.tasksContainer);
+        notificationsContainer = findViewById(R.id.notificationsContainer);
+    }
+
+    private void configureActions() {
+        findViewById(R.id.loginButton).setOnClickListener(view -> login());
+        findViewById(R.id.refreshButton).setOnClickListener(view -> synchronizeNow());
+        findViewById(R.id.logoutButton).setOnClickListener(view -> confirmLogout());
+        findViewById(R.id.adminSettingsButton).setOnClickListener(view -> requestAdminAccess());
+        findViewById(R.id.loginAdminButton).setOnClickListener(view -> requestAdminAccess());
+    }
+
+    private void login() {
+        String email = emailInput.getText().toString().trim();
+        String password = passwordInput.getText().toString();
+        if (email.isEmpty() || password.isEmpty()) {
+            loginStatusText.setText("Inserisci email e password.");
+            return;
         }
-        beaconMapInput.setText(savedBeaconMap);
-        renderGatewaySummary();
-        renderBeaconSummary();
-        lockGatewayConfigEditor();
-        lockBeaconMapEditor();
+        loginStatusText.setText("Verifica del profilo in corso...");
+        executor.execute(() -> {
+            try {
+                new BackendApiClient(this).authenticatePatient(email, password);
+                runOnUiThread(() -> {
+                    passwordInput.setText("");
+                    renderScreen();
+                    synchronizeNow();
+                });
+            } catch (Exception exception) {
+                runOnUiThread(() -> loginStatusText.setText(userMessage(exception)));
+            }
+        });
     }
 
-    private boolean shouldUseDefaultBeaconMap(String savedBeaconMap) {
-        /*
-         * Se sul telefono era installata una vecchia versione dell'app, possono
-         * essere rimasti placeholder o MAC fittizi. In quel caso ripristiniamo
-         * automaticamente la mappa reale dei tre BlueBeacon del progetto.
-         */
-        if (savedBeaconMap == null || savedBeaconMap.trim().isEmpty()) {
-            return true;
+    private void synchronizeNow() {
+        connectionStatusText.setText("Aggiornamento in corso...");
+        executor.execute(() -> PatientSyncManager.synchronize(this));
+    }
+
+    private void renderScreen() {
+        boolean authenticated = preferences.isAuthenticated();
+        loginPanel.setVisibility(authenticated ? View.GONE : View.VISIBLE);
+        dailyPanel.setVisibility(authenticated ? View.VISIBLE : View.GONE);
+        if (!authenticated) {
+            return;
         }
-        String normalized = savedBeaconMap.toLowerCase();
-        return normalized.contains("identificativo_beacon")
-                || normalized.contains("aa:bb:cc:dd:ee");
+        welcomeText.setText("Buongiorno, " + preferences.patientDisplayName());
+        patientBindingText.setText(
+                "Profilo verificato: " + preferences.patientId()
+                        + "\nDispositivo: " + shortDeviceId(preferences.deviceId())
+        );
+        monitoringStatusText.setText(
+                preferences.serviceRunning() ? "Monitoraggio attivo in background" : "Monitoraggio da riavviare"
+        );
+        renderConnections();
+        renderTasksAndMessages();
+        int pending = new OfflineResultQueue(this).size();
+        offlineQueueText.setText(
+                pending == 0
+                        ? "Tutti i risultati sono stati sincronizzati."
+                        : pending + " risultati salvati sul telefono in attesa di rete."
+        );
     }
 
-    private void saveConfig() {
-        /*
-         * Salva localmente la configurazione inserita nella schermata.
-         * I valori salvati vengono riutilizzati dal Foreground Service BLE che
-         * lavora in background.
-         */
-        getSharedPreferences("iot-edge", MODE_PRIVATE)
-                .edit()
-                .putString("receiverUrl", receiverUrlInput.getText().toString().trim())
-                .putString("phoneId", phoneIdInput.getText().toString().trim())
-                .apply();
-        renderGatewaySummary();
-        lockGatewayConfigEditor();
-        setStatus("Gateway salvato e monitoraggio aggiornato");
-        startMonitoringService();
+    private void renderConnections() {
+        boolean edgeOnline = false;
+        String lastUpdate = "non disponibile";
+        try {
+            JSONObject current = new JSONObject(preferences.cachedCurrent());
+            edgeOnline = current.optJSONObject("edge") != null
+                    && current.optJSONObject("edge").optBoolean("online", false);
+            lastUpdate = current.optString("last_update", "non disponibile");
+        } catch (Exception ignored) {
+            // La cache puo' essere vuota prima della prima sincronizzazione.
+        }
+        String syncTime = preferences.lastBackendSyncAt() == 0
+                ? "mai"
+                : DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                .format(new Date(preferences.lastBackendSyncAt()));
+        connectionStatusText.setText(
+                "Raspberry: " + (edgeOnline ? "online" : "non raggiungibile dal Cloud")
+                        + "\nInvio BLE: " + (preferences.bleConnected() ? "attivo" : "in attesa")
+                        + roomSuffix(preferences.lastBleRoom())
+                        + "\nBackend: " + preferences.backendSyncStatus()
+                        + "\nUltimo dato Edge: " + lastUpdate
+                        + "\nUltima sincronizzazione app: " + syncTime
+        );
     }
 
-    private void saveBeaconMap() {
-        /*
-         * Salva la mappa beacon dopo l'accesso amministratore.
-         * Separare questo salvataggio dalla configurazione base impedisce che la
-         * mappa venga modificata accidentalmente durante l'uso normale dell'app.
-         */
-        getSharedPreferences("iot-edge", MODE_PRIVATE)
-                .edit()
-                .putString("beaconMap", beaconMapInput.getText().toString().trim())
-                .apply();
-        renderBeaconSummary();
-        lockBeaconMapEditor();
-        setStatus("Mappa beacon salvata");
-        startMonitoringService();
+    private void renderTasksAndMessages() {
+        tasksContainer.removeAllViews();
+        notificationsContainer.removeAllViews();
+        int taskCount = 0;
+        int messageCount = 0;
+        try {
+            JSONArray tasks = new JSONObject(preferences.cachedTasks()).optJSONArray("items");
+            if (tasks != null) {
+                for (int index = 0; index < tasks.length(); index++) {
+                    JSONObject task = tasks.getJSONObject(index);
+                    if (isPatientMessage(task)) {
+                        addPatientMessage(task);
+                        messageCount++;
+                    } else if (!"completed".equals(task.optString("status"))
+                            && !"cancelled".equals(task.optString("status"))
+                            && !"expired".equals(task.optString("status"))) {
+                        addTask(task);
+                        taskCount++;
+                    }
+                }
+            }
+            JSONArray notifications = new JSONObject(preferences.cachedNotifications()).optJSONArray("items");
+            if (notifications != null) {
+                for (int index = 0; index < notifications.length(); index++) {
+                    addNotification(notifications.getJSONObject(index));
+                    messageCount++;
+                }
+            }
+        } catch (Exception ignored) {
+            // Una cache incompleta non deve interrompere il monitoraggio BLE.
+        }
+        if (taskCount == 0) {
+            tasksContainer.addView(emptyText("Nessuna attivita' da completare."));
+        }
+        if (messageCount == 0) {
+            notificationsContainer.addView(emptyText("Nessun nuovo messaggio."));
+        }
     }
 
-    private void showAdminLoginDialog(String title, String positiveLabel, AdminAction action) {
-        /*
-         * Mostra una finestra di login prima di eseguire un'azione protetta.
-         * Per ora le credenziali sono fisse admin/admin, come richiesto per il
-         * prototipo. In futuro potranno essere sostituite da credenziali reali.
-         */
+    private void addTask(JSONObject task) {
+        String title = task.optString("title", "Nuova attivita'");
+        String subtitle = task.optString("instructions", "Apri per visualizzare i dettagli.");
+        View row = informationRow(title, subtitle, "Apri");
+        row.setOnClickListener(view -> openTask(task));
+        tasksContainer.addView(row);
+        markTaskSeenOnce(task);
+    }
+
+    private void addPatientMessage(JSONObject task) {
+        JSONObject message = task.optJSONObject("payload") == null
+                ? null : task.optJSONObject("payload").optJSONObject("message");
+        String title = message == null ? task.optString("title", "Messaggio") : message.optString("title", "Messaggio");
+        String body = message == null ? task.optString("instructions", "") : message.optString("body", "");
+        notificationsContainer.addView(informationRow(title, body, "Dal team di cura"));
+        markTaskSeenOnce(task);
+    }
+
+    private void addNotification(JSONObject notification) {
+        View row = informationRow(
+                notification.optString("title", "Messaggio"),
+                notification.optString("body", "Apri per i dettagli."),
+                "seen".equals(notification.optString("status")) ? "Letto" : "Nuovo"
+        );
+        row.setOnClickListener(view -> executor.execute(() -> {
+            try {
+                new BackendApiClient(this).markNotificationSeen(notification.getString("notification_id"));
+                PatientSyncManager.synchronize(this);
+            } catch (Exception ignored) {
+                // La notifica resta disponibile e verra' ritentata al prossimo sync.
+            }
+        }));
+        notificationsContainer.addView(row);
+    }
+
+    private View informationRow(String title, String subtitle, String action) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setBackgroundResource(R.drawable.bg_beacon_summary);
+        int padding = dp(13);
+        row.setPadding(padding, padding, padding, padding);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        row.setLayoutParams(params);
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextColor(getColor(R.color.text_primary));
+        titleView.setTextSize(15);
+        titleView.setTypeface(null, android.graphics.Typeface.BOLD);
+        row.addView(titleView);
+
+        TextView subtitleView = new TextView(this);
+        subtitleView.setText(subtitle);
+        subtitleView.setTextColor(getColor(R.color.text_secondary));
+        subtitleView.setTextSize(13);
+        subtitleView.setPadding(0, dp(5), 0, 0);
+        row.addView(subtitleView);
+
+        TextView actionView = new TextView(this);
+        actionView.setText(action);
+        actionView.setTextColor(getColor(R.color.primary));
+        actionView.setTextSize(12);
+        actionView.setTypeface(null, android.graphics.Typeface.BOLD);
+        actionView.setPadding(0, dp(8), 0, 0);
+        row.addView(actionView);
+        return row;
+    }
+
+    private TextView emptyText(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(getColor(R.color.text_secondary));
+        view.setTextSize(13);
+        view.setPadding(0, dp(8), 0, dp(8));
+        return view;
+    }
+
+    private void openTask(JSONObject task) {
+        executor.execute(() -> {
+            try {
+                new BackendApiClient(this).updateTaskState(
+                        task.getString("task_id"),
+                        "seen",
+                        java.time.Instant.now().toString()
+                );
+            } catch (Exception ignored) {
+                // L'apertura resta possibile offline; lo started verra' ritentato dal test.
+            }
+        });
+        startActivity(new Intent(this, TaskActivity.class).putExtra("task_json", task.toString()));
+    }
+
+    private void markTaskSeenOnce(JSONObject task) {
+        String taskId = task.optString("task_id");
+        if (taskId.isEmpty() || !"created".equals(task.optString("status"))) {
+            return;
+        }
+        java.util.Set<String> seen = new java.util.HashSet<>(
+                preferences.raw().getStringSet("locallySeenTaskIds", new java.util.HashSet<>())
+        );
+        if (seen.contains(taskId)) {
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                java.util.Set<String> latestSeen = new java.util.HashSet<>(
+                        preferences.raw().getStringSet("locallySeenTaskIds", new java.util.HashSet<>())
+                );
+                if (latestSeen.contains(taskId)) {
+                    return;
+                }
+                new BackendApiClient(this).updateTaskState(taskId, "seen", java.time.Instant.now().toString());
+                latestSeen.add(taskId);
+                preferences.raw().edit().putStringSet("locallySeenTaskIds", latestSeen).apply();
+            } catch (Exception ignored) {
+                // Il task verra' nuovamente marcato al prossimo aggiornamento utile.
+            }
+        });
+    }
+
+    private boolean isPatientMessage(JSONObject task) {
+        JSONObject payload = task.optJSONObject("payload");
+        return payload != null && "patient_message".equals(payload.optString("kind"));
+    }
+
+    private void confirmLogout() {
+        new AlertDialog.Builder(this)
+                .setTitle("Uscire dal profilo?")
+                .setMessage("Il monitoraggio BLE resta attivo, ma task e messaggi non verranno sincronizzati.")
+                .setNegativeButton("Annulla", null)
+                .setPositiveButton("Esci", (dialog, which) -> {
+                    preferences.clearSession();
+                    renderScreen();
+                })
+                .show();
+    }
+
+    private void requestAdminAccess() {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(18);
-        container.setPadding(padding, padding / 2, padding, 0);
-
-        EditText usernameInput = new EditText(this);
-        usernameInput.setHint("Username");
-        usernameInput.setSingleLine(true);
-        usernameInput.setInputType(InputType.TYPE_CLASS_TEXT);
-        container.addView(usernameInput);
-
-        EditText passwordInput = new EditText(this);
-        passwordInput.setHint("Password");
-        passwordInput.setSingleLine(true);
-        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        container.addView(passwordInput);
-
+        container.setPadding(dp(20), dp(8), dp(20), 0);
+        EditText username = new EditText(this);
+        username.setHint("Nome utente");
+        username.setSingleLine(true);
+        EditText password = new EditText(this);
+        password.setHint("Password");
+        password.setSingleLine(true);
+        password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        container.addView(username);
+        container.addView(password);
         new AlertDialog.Builder(this)
-                .setTitle(title)
+                .setTitle("Area amministrativa")
                 .setView(container)
                 .setNegativeButton("Annulla", null)
-                .setPositiveButton(positiveLabel, (dialog, which) -> {
-                    String username = usernameInput.getText().toString().trim();
-                    String password = passwordInput.getText().toString().trim();
-                    if (ADMIN_USERNAME.equals(username) && ADMIN_PASSWORD.equals(password)) {
-                        action.run();
+                .setPositiveButton("Continua", (dialog, which) -> {
+                    if (ADMIN_USERNAME.equals(username.getText().toString().trim())
+                            && ADMIN_PASSWORD.equals(password.getText().toString())) {
+                        startActivity(new Intent(this, AdminSettingsActivity.class));
                     } else {
-                        setStatus("Credenziali non valide");
+                        Toast.makeText(this, "Credenziali amministrative non valide.", Toast.LENGTH_SHORT).show();
                     }
                 })
                 .show();
     }
 
-    private void unlockGatewayConfigEditor() {
-        /*
-         * Mostra i campi tecnici del gateway solo dopo autenticazione admin.
-         * Nell'uso normale l'utente vede il riepilogo, non i campi modificabili.
-         */
-        gatewayConfigPanel.setVisibility(View.VISIBLE);
-        setStatus("Modifica gateway sbloccata");
-    }
-
-    private void lockGatewayConfigEditor() {
-        /*
-         * Nasconde i campi tecnici del gateway.
-         * Questo rende la schermata piu' pulita e impedisce modifiche casuali
-         * all'URL del receiver o all'identificativo del telefono.
-         */
-        gatewayConfigPanel.setVisibility(View.GONE);
-    }
-
-    private void unlockBeaconMapEditor() {
-        /*
-         * Mostra il pannello di modifica della mappa beacon.
-         * L'utente normale vede solo il riepilogo; l'amministratore puo'
-         * correggere UUID/Major/Minor e stanze.
-         */
-        beaconConfigPanel.setVisibility(View.VISIBLE);
-        setStatus("Modifica mappa sbloccata");
-    }
-
-    private void lockBeaconMapEditor() {
-        /*
-         * Nasconde il pannello di modifica della mappa beacon.
-         * Questo mantiene la schermata pulita e riduce il rischio di modifiche
-         * accidentali durante i test reali in casa.
-         */
-        beaconConfigPanel.setVisibility(View.GONE);
-    }
-
-    private void renderBeaconSummary() {
-        /*
-         * Mostra la mappa beacon in forma leggibile.
-         * Le chiavi tecniche restano disponibili nell'editor, ma nel riepilogo
-         * l'attenzione va alle stanze configurate.
-         */
-        String[] lines = beaconMapInput.getText().toString().split("\\n");
-        StringBuilder summary = new StringBuilder();
-        for (String line : lines) {
-            String trimmed = line.trim();
-            if (trimmed.isEmpty() || !trimmed.contains("=")) {
-                continue;
-            }
-            String[] parts = trimmed.split("=", 2);
-            String key = parts[0].trim();
-            String room = parts[1].trim();
-            summary.append(prettyRoomName(room))
-                    .append("  ->  ")
-                    .append(shortenBeaconKey(key))
-                    .append("\n");
-        }
-        beaconSummaryText.setText(summary.length() == 0 ? "Mappa beacon non configurata" : summary.toString().trim());
-    }
-
-    private void renderGatewaySummary() {
-        /*
-         * Mostra la configurazione gateway in forma compatta e leggibile.
-         * I valori completi restano modificabili nel pannello admin.
-         */
-        String receiverUrl = receiverUrlInput.getText().toString().trim();
-        String phoneId = phoneIdInput.getText().toString().trim();
-        StringBuilder summary = new StringBuilder();
-        summary.append("Receiver\n")
-                .append(TextUtils.isEmpty(receiverUrl) ? "Non configurato" : receiverUrl)
-                .append("\n\nDispositivo\n")
-                .append(TextUtils.isEmpty(phoneId) ? "android-phone" : phoneId);
-        gatewaySummaryText.setText(summary.toString());
-    }
-
-    private String prettyRoomName(String room) {
-        /*
-         * Traduce i nomi interni del modello in etichette piu' leggibili.
-         * Nel CSV e nel modello rimangono `kitchen`, `bedroom`, `bathroom`.
-         */
-        String normalized = room.toLowerCase();
-        if ("kitchen".equals(normalized)) {
-            return "Cucina";
-        }
-        if ("bedroom".equals(normalized)) {
-            return "Camera";
-        }
-        if ("bathroom".equals(normalized)) {
-            return "Bagno";
-        }
-        return room;
-    }
-
-    private String shortenBeaconKey(String key) {
-        /*
-         * Accorcia la chiave tecnica del beacon per non sporcare il riepilogo.
-         * L'identificativo completo resta modificabile nel pannello admin.
-         */
-        if (key.length() <= 18) {
-            return key;
-        }
-        return key.substring(0, 8) + "..." + key.substring(key.length() - 8);
-    }
-
-    private int dp(int value) {
-        /*
-         * Converte un valore in density-independent pixels in pixel reali.
-         * Serve per dare al dialog di login una spaziatura coerente sui diversi
-         * schermi Android.
-         */
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private void startMonitoringService() {
-        /*
-         * Avvia il Foreground Service responsabile della scansione BLE reale.
-         * Prima controlla i permessi Android necessari; se mancano, li richiede
-         * e riparte automaticamente dopo la concessione.
-         */
+    private void ensureMonitoringStarted() {
         if (!hasRequiredPermissions()) {
-            startServiceAfterPermissionGrant = true;
             requestRequiredPermissions();
             return;
         }
-
-        Intent intent = new Intent(this, BleMonitoringService.class);
+        Intent service = new Intent(this, BleMonitoringService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent);
+            startForegroundService(service);
         } else {
-            startService(intent);
+            startService(service);
         }
-        setStatus("Monitoraggio IoT avviato in background");
-    }
-
-    private void stopMonitoringService() {
-        /*
-         * Ferma il servizio BLE in background.
-         * Questa azione interrompe la scansione periodica e aggiorna lo stato
-         * mostrato nell'interfaccia utente.
-         */
-        stopService(new Intent(this, BleMonitoringService.class));
-        setStatus("Monitoraggio IoT fermato");
     }
 
     private boolean hasRequiredPermissions() {
-        /*
-         * Verifica se l'app possiede i permessi necessari alla scansione BLE.
-         * Android richiede permessi diversi in base alla versione, quindi il
-         * controllo distingue localizzazione, Bluetooth e notifiche.
-         */
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return false;
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-                return false;
-            }
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                return false;
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)) {
+            return false;
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
-        }
-        return true;
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void requestRequiredPermissions() {
-        /*
-         * Richiede all'utente i permessi Android necessari.
-         * La lista viene costruita dinamicamente per restare compatibile con
-         * versioni Android diverse, evitando richieste non supportate.
-         */
         List<String> permissions = new ArrayList<>();
-        permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION);
         permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissions.add(Manifest.permission.BLUETOOTH_SCAN);
@@ -402,25 +450,16 @@ public class MainActivity extends Activity {
     }
 
     private void requestBatteryOptimizationExemptionIfNeeded() {
-        /*
-         * Chiede ad Android di non limitare l'app in standby.
-         * Su molti telefoni il Foreground Service resta visibile, ma la scansione
-         * BLE viene comunque ridotta dal risparmio energetico dopo schermo spento.
-         */
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return;
         }
-        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-        if (powerManager == null || powerManager.isIgnoringBatteryOptimizations(getPackageName())) {
+        PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (manager == null || manager.isIgnoringBatteryOptimizations(getPackageName())) {
             return;
         }
-
         new AlertDialog.Builder(this)
-                .setTitle("Monitoraggio in background")
-                .setMessage(
-                        "Per continuare a rilevare i beacon anche a schermo spento, " +
-                        "consenti a IoT Edge Companion di non essere ottimizzata dalla batteria."
-                )
+                .setTitle("Monitoraggio anche a schermo spento")
+                .setMessage("Consenti all'app di lavorare senza limitazioni della batteria per mantenere attivi beacon e sincronizzazione.")
                 .setNegativeButton("Dopo", null)
                 .setPositiveButton("Consenti", (dialog, which) -> {
                     Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
@@ -431,28 +470,16 @@ public class MainActivity extends Activity {
     }
 
     private void requestBackgroundLocationSettingsIfNeeded() {
-        /*
-         * Su Android 10/11 la scansione BLE a schermo spento puo' richiedere
-         * anche la posizione in background. Android non sempre consente di
-         * chiederla con un popup diretto, quindi accompagniamo l'utente nella
-         * schermata impostazioni dell'app.
-         */
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             return;
         }
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             return;
         }
-        if (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            return;
-        }
-
         new AlertDialog.Builder(this)
-                .setTitle("Posizione in background")
-                .setMessage(
-                        "Per rilevare i beacon anche quando lo schermo e' spento, " +
-                        "imposta la posizione su 'Consenti sempre' nelle autorizzazioni dell'app."
-                )
+                .setTitle("Rilevamento in background")
+                .setMessage("Nelle autorizzazioni imposta la posizione su 'Consenti sempre' per rilevare i beacon anche a schermo spento.")
                 .setNegativeButton("Dopo", null)
                 .setPositiveButton("Apri impostazioni", (dialog, which) -> {
                     Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
@@ -464,42 +491,27 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        /*
-         * Gestisce la risposta dell'utente alla richiesta permessi.
-         * Se tutti i permessi sono concessi e l'utente voleva avviare il servizio,
-         * il monitoraggio BLE parte automaticamente.
-         */
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode != REQUEST_PERMISSIONS) {
-            return;
+        if (requestCode == REQUEST_PERMISSIONS && hasRequiredPermissions()) {
+            ensureMonitoringStarted();
         }
-        if (hasRequiredPermissions()) {
-            setStatus("Permessi concessi");
-            if (startServiceAfterPermissionGrant) {
-                startServiceAfterPermissionGrant = false;
-                startMonitoringService();
-            }
-        } else {
-            startServiceAfterPermissionGrant = false;
-            setStatus("Permessi BLE/notifiche mancanti");
-        }
+        renderScreen();
     }
 
-    private void setStatus(String message) {
-        /*
-         * Aggiorna il messaggio di stato visibile nell'app.
-         * Centralizzare questa operazione rende piu' semplice modificare in
-         * futuro il modo in cui comunichiamo errori o successi all'utente.
-         */
-        statusText.setText(message);
+    private String roomSuffix(String room) {
+        return room == null || room.isEmpty() ? "" : " (" + room + ")";
     }
 
-    private interface AdminAction {
-        /*
-         * Piccola interfaccia usata per riutilizzare lo stesso dialog admin.
-         * Permette di proteggere configurazione gateway, mappa beacon e stop
-         * del monitoraggio senza duplicare codice di login.
-         */
-        void run();
+    private String shortDeviceId(String value) {
+        return value.length() <= 20 ? value : value.substring(0, 12) + "...";
+    }
+
+    private String userMessage(Exception exception) {
+        String message = exception.getMessage();
+        return message == null || message.isEmpty() ? "Connessione non disponibile." : message;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 }

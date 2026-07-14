@@ -1650,6 +1650,10 @@ Aprire:
 ```text
 Dashboard: http://127.0.0.1:5173
 Backend docs: http://127.0.0.1:8080/docs
+
+Le credenziali di accesso sono:
+ - medico.demo@localhost.invalid
+ - provaprova
 ```
 
 ### Test automatici rapidi
