@@ -80,6 +80,14 @@ final class BackendApiClient {
         return request("PATCH", "/notifications/" + notificationId + "/seen", new JSONObject(), true, true);
     }
 
+    JSONObject dismissNotification(String notificationId) throws Exception {
+        return request("DELETE", "/notifications/" + notificationId, null, true, true);
+    }
+
+    JSONObject dismissTask(String taskId) throws Exception {
+        return request("DELETE", "/tasks/" + taskId, null, true, true);
+    }
+
     JSONObject registerDevice(String fcmToken, boolean notificationsEnabled) throws Exception {
         JSONObject payload = baseDevicePayload()
                 .put("fcm_token", fcmToken == null ? "" : fcmToken)

@@ -8,8 +8,9 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.api.routes.utils import paginated, utc_iso
+from app.api.routes.task_rules import effective_task_status, is_patient_message_task
 from app.auth.dependencies import CurrentUser, can_access_patient, get_current_user, write_audit
-from app.db.models import Notification, PatientAppStatus
+from app.db.models import Notification, PatientAppStatus, Task
 from app.db.session import get_db
 
 router = APIRouter()
@@ -33,7 +34,7 @@ def list_notifications(
     ensure_patient_access(db, current_user, patient_id)
     rows = db.execute(
         select(Notification)
-        .where(Notification.patient_id == patient_id)
+        .where(Notification.patient_id == patient_id, Notification.status != "dismissed")
         .order_by(desc(Notification.created_at), desc(Notification.id))
     ).scalars().all()
     return paginated([notification_payload(row) for row in rows], page=page, page_size=page_size)
@@ -60,6 +61,46 @@ def mark_notification_seen(
         patient_id=row.patient_id,
         target_type="notification",
         target_id=f"notification-{row.id}",
+    )
+    db.commit()
+    db.refresh(row)
+    return notification_payload(row)
+
+
+@router.delete("/{notification_id}", summary="Dismiss patient notification")
+def dismiss_notification(
+    notification_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Archivia una notifica rispettando il vincolo sui task non completati."""
+    numeric_id = parse_prefixed_id(notification_id, "notification")
+    row = db.get(Notification, numeric_id) if numeric_id is not None else None
+    if row is None or row.patient_id is None:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    ensure_patient_access(db, current_user, row.patient_id)
+
+    linked_task = linked_task_from_notification(db, row)
+    if linked_task is not None:
+        if is_patient_message_task(linked_task.task_type, linked_task.payload or {}):
+            linked_task.status = "dismissed"
+            task_payload = dict(linked_task.payload or {})
+            task_payload["dismissed_at"] = datetime.now(timezone.utc).isoformat()
+            task_payload["dismissed_by"] = current_user.display_name or current_user.email
+            linked_task.payload = task_payload
+        elif effective_task_status(linked_task.status, linked_task.due_at) != "completed":
+            raise HTTPException(status_code=409, detail="Complete the activity before deleting this notification.")
+
+    row.status = "dismissed"
+    row.seen_at = row.seen_at or datetime.now(timezone.utc)
+    write_audit(
+        db,
+        actor=current_user,
+        action="notification.dismissed",
+        patient_id=row.patient_id,
+        target_type="notification",
+        target_id=f"notification-{row.id}",
+        details={"linked_task_id": f"task-{linked_task.id}" if linked_task else None},
     )
     db.commit()
     db.refresh(row)
@@ -196,6 +237,15 @@ def notification_payload(row: Notification) -> dict[str, Any]:
 def parse_prefixed_id(value: str, prefix: str) -> int | None:
     text = value.removeprefix(f"{prefix}-")
     return int(text) if text.isdigit() else None
+
+
+def linked_task_from_notification(db: Session, notification: Notification) -> Task | None:
+    payload = notification.payload or {}
+    task_ref = str(payload.get("task_id") or "").strip()
+    if not task_ref:
+        return None
+    task_id = parse_prefixed_id(task_ref, "task")
+    return db.get(Task, task_id) if task_id is not None else None
 
 
 def optional_text(value: Any, limit: int) -> str | None:

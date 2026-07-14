@@ -323,6 +323,9 @@ public class MainActivity extends Activity {
             if (tasks != null) {
                 for (int index = 0; index < tasks.length(); index++) {
                     JSONObject task = tasks.getJSONObject(index);
+                    if ("dismissed".equals(task.optString("status"))) {
+                        continue;
+                    }
                     if (isPatientMessage(task)) {
                         addPatientMessage(task);
                         messageCount++;
@@ -366,17 +369,24 @@ public class MainActivity extends Activity {
                 ? null : task.optJSONObject("payload").optJSONObject("message");
         String title = message == null ? task.optString("title", "Messaggio") : message.optString("title", "Messaggio");
         String body = message == null ? task.optString("instructions", "") : message.optString("body", "");
-        notificationsContainer.addView(informationRow(title, body, "Dal team di cura", true));
+        LinearLayout row = informationRow(title, body, "Dal team di cura", true);
+        addInlineAction(row, "Elimina", view -> confirmDismissTask(task));
+        notificationsContainer.addView(row);
         markTaskSeenOnce(task);
     }
 
     private void addNotification(JSONObject notification) {
-        View row = informationRow(
+        LinearLayout row = informationRow(
                 notification.optString("title", "Messaggio"),
                 notification.optString("body", "Apri per i dettagli."),
                 "seen".equals(notification.optString("status")) ? "Letto" : "Nuovo",
                 false
         );
+        if (canDismissNotification(notification)) {
+            addInlineAction(row, "Elimina", view -> dismissNotification(notification));
+        } else if (isTaskNotification(notification)) {
+            addInfoHint(row, "Potrai eliminarla dopo aver completato l'attivita'.");
+        }
         row.setOnClickListener(view -> executor.execute(() -> {
             try {
                 new BackendApiClient(this).markNotificationSeen(notification.getString("notification_id"));
@@ -445,7 +455,7 @@ public class MainActivity extends Activity {
         return row;
     }
 
-    private View informationRow(String title, String subtitle, String action, boolean fromCareTeam) {
+    private LinearLayout informationRow(String title, String subtitle, String action, boolean fromCareTeam) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
         row.setBackgroundResource(fromCareTeam ? R.drawable.bg_health_status : R.drawable.bg_task_card);
@@ -481,6 +491,34 @@ public class MainActivity extends Activity {
         subtitleView.setPadding(0, dp(5), 0, 0);
         row.addView(subtitleView);
         return row;
+    }
+
+    private void addInlineAction(LinearLayout row, String label, View.OnClickListener listener) {
+        LinearLayout footer = new LinearLayout(this);
+        footer.setGravity(android.view.Gravity.END | android.view.Gravity.CENTER_VERTICAL);
+        footer.setPadding(0, dp(10), 0, 0);
+
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextSize(12);
+        button.setTextColor(getColor(R.color.primary));
+        button.setBackgroundResource(R.drawable.bg_button_secondary);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(14), dp(7), dp(14), dp(7));
+        button.setOnClickListener(listener);
+        footer.addView(button);
+        row.addView(footer);
+    }
+
+    private void addInfoHint(LinearLayout row, String text) {
+        TextView hint = new TextView(this);
+        hint.setText(text);
+        hint.setTextColor(getColor(R.color.text_secondary));
+        hint.setTextSize(11);
+        hint.setPadding(0, dp(9), 0, 0);
+        row.addView(hint);
     }
 
     private TextView emptyText(String text) {
@@ -538,6 +576,74 @@ public class MainActivity extends Activity {
     private boolean isPatientMessage(JSONObject task) {
         JSONObject payload = task.optJSONObject("payload");
         return payload != null && "patient_message".equals(payload.optString("kind"));
+    }
+
+    private boolean isTaskNotification(JSONObject notification) {
+        JSONObject payload = notification.optJSONObject("payload");
+        return payload != null && !payload.optString("task_id", "").isEmpty();
+    }
+
+    private boolean canDismissNotification(JSONObject notification) {
+        JSONObject payload = notification.optJSONObject("payload");
+        if (payload == null || payload.optString("task_id", "").isEmpty()) {
+            return true;
+        }
+        JSONObject task = findCachedTask(payload.optString("task_id"));
+        return task != null && (isPatientMessage(task) || "completed".equals(task.optString("status")));
+    }
+
+    private JSONObject findCachedTask(String taskId) {
+        if (taskId == null || taskId.isEmpty()) {
+            return null;
+        }
+        try {
+            JSONArray tasks = new JSONObject(preferences.cachedTasks()).optJSONArray("items");
+            if (tasks == null) {
+                return null;
+            }
+            for (int index = 0; index < tasks.length(); index++) {
+                JSONObject task = tasks.optJSONObject(index);
+                if (task != null && taskId.equals(task.optString("task_id"))) {
+                    return task;
+                }
+            }
+        } catch (Exception ignored) {
+            // Se la cache non e' pronta, la notifica resta visibile.
+        }
+        return null;
+    }
+
+    private void confirmDismissTask(JSONObject task) {
+        new AlertDialog.Builder(this)
+                .setTitle("Eliminare il messaggio?")
+                .setMessage("Il messaggio sparira' da questa app, ma restera' tracciato nei sistemi clinici.")
+                .setNegativeButton("Annulla", null)
+                .setPositiveButton("Elimina", (dialog, which) -> dismissTask(task))
+                .show();
+    }
+
+    private void dismissTask(JSONObject task) {
+        executor.execute(() -> {
+            try {
+                new BackendApiClient(this).dismissTask(task.getString("task_id"));
+                PatientSyncManager.synchronize(this);
+                runOnUiThread(() -> Toast.makeText(this, "Messaggio eliminato.", Toast.LENGTH_SHORT).show());
+            } catch (Exception exception) {
+                runOnUiThread(() -> Toast.makeText(this, userMessage(exception), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void dismissNotification(JSONObject notification) {
+        executor.execute(() -> {
+            try {
+                new BackendApiClient(this).dismissNotification(notification.getString("notification_id"));
+                PatientSyncManager.synchronize(this);
+                runOnUiThread(() -> Toast.makeText(this, "Notifica eliminata.", Toast.LENGTH_SHORT).show());
+            } catch (Exception exception) {
+                runOnUiThread(() -> Toast.makeText(this, userMessage(exception), Toast.LENGTH_SHORT).show());
+            }
+        });
     }
 
     private void confirmLogout() {

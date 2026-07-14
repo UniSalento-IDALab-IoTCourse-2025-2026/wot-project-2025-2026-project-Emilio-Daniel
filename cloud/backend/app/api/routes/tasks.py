@@ -5,12 +5,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.routes.task_rules import ensure_task_can_be_completed, score_task_result_details
+from app.api.routes.task_rules import ensure_task_can_be_completed, is_patient_message_task, score_task_result_details
 from app.api.routes.utils import utc_iso
 from app.auth.dependencies import CurrentUser, can_access_patient, get_current_user, write_audit
-from app.db.models import Task, TaskResult
+from app.db.models import Notification, Task, TaskResult
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 
@@ -157,6 +158,50 @@ def update_task_state(
             patient_id=task.patient_id,
             timestamp=occurred_at,
             payload={"task_id": f"task-{task.id}", "state": requested_state},
+        )
+    )
+    return task_state_payload(task)
+
+
+@router.delete("/{task_id}", summary="Dismiss patient message task")
+def dismiss_patient_message_task(
+    task_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Archivia dall'app paziente solo i messaggi liberi del team di cura."""
+    task = get_task_or_404(db, task_id)
+    if current_user.role not in {"patient", "admin"}:
+        raise HTTPException(status_code=403, detail="Only patient or admin can dismiss patient messages.")
+    if not can_access_patient(db, current_user, task.patient_id):
+        raise HTTPException(status_code=403, detail="Patient not authorized.")
+    if not is_patient_message_task(task.task_type, task.payload or {}):
+        raise HTTPException(status_code=409, detail="Only patient messages can be dismissed from the companion app.")
+    if task.status == "dismissed":
+        return task_state_payload(task)
+
+    task.status = "dismissed"
+    task_payload = dict(task.payload or {})
+    task_payload["dismissed_at"] = datetime.now(timezone.utc).isoformat()
+    task_payload["dismissed_by"] = current_user.display_name or current_user.email
+    task.payload = task_payload
+    dismiss_task_notifications(db, task)
+    write_audit(
+        db,
+        actor=current_user,
+        action="task.dismissed",
+        patient_id=task.patient_id,
+        target_type="task",
+        target_id=f"task-{task.id}",
+    )
+    db.commit()
+    db.refresh(task)
+    event_bus.publish(
+        InternalEvent(
+            event_type="task_dismissed",
+            patient_id=task.patient_id,
+            timestamp=task.updated_at,
+            payload={"task_id": f"task-{task.id}"},
         )
     )
     return task_state_payload(task)
@@ -334,3 +379,17 @@ def task_state_payload(task: Task) -> dict[str, Any]:
         "device_id": task.last_device_id,
         "updated_at": utc_iso(task.updated_at),
     }
+
+
+def dismiss_task_notifications(db: Session, task: Task) -> None:
+    """Nasconde dall'app le notifiche push collegate al messaggio archiviato."""
+    task_ref = f"task-{task.id}"
+    notifications = db.execute(
+        select(Notification).where(Notification.patient_id == task.patient_id)
+    ).scalars().all()
+    now = datetime.now(timezone.utc)
+    for notification in notifications:
+        payload = notification.payload or {}
+        if payload.get("task_id") == task_ref:
+            notification.status = "dismissed"
+            notification.seen_at = notification.seen_at or now

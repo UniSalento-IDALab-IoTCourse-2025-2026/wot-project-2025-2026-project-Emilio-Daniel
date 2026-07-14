@@ -95,12 +95,21 @@ def score_task_result_details(task_payload: dict[str, Any], result_payload: dict
 
 def effective_task_status(status: str, due_at: datetime | None, now: datetime | None = None) -> str:
     """Calcola lo stato effettivo senza modificare il DB durante le letture."""
-    if status in {"completed", "cancelled", "expired"}:
+    if status in {"completed", "cancelled", "expired", "dismissed"}:
         return status
     current = now or datetime.now(timezone.utc)
     if due_at is not None and normalize_utc(current) > normalize_utc(due_at):
         return "expired"
     return status
+
+
+def is_patient_message_task(task_type: str, task_payload: dict[str, Any] | None) -> bool:
+    """Riconosce i messaggi liberi inviati dal medico al paziente."""
+    payload = task_payload or {}
+    content = payload.get("content")
+    if not isinstance(content, dict):
+        content = payload
+    return task_type == "custom" and content.get("kind") == "patient_message"
 
 
 def normalize_utc(value: datetime) -> datetime:

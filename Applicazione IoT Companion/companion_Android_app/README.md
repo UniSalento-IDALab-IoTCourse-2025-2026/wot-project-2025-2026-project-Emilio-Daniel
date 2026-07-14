@@ -35,6 +35,18 @@ La schermata delle attivita' e' ora un percorso guidato con numero di passaggi,
 scadenza, domande in schede leggibili, nota facoltativa e conferma finale. Invio,
 tracciamento `seen/started/completed` e coda offline restano invariati.
 
+### Eliminazione controllata di notifiche e messaggi
+
+L'app consente al paziente di pulire la propria vista senza perdere tracciabilita'
+clinica:
+
+- i messaggi liberi del team di cura possono essere eliminati subito;
+- le notifiche collegate a una attivita' possono essere eliminate solo quando
+  l'attivita' e' stata completata;
+- se una attivita' e' ancora aperta, la notifica resta visibile e l'app indica che
+  potra' essere rimossa dopo il completamento;
+- lato backend lo stato diventa `dismissed`, quindi il record resta auditabile.
+
 ## Versione 0.2: app paziente completa
 
 La schermata iniziale non espone piu' la configurazione tecnica. Presenta invece:

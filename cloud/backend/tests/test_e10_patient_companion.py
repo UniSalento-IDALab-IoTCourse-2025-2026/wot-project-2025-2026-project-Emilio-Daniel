@@ -44,15 +44,33 @@ def client() -> Generator[TestClient, None, None]:
         db.add(user)
         db.flush()
         db.add(PatientUser(user_id=user.id, patient_id="patient-001"))
-        db.add(
-            Task(
-                patient_id="patient-001",
-                task_type="check_in",
-                status="created",
-                title="Come ti senti?",
-                payload={"assigned_to": "patient", "content": {}},
-            )
+        check_in_task = Task(
+            patient_id="patient-001",
+            task_type="check_in",
+            status="created",
+            title="Come ti senti?",
+            payload={"assigned_to": "patient", "content": {}},
         )
+        db.add(check_in_task)
+        message_task = Task(
+            patient_id="patient-001",
+            task_type="custom",
+            status="created",
+            title="Messaggio dal medico",
+            instructions="Ricordati di fare una breve passeggiata se ti senti bene.",
+            payload={
+                "assigned_to": "patient",
+                "content": {
+                    "kind": "patient_message",
+                    "message": {
+                        "title": "Suggerimento quotidiano",
+                        "body": "Prova a muoverti qualche minuto in sicurezza.",
+                    },
+                },
+            },
+        )
+        db.add(message_task)
+        db.flush()
         db.add(
             Notification(
                 patient_id="patient-001",
@@ -61,6 +79,28 @@ def client() -> Generator[TestClient, None, None]:
                 title="Promemoria",
                 body="Ricorda di bere.",
                 payload={},
+                sent_at=datetime.now(timezone.utc),
+            )
+        )
+        db.add(
+            Notification(
+                patient_id="patient-001",
+                channel="push",
+                status="sent",
+                title="Nuova attivita'",
+                body="Hai una nuova attivita' da completare nell'app.",
+                payload={"type": "task_created", "task_id": f"task-{check_in_task.id}", "task_type": "check_in"},
+                sent_at=datetime.now(timezone.utc),
+            )
+        )
+        db.add(
+            Notification(
+                patient_id="patient-001",
+                channel="push",
+                status="sent",
+                title="Nuovo messaggio",
+                body="Hai ricevuto un messaggio dal team di cura.",
+                payload={"type": "task_created", "task_id": f"task-{message_task.id}", "task_type": "custom"},
                 sent_at=datetime.now(timezone.utc),
             )
         )
@@ -107,7 +147,7 @@ def test_device_is_bound_to_authenticated_patient_and_token_is_hidden(client: Te
 def test_task_seen_started_and_completed_keep_device_identity(client: TestClient) -> None:
     headers = auth_headers(client)
     tasks = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
-    task_id = tasks[0]["task_id"]
+    task_id = next(item for item in tasks if item["type"] == "check_in")["task_id"]
 
     seen = client.patch(
         f"/api/v1/tasks/{task_id}/state",
@@ -140,7 +180,8 @@ def test_task_seen_started_and_completed_keep_device_identity(client: TestClient
         },
     )
     assert completed.status_code == 200
-    listed = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"][0]
+    listed_items = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
+    listed = next(item for item in listed_items if item["task_id"] == task_id)
     assert listed["status"] == "completed"
     assert listed["seen_at"] is not None
     assert listed["started_at"] is not None
@@ -160,6 +201,50 @@ def test_patient_can_read_and_acknowledge_only_own_notification(client: TestClie
     assert seen.status_code == 200
     assert seen.json()["status"] == "seen"
     assert seen.json()["seen_at"] is not None
+
+
+def test_patient_can_delete_task_notification_only_after_completion(client: TestClient) -> None:
+    headers = auth_headers(client)
+    tasks = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
+    task = next(item for item in tasks if item["type"] == "check_in")
+    notifications = client.get("/api/v1/notifications?patient_id=patient-001", headers=headers).json()["items"]
+    notification = next(item for item in notifications if item["payload"].get("task_id") == task["task_id"])
+
+    blocked = client.delete(f"/api/v1/notifications/{notification['notification_id']}", headers=headers)
+    assert blocked.status_code == 409
+
+    completed = client.post(
+        f"/api/v1/tasks/{task['task_id']}/results",
+        headers=headers,
+        json={
+            "patient_id": "patient-001",
+            "message_id": "result-delete-after-completion",
+            "completed_at": "2026-07-14T10:03:00Z",
+            "answers": [],
+            "device_info": {"device_id": "android-test-001"},
+        },
+    )
+    assert completed.status_code == 200
+
+    dismissed = client.delete(f"/api/v1/notifications/{notification['notification_id']}", headers=headers)
+    assert dismissed.status_code == 200
+    assert dismissed.json()["status"] == "dismissed"
+
+    remaining = client.get("/api/v1/notifications?patient_id=patient-001", headers=headers).json()["items"]
+    assert notification["notification_id"] not in {item["notification_id"] for item in remaining}
+
+
+def test_patient_can_delete_free_message_from_companion(client: TestClient) -> None:
+    headers = auth_headers(client)
+    tasks = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
+    message = next(item for item in tasks if item["payload"].get("kind") == "patient_message")
+
+    dismissed = client.delete(f"/api/v1/tasks/{message['task_id']}", headers=headers)
+    assert dismissed.status_code == 200
+    assert dismissed.json()["status"] == "dismissed"
+
+    remaining = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
+    assert message["task_id"] not in {item["task_id"] for item in remaining}
 
 
 def auth_headers(client: TestClient) -> dict[str, str]:

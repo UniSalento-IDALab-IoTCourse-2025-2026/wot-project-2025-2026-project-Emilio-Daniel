@@ -155,6 +155,8 @@ def patient_tasks(
         query = query.where(Task.due_at >= due_after)
     rows = db.execute(query.order_by(desc(Task.created_at), desc(Task.id))).scalars().all()
     items = [task_payload(row, db) for row in rows]
+    if not status:
+        items = [item for item in items if item.get("status") != "dismissed"]
     if priority:
         items = [item for item in items if item.get("priority") == priority]
     return paginated(items, page=page, page_size=page_size)
