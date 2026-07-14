@@ -50,6 +50,146 @@ const tabs = [
   { id: "system", label: "Stato sistema", shortLabel: "Sistema", icon: MonitorCog },
 ];
 
+const taskTemplates = {
+  wellbeing: {
+    label: "Check-in benessere",
+    type: "check_in",
+    title: "Check-in benessere",
+    instructions: "Rispondi a poche domande sul tuo stato attuale.",
+    expectedScore: "Nessuno score automatico",
+    payload: {
+      questionnaire: "wellbeing_check_in",
+      questions: [
+        {
+          id: "mood",
+          type: "single_choice",
+          text: "Come ti senti adesso?",
+          options: ["Bene", "Cosi cosi", "Male"],
+        },
+        {
+          id: "energy",
+          type: "single_choice",
+          text: "Quanto ti senti attivo?",
+          options: ["Normale", "Poco attivo", "Molto stanco"],
+        },
+      ],
+    },
+    scoring: null,
+  },
+  phq2: {
+    label: "PHQ-2",
+    type: "check_in",
+    title: "PHQ-2 - screening umore",
+    instructions: "Compila le due domande riferite agli ultimi giorni. Uso dimostrativo da validare con il docente.",
+    expectedScore: "0-6, interpretazione da validare",
+    payload: {
+      questionnaire: "phq_2_demo",
+      license_note: "Verificare con il docente condizioni di riproduzione e uso didattico.",
+      questions: [
+        {
+          id: "phq2_interest",
+          type: "scale",
+          text: "Scarso interesse o piacere nel fare le cose",
+          options: ["Mai", "Alcuni giorni", "Piu della meta dei giorni", "Quasi ogni giorno"],
+        },
+        {
+          id: "phq2_mood",
+          type: "scale",
+          text: "Umore giu, depresso o senza speranza",
+          options: ["Mai", "Alcuni giorni", "Piu della meta dei giorni", "Quasi ogni giorno"],
+        },
+      ],
+    },
+    scoring: null,
+  },
+  cognitive_short: {
+    label: "Test breve dimostrativo",
+    type: "cognitive_test",
+    title: "Test cognitivo breve",
+    instructions: "Completa il breve test dimostrativo proposto dal medico.",
+    expectedScore: "0-100, risposte esatte",
+    payload: {
+      questionnaire: "short_cognitive_demo",
+      questions: [
+        { id: "simple_sum", type: "text", text: "Quanto fa 2 + 2?" },
+        { id: "recall_word", type: "text", text: "Ripeti la parola indicata nell'app companion." },
+      ],
+    },
+    scoring: {
+      type: "exact_match",
+      expected_answers: {
+        simple_sum: "4",
+        recall_word: "casa",
+      },
+    },
+  },
+  mmse: {
+    label: "MMSE",
+    type: "cognitive_test",
+    title: "MMSE - somministrazione ufficiale",
+    instructions: "Esegui il test solo con supervisione clinica e modulo ufficiale autorizzato. La dashboard non riproduce gli item del test.",
+    expectedScore: "0-30, da modulo ufficiale",
+    payload: {
+      questionnaire: "mmse_official_supervised",
+      license_note: "MMSE/MMSE-2 richiede verifica di licenza e uso del materiale ufficiale autorizzato.",
+      administration_mode: "clinician_supervised_official_form",
+      max_score: 30,
+      questions: [
+        {
+          id: "official_total_score",
+          type: "number",
+          text: "Punteggio totale riportato dal modulo ufficiale autorizzato",
+          min: 0,
+          max: 30,
+        },
+        {
+          id: "clinical_domains_note",
+          type: "text",
+          text: "Nota sulle aree osservate, senza trascrivere domande o item del test",
+        },
+      ],
+    },
+    scoring: null,
+  },
+  moca: {
+    label: "MoCA",
+    type: "cognitive_test",
+    title: "MoCA - somministrazione ufficiale",
+    instructions: "Esegui il test solo con supervisione clinica e materiale MoCA autorizzato. La dashboard non riproduce gli item del test.",
+    expectedScore: "0-30, da modulo ufficiale",
+    payload: {
+      questionnaire: "moca_official_supervised",
+      license_note: "MoCA richiede rispetto delle condizioni ufficiali di uso, riproduzione e distribuzione.",
+      administration_mode: "clinician_supervised_official_form",
+      max_score: 30,
+      domains: [
+        "visuospaziale/esecutivo",
+        "denominazione",
+        "attenzione",
+        "linguaggio",
+        "astrazione",
+        "memoria differita",
+        "orientamento",
+      ],
+      questions: [
+        {
+          id: "official_total_score",
+          type: "number",
+          text: "Punteggio totale riportato dal modulo ufficiale autorizzato",
+          min: 0,
+          max: 30,
+        },
+        {
+          id: "clinical_domains_note",
+          type: "text",
+          text: "Nota sulle aree osservate, senza trascrivere domande o item del test",
+        },
+      ],
+    },
+    scoring: null,
+  },
+};
+
 export function App() {
   const [session, setSession] = useState(() => loadSession());
 
@@ -273,6 +413,9 @@ function Dashboard({ session, onLogout }) {
             "alert_acknowledged",
             "alert_resolved",
             "task_created",
+            "task_completed",
+            "task_cancelled",
+            "task_updated",
             "system_status_updated",
           ].includes(event.event_type)
         ) {
@@ -1906,28 +2049,49 @@ function AlertsView({ data, session, patientId, onChanged }) {
 }
 
 function TasksView({ data, session, patientId, onChanged }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [noteDrafts, setNoteDrafts] = useState({});
+  const [cancelDialog, setCancelDialog] = useState(null);
   const [taskForm, setTaskForm] = useState({
-    type: "check_in",
+    template: "wellbeing",
     priority: "normal",
-    title: "Controllo benessere",
-    instructions: "Rispondi a queste brevi domande.",
+    title: taskTemplates.wellbeing.title,
+    instructions: taskTemplates.wellbeing.instructions,
     expiresAt: "",
+    medicalNote: "",
   });
 
   const visibleTasks = useMemo(
     () => data.tasks.filter((task) => statusFilter === "all" || task.status === statusFilter),
     [data.tasks, statusFilter]
   );
-  const openTasks = data.tasks.filter((task) => !["completed", "cancelled"].includes(task.status)).length;
+  const openTasks = data.tasks.filter((task) => !["completed", "cancelled", "expired"].includes(task.status)).length;
   const completedTasks = data.tasks.filter((task) => task.status === "completed").length;
+  const expiredTasks = data.tasks.filter((task) => task.status === "expired").length;
+  const selectedTask = visibleTasks.find((task) => task.task_id === selectedTaskId) ?? visibleTasks[0] ?? null;
+  const selectedTemplate = taskTemplates[taskForm.template] ?? taskTemplates.wellbeing;
 
   function updateTaskForm(field, value) {
+    if (field === "template") {
+      const template = taskTemplates[value] ?? taskTemplates.wellbeing;
+      setTaskForm((previous) => ({
+        ...previous,
+        template: value,
+        title: template.title,
+        instructions: template.instructions,
+      }));
+      return;
+    }
     setTaskForm((previous) => ({ ...previous, [field]: value }));
+  }
+
+  function updateNoteDraft(taskId, value) {
+    setNoteDrafts((previous) => ({ ...previous, [taskId]: value }));
   }
 
   async function createTask() {
@@ -1935,37 +2099,69 @@ function TasksView({ data, session, patientId, onChanged }) {
       setError("Inserisci un titolo per l'attivita.");
       return;
     }
-    setBusy(true);
+    setBusy("create");
     setError("");
     setSuccess("");
     try {
+      const template = taskTemplates[taskForm.template] ?? taskTemplates.wellbeing;
       const payload = {
-        type: taskForm.type,
+        type: template.type,
         schema_version: 1,
         priority: taskForm.priority,
         assigned_to: "patient",
         title: taskForm.title.trim(),
         instructions: taskForm.instructions.trim() || null,
-        payload: taskForm.type === "check_in" ? {
-          questions: [
-            {
-              id: "q1",
-              type: "single_choice",
-              text: "Come ti senti adesso?",
-              options: ["bene", "cosi_cosi", "male"],
-            },
-          ],
-        } : { workflow: "clinical_follow_up" },
+        payload: template.payload,
+        scoring: template.scoring,
+        medical_note: taskForm.medicalNote.trim() || null,
       };
       if (taskForm.expiresAt) payload.expires_at = new Date(taskForm.expiresAt).toISOString();
-      await api.createTask(patientId, payload, session);
+      const created = await api.createTask(patientId, payload, session);
       setComposerOpen(false);
+      setSelectedTaskId(created.task_id);
       setSuccess("Attivita inviata correttamente al paziente.");
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
     } finally {
-      setBusy(false);
+      setBusy("");
+    }
+  }
+
+  async function saveMedicalNote(task) {
+    const draft = (noteDrafts[task.task_id] ?? task.medical_note ?? "").trim();
+    if (!draft) {
+      setError("Inserisci una nota prima di salvarla.");
+      return;
+    }
+    setBusy(`note:${task.task_id}`);
+    setError("");
+    setSuccess("");
+    try {
+      await api.updateTaskMedicalNote(task.task_id, draft, session);
+      setSuccess("Nota medico aggiornata.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function cancelTask(task) {
+    const note = (noteDrafts[`cancel:${task.task_id}`] ?? "").trim();
+    setBusy(`cancel:${task.task_id}`);
+    setError("");
+    setSuccess("");
+    try {
+      await api.cancelTask(task.task_id, note, session);
+      setCancelDialog(null);
+      setSuccess("Task annullato.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
     }
   }
 
@@ -1979,7 +2175,7 @@ function TasksView({ data, session, patientId, onChanged }) {
             <p>Check-in e follow-up inviati all'applicazione companion.</p>
           </div>
         </div>
-        <button className="primary-button" type="button" onClick={() => setComposerOpen(true)} disabled={busy}>
+        <button className="primary-button" type="button" onClick={() => setComposerOpen(true)} disabled={Boolean(busy)}>
           <Plus size={17} />
           Nuova attivita
         </button>
@@ -1988,13 +2184,16 @@ function TasksView({ data, session, patientId, onChanged }) {
         <div><span>Totali</span><strong>{data.tasks.length}</strong></div>
         <div><span>Da completare</span><strong>{openTasks}</strong></div>
         <div><span>Completate</span><strong>{completedTasks}</strong></div>
+        <div><span>Scadute</span><strong>{expiredTasks}</strong></div>
         <label>
           Stato
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
             <option value="all">Tutte</option>
             <option value="created">Create</option>
-            <option value="delivered">Consegnate</option>
+            <option value="sent">Inviate</option>
+            <option value="seen">Viste</option>
             <option value="completed">Completate</option>
+            <option value="expired">Scadute</option>
             <option value="cancelled">Annullate</option>
           </select>
         </label>
@@ -2008,8 +2207,17 @@ function TasksView({ data, session, patientId, onChanged }) {
       ) : (
         <div className="task-list">
           {visibleTasks.map((task) => (
-            <article key={task.task_id} className={`task-item priority-${task.priority ?? "normal"}`}>
-              <span className="task-type-icon">{task.type === "check_in" || task.task_type === "check_in" ? <HeartPulse size={19} /> : <ClipboardList size={19} />}</span>
+            <article
+              key={task.task_id}
+              className={`task-item priority-${task.priority ?? "normal"} ${selectedTask?.task_id === task.task_id ? "selected" : ""}`}
+              onClick={() => setSelectedTaskId(task.task_id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") setSelectedTaskId(task.task_id);
+              }}
+              role="button"
+              tabIndex={0}
+            >
+              <span className="task-type-icon">{taskIcon(task)}</span>
               <div className="task-main">
                 <div className="task-title-row">
                   <span className={`priority-chip ${task.priority ?? "normal"}`}>{taskPriorityLabel(task.priority)}</span>
@@ -2018,8 +2226,10 @@ function TasksView({ data, session, patientId, onChanged }) {
                 <h4>{task.title}</h4>
                 <p>{task.instructions ?? "Nessuna istruzione aggiuntiva."}</p>
                 <div className="task-meta">
+                  <span><Info size={14} /> {taskTypeLabel(task.type ?? task.task_type)}</span>
                   <span><CalendarClock size={14} /> Creata {formatDateTime(task.created_at)}</span>
                   {task.due_at && <span><Clock3 size={14} /> Scadenza {formatDateTime(task.due_at)}</span>}
+                  {task.result?.completed_at && <span><CheckCircle2 size={14} /> Completata {formatDateTime(task.result.completed_at)}</span>}
                 </div>
               </div>
               <ChevronRight className="task-chevron" size={18} />
@@ -2027,23 +2237,36 @@ function TasksView({ data, session, patientId, onChanged }) {
           ))}
         </div>
       )}
+      {selectedTask && (
+        <TaskDetailPanel
+          task={selectedTask}
+          noteDraft={noteDrafts[selectedTask.task_id] ?? selectedTask.medical_note ?? ""}
+          cancelNote={noteDrafts[`cancel:${selectedTask.task_id}`] ?? ""}
+          busy={busy}
+          onNoteChange={(value) => updateNoteDraft(selectedTask.task_id, value)}
+          onCancelNoteChange={(value) => updateNoteDraft(`cancel:${selectedTask.task_id}`, value)}
+          onSaveNote={() => saveMedicalNote(selectedTask)}
+          onAskCancel={() => setCancelDialog(selectedTask)}
+        />
+      )}
       <ActionDialog
         open={composerOpen}
         icon={<ClipboardList size={22} />}
         title="Nuova attivita"
         description="Prepara un contenuto da inviare al paziente tramite l'app companion."
         confirmLabel="Crea e invia"
-        busy={busy}
+        busy={busy === "create"}
         wide
         onClose={() => !busy && setComposerOpen(false)}
         onConfirm={createTask}
       >
         <div className="task-form-grid">
           <label>
-            Tipologia
-            <select value={taskForm.type} onChange={(event) => updateTaskForm("type", event.target.value)}>
-              <option value="check_in">Check-in benessere</option>
-              <option value="custom">Follow-up personalizzato</option>
+            Tipo test
+            <select value={taskForm.template} onChange={(event) => updateTaskForm("template", event.target.value)}>
+              {Object.entries(taskTemplates).map(([key, template]) => (
+                <option key={key} value={key}>{template.label}</option>
+              ))}
             </select>
           </label>
           <label>
@@ -2058,6 +2281,10 @@ function TasksView({ data, session, patientId, onChanged }) {
             Titolo
             <input value={taskForm.title} onChange={(event) => updateTaskForm("title", event.target.value)} maxLength={120} />
           </label>
+          <div className="span-2 task-template-preview">
+            <strong>{selectedTemplate.label}</strong>
+            <span>{selectedTemplate.expectedScore}</span>
+          </div>
           <label className="span-2">
             Istruzioni
             <textarea value={taskForm.instructions} onChange={(event) => updateTaskForm("instructions", event.target.value)} placeholder="Indicazioni visibili al paziente" />
@@ -2066,9 +2293,111 @@ function TasksView({ data, session, patientId, onChanged }) {
             Scadenza facoltativa
             <input type="datetime-local" value={taskForm.expiresAt} onChange={(event) => updateTaskForm("expiresAt", event.target.value)} />
           </label>
+          <label className="span-2">
+            Nota medico facoltativa
+            <textarea value={taskForm.medicalNote} onChange={(event) => updateTaskForm("medicalNote", event.target.value)} placeholder="Nota visibile nello storico del task" />
+          </label>
         </div>
       </ActionDialog>
+      <ActionDialog
+        open={Boolean(cancelDialog)}
+        icon={<X size={22} />}
+        title="Annulla task"
+        description="Il task non sara piu completabile dall'app paziente."
+        confirmLabel="Conferma annullamento"
+        busy={Boolean(cancelDialog && busy === `cancel:${cancelDialog.task_id}`)}
+        onClose={() => !busy && setCancelDialog(null)}
+        onConfirm={() => cancelDialog && cancelTask(cancelDialog)}
+      >
+        {cancelDialog && (
+          <label className="dialog-field">
+            Nota annullamento
+            <textarea
+              value={noteDrafts[`cancel:${cancelDialog.task_id}`] ?? ""}
+              onChange={(event) => updateNoteDraft(`cancel:${cancelDialog.task_id}`, event.target.value)}
+              placeholder="Motivo dell'annullamento"
+              autoFocus
+            />
+          </label>
+        )}
+      </ActionDialog>
     </section>
+  );
+}
+
+function TaskDetailPanel({ task, noteDraft, cancelNote, busy, onNoteChange, onCancelNoteChange, onSaveNote, onAskCancel }) {
+  const result = task.result ?? task.latest_result ?? task.task_result ?? null;
+  const answers = taskResultAnswers(result);
+  const canCancel = !["completed", "cancelled", "expired"].includes(task.status);
+  return (
+    <div className="task-detail-panel">
+      <div className="task-detail-header">
+        <div>
+          <span className="detail-eyebrow">{taskTypeLabel(task.type ?? task.task_type)}</span>
+          <h4>{task.title}</h4>
+        </div>
+        <span className={`status-pill ${task.status}`}>{taskStatusLabel(task.status)}</span>
+      </div>
+
+      <div className="task-detail-grid">
+        <Detail label="Priorita" value={taskPriorityLabel(task.priority)} />
+        <Detail label="Destinatario" value={taskAssigneeLabel(task.assigned_to)} />
+        <Detail label="Scadenza" value={task.due_at ? formatDateTime(task.due_at) : "Non impostata"} />
+        <Detail label="Score previsto" value={expectedTaskScore(task)} />
+        <Detail label="Completamento" value={result?.completed_at ? formatDateTime(result.completed_at) : "Non completato"} />
+        <Detail label="Durata" value={formatTaskDuration(result?.duration_seconds)} />
+      </div>
+
+      <div className="task-result-card">
+        <div className="task-result-title">
+          <strong>Risultato ricevuto</strong>
+          <span>{taskResultScoreLabel(result)}</span>
+        </div>
+        {result ? (
+          <>
+            {result.score_details?.reason && <p className="task-result-note">{result.score_details.reason}</p>}
+            {answers.length > 0 ? (
+              <dl className="task-answer-list">
+                {answers.map((answer, index) => (
+                  <React.Fragment key={`${answer.question_id ?? "answer"}-${index}`}>
+                    <dt>{answer.question_text ?? answer.question_id ?? `Risposta ${index + 1}`}</dt>
+                    <dd>{String(answer.value ?? answer.answer ?? "n/d")}</dd>
+                  </React.Fragment>
+                ))}
+              </dl>
+            ) : (
+              <p className="empty-text compact">Il backend ha ricevuto il completamento, ma non sono presenti risposte strutturate.</p>
+            )}
+            {result.note && <p className="task-result-note">Nota paziente: {result.note}</p>}
+          </>
+        ) : (
+          <p className="empty-text compact">In attesa del completamento dall'app paziente.</p>
+        )}
+      </div>
+
+      <label className="task-note-box">
+        Nota medico sul risultato
+        <textarea value={noteDraft} onChange={(event) => onNoteChange(event.target.value)} placeholder="Aggiungi una nota clinica o operativa per lo storico" />
+      </label>
+      <div className="task-detail-actions">
+        <button className="secondary-button" type="button" onClick={onSaveNote} disabled={Boolean(busy)}>
+          <CheckCircle2 size={16} />
+          Salva nota
+        </button>
+        {canCancel && (
+          <>
+            <label className="cancel-note-inline">
+              Motivo annullamento
+              <input value={cancelNote} onChange={(event) => onCancelNoteChange(event.target.value)} placeholder="Facoltativo" />
+            </label>
+            <button className="text-button danger" type="button" onClick={onAskCancel} disabled={Boolean(busy)}>
+              <X size={16} />
+              Annulla task
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -2620,12 +2949,37 @@ function taskStatusLabel(status) {
   return {
     created: "Creata",
     sent: "Inviata",
+    seen: "Vista",
     delivered: "Consegnata",
     opened: "Aperta",
     completed: "Completata",
     expired: "Scaduta",
     cancelled: "Annullata",
   }[status] ?? categoryLabel(status);
+}
+
+function taskTypeLabel(type) {
+  return {
+    check_in: "Check-in benessere",
+    cognitive_test: "Test cognitivo",
+    mobility_test: "Test motorio",
+    medication_reminder: "Promemoria terapia",
+    custom: "Follow-up libero",
+  }[type] ?? categoryLabel(type);
+}
+
+function taskAssigneeLabel(value) {
+  return {
+    patient: "Paziente",
+    caregiver: "Caregiver",
+  }[value] ?? "Paziente";
+}
+
+function taskIcon(task) {
+  const type = task.type ?? task.task_type;
+  if (type === "cognitive_test") return <BrainCircuit size={19} />;
+  if (type === "check_in") return <HeartPulse size={19} />;
+  return <ClipboardList size={19} />;
 }
 
 function taskPriorityLabel(priority) {
@@ -2644,6 +2998,37 @@ function taskPriorityForAlert(level) {
   if (level === "orange") return "medium";
   if (level === "technical") return "technical";
   return "normal";
+}
+
+function expectedTaskScore(task) {
+  const scoring = task.scoring ?? task.payload?.scoring;
+  if (scoring?.type === "exact_match") return "0-100, risposte esatte";
+  const questionnaire = task.payload?.questionnaire;
+  if (["mmse_official_supervised", "moca_official_supervised"].includes(questionnaire)) return "0-30, modulo ufficiale";
+  if (questionnaire === "phq_2_demo") return "0-6, da validare";
+  return "Non previsto";
+}
+
+function taskResultScoreLabel(result) {
+  if (!result) return "Risultato assente";
+  const score = result.score ?? result.score_details?.score;
+  if (score === null || score === undefined) return "Score non calcolato";
+  return `Score ${formatNumber(score)}`;
+}
+
+function formatTaskDuration(seconds) {
+  const numeric = Number(seconds);
+  if (!Number.isFinite(numeric)) return "Non disponibile";
+  if (numeric < 60) return `${Math.round(numeric)} sec`;
+  const minutes = Math.floor(numeric / 60);
+  const rest = Math.round(numeric % 60);
+  return rest ? `${minutes} min ${rest} sec` : `${minutes} min`;
+}
+
+function taskResultAnswers(result) {
+  if (!result) return [];
+  const answers = result.answers ?? result.content?.answers ?? [];
+  return Array.isArray(answers) ? answers.filter(Boolean) : [];
 }
 
 function Metric({ icon, label, value, tone }) {

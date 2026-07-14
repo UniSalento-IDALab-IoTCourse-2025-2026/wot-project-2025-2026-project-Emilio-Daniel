@@ -293,13 +293,13 @@ del backend.
 
 ### E9. Task e test cognitivi nella dashboard medico
 
-- [ ] Creare schermata elenco task con stato created, sent, seen, completed ed expired.
-- [ ] Creare form per tipo, priorita', scadenza e istruzioni.
-- [ ] Implementare almeno check-in benessere, PHQ-2 e un test dimostrativo breve.
+- [x] Creare schermata elenco task con stato created, sent, seen, completed ed expired.
+- [x] Creare form per tipo, priorita', scadenza e istruzioni.
+- [x] Implementare almeno check-in benessere, PHQ-2 e un test dimostrativo breve.
 - [ ] Verificare con il docente quali test possono essere riprodotti e con quali licenze.
-- [ ] Mostrare risposte, score previsto, durata e data di completamento.
-- [ ] Consentire al medico di aggiungere una nota al risultato.
-- [ ] Aggiornare l'elenco in tempo reale quando il paziente completa il task.
+- [x] Mostrare risposte, score previsto, durata e data di completamento.
+- [x] Consentire al medico di aggiungere una nota al risultato.
+- [x] Aggiornare l'elenco in tempo reale quando il paziente completa il task.
 
 ### E10. Estensione dell'app Android paziente
 

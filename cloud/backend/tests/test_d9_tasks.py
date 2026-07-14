@@ -108,6 +108,38 @@ def test_exact_match_score_is_computed_only_when_rule_exists(client: TestClient)
     assert result.json()["content"]["answers"][0]["question_id"] == "q1"
 
 
+def test_task_listing_includes_result_and_medical_note_update(client: TestClient) -> None:
+    task_id = create_cognitive_task(client).json()["task_id"]
+    result = client.post(
+        f"/api/v1/tasks/{task_id}/results",
+        json={
+            "patient_id": "patient-001",
+            "completed_at": "2026-07-12T10:10:00Z",
+            "duration_seconds": 95,
+            "answers": [
+                {"question_id": "q1", "value": "rosso"},
+                {"question_id": "q2", "value": "4"},
+            ],
+        },
+        headers=auth_headers(client, PATIENT_EMAIL),
+    )
+    assert result.status_code == 200
+
+    note = client.patch(
+        f"/api/v1/tasks/{task_id}/medical-note",
+        json={"medical_note": "Risultato coerente con il contesto osservato."},
+        headers=auth_headers(client, DOCTOR_EMAIL),
+    )
+    assert note.status_code == 200
+    assert note.json()["medical_note"] == "Risultato coerente con il contesto osservato."
+
+    tasks = client.get("/api/v1/patients/patient-001/tasks", headers=auth_headers(client, DOCTOR_EMAIL))
+    listed = tasks.json()["items"][0]
+    assert listed["result"]["score"] == 100.0
+    assert listed["result"]["duration_seconds"] == 95
+    assert listed["medical_note"] == "Risultato coerente con il contesto osservato."
+
+
 def test_task_result_cannot_be_submitted_twice(client: TestClient) -> None:
     task_id = create_check_in_task(client).json()["task_id"]
     payload = {"patient_id": "patient-001", "completed_at": "2026-07-12T10:10:00Z"}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -143,6 +143,59 @@ def cancel_task(
         )
     )
     return task_cancel_payload(task)
+
+
+@router.patch("/{task_id}/medical-note", summary="Update task medical note")
+def update_task_medical_note(
+    task_id: str,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Aggiorna la nota del medico associata al task e al risultato mostrato in dashboard."""
+    task = get_task_or_404(db, task_id)
+    if current_user.role not in {"doctor", "admin"}:
+        raise HTTPException(status_code=403, detail="Only doctor or admin can update task notes.")
+    if not can_access_patient(db, current_user, task.patient_id):
+        raise HTTPException(status_code=403, detail="Patient not authorized.")
+
+    note = str(payload.get("medical_note") or payload.get("note") or "").strip()
+    if not note:
+        raise HTTPException(status_code=422, detail="medical_note is required.")
+
+    task_payload = dict(task.payload or {})
+    task_payload["medical_note"] = note
+    task_payload["medical_note_by"] = current_user.display_name or current_user.email
+    task_payload["medical_note_at"] = datetime.now(timezone.utc).isoformat()
+    task.payload = task_payload
+    write_audit(
+        db,
+        actor=current_user,
+        action="task.medical_note_updated",
+        patient_id=task.patient_id,
+        target_type="task",
+        target_id=f"task-{task.id}",
+        details={"has_note": True},
+    )
+    db.commit()
+    db.refresh(task)
+    event_bus.publish(
+        InternalEvent(
+            event_type="task_updated",
+            patient_id=task.patient_id,
+            timestamp=task.updated_at,
+            payload={"task_id": f"task-{task.id}"},
+        )
+    )
+    return {
+        "task_id": f"task-{task.id}",
+        "patient_id": task.patient_id,
+        "status": task.status,
+        "medical_note": task_payload.get("medical_note"),
+        "medical_note_by": task_payload.get("medical_note_by"),
+        "medical_note_at": task_payload.get("medical_note_at"),
+        "updated_at": utc_iso(task.updated_at),
+    }
 
 
 def get_task_or_404(db: Session, task_id: str) -> Task:

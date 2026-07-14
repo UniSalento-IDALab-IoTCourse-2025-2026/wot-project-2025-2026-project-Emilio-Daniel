@@ -1584,7 +1584,7 @@ button:focus-visible {
   border-bottom: 1px solid var(--line);
   padding: 14px 22px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(100px, 150px)) minmax(180px, 1fr);
+  grid-template-columns: repeat(4, minmax(100px, 145px)) minmax(180px, 1fr);
   align-items: end;
   gap: 10px;
   background: #f5f8f8;
@@ -1628,13 +1628,21 @@ button:focus-visible {
   background: var(--surface);
   box-shadow: var(--shadow-sm);
   animation: itemEnter 280ms ease both;
+  cursor: pointer;
+  outline: none;
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
 
-.task-item:hover {
+.task-item:hover,
+.task-item:focus-visible,
+.task-item.selected {
   border-color: #b7ccce;
   box-shadow: var(--shadow-md);
   transform: translateY(-2px);
+}
+
+.task-item.selected {
+  background: linear-gradient(90deg, #f0faf8 0%, #ffffff 42%);
 }
 
 .task-item.priority-high { border-left-color: #c05621; }
@@ -1709,7 +1717,8 @@ button:focus-visible {
   transition: color 160ms ease, transform 160ms ease;
 }
 
-.task-item:hover .task-chevron {
+.task-item:hover .task-chevron,
+.task-item.selected .task-chevron {
   color: var(--teal-700);
   transform: translateX(3px);
 }
@@ -1859,6 +1868,174 @@ button:focus-visible {
 
 .task-form-grid textarea {
   min-height: 100px;
+}
+
+.task-template-preview {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--ink-700);
+  background: #f5f8f8;
+  font-size: 0.78rem;
+}
+
+.task-template-preview strong {
+  color: var(--ink-900);
+}
+
+.task-detail-panel {
+  margin: 18px 22px 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: #fbfdfd;
+  box-shadow: var(--shadow-sm);
+}
+
+.task-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.task-detail-header h4 {
+  margin: 4px 0 0;
+  color: var(--ink-900);
+  font-size: 1rem;
+}
+
+.detail-eyebrow {
+  color: var(--teal-700);
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.task-detail-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.task-detail-grid dt,
+.task-answer-list dt {
+  color: var(--ink-600);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.task-detail-grid dd,
+.task-answer-list dd {
+  margin: 3px 0 0;
+  color: var(--ink-900);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.task-result-card {
+  margin-top: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface);
+}
+
+.task-result-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-900);
+}
+
+.task-result-title span {
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--teal-800);
+  background: var(--teal-100);
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.task-answer-list {
+  margin: 12px 0 0;
+  display: grid;
+  grid-template-columns: minmax(160px, 0.9fr) minmax(160px, 1fr);
+  gap: 9px 14px;
+}
+
+.task-result-note {
+  margin: 10px 0 0;
+  color: var(--ink-700);
+  font-size: 0.78rem;
+}
+
+.task-note-box {
+  margin-top: 16px;
+  display: grid;
+  gap: 7px;
+  color: var(--ink-700);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.task-note-box textarea {
+  min-height: 86px;
+}
+
+.task-detail-actions {
+  margin-top: 14px;
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cancel-note-inline {
+  min-width: min(260px, 100%);
+  display: grid;
+  gap: 6px;
+  color: var(--ink-600);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.text-button.danger {
+  color: var(--red-700);
+}
+
+.status-pill.created,
+.status-pill.sent,
+.status-pill.delivered {
+  background: #e7f0ff;
+  color: #1d4f91;
+}
+
+.status-pill.seen,
+.status-pill.opened {
+  background: #eef7f4;
+  color: var(--teal-800);
+}
+
+.status-pill.completed {
+  background: #e6f6ef;
+  color: #126544;
+}
+
+.status-pill.expired,
+.status-pill.cancelled {
+  background: #ffe2df;
+  color: #9d2118;
 }
 
 /* Technical status */

@@ -17,7 +17,7 @@ from app.auth.dependencies import (
     require_patient_access,
     write_audit,
 )
-from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Patient, SensorStatus, Task
+from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Patient, SensorStatus, Task, TaskResult
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 
@@ -153,7 +153,7 @@ def patient_tasks(
     if due_after is not None:
         query = query.where(Task.due_at >= due_after)
     rows = db.execute(query.order_by(desc(Task.created_at), desc(Task.id))).scalars().all()
-    items = [task_payload(row) for row in rows]
+    items = [task_payload(row, db) for row in rows]
     if priority:
         items = [item for item in items if item.get("priority") == priority]
     return paginated(items, page=page, page_size=page_size)
@@ -204,7 +204,7 @@ def create_patient_task(
             payload={"task_id": f"task-{task.id}", "type": task.task_type},
         )
     )
-    return task_payload(task)
+    return task_payload(task, db)
 
 
 @router.get("/{patient_id}/system-status", summary="Current technical status")
@@ -620,9 +620,10 @@ def is_alert_escalated(alert: Alert) -> bool:
     return datetime.now(timezone.utc) >= opened_at + timedelta(minutes=ALERT_ESCALATION_MINUTES)
 
 
-def task_payload(task: Task) -> dict[str, Any]:
+def task_payload(task: Task, db: Session | None = None) -> dict[str, Any]:
     """Serializza un task nel formato atteso da dashboard/app."""
     payload = task.payload or {}
+    result = latest_task_result_payload(db, task) if db is not None else None
     return {
         "task_id": f"task-{task.id}",
         "patient_id": task.patient_id,
@@ -638,7 +639,36 @@ def task_payload(task: Task) -> dict[str, Any]:
         "expires_at": payload.get("expires_at") or utc_iso(task.due_at),
         "payload": payload.get("content", payload),
         "scoring": payload.get("scoring"),
+        "result": result,
         "created_at": utc_iso(task.created_at),
+        "updated_at": utc_iso(task.updated_at),
+    }
+
+
+def latest_task_result_payload(db: Session, task: Task) -> dict[str, Any] | None:
+    """Restituisce il risultato piu' recente del task, se il paziente lo ha completato."""
+    row = db.execute(
+        select(TaskResult)
+        .where(TaskResult.task_id == task.id)
+        .order_by(desc(TaskResult.completed_at), desc(TaskResult.id))
+    ).scalars().first()
+    if row is None:
+        return None
+    result = row.result or {}
+    return {
+        "result_id": f"result-{row.id}",
+        "task_id": f"task-{task.id}",
+        "patient_id": row.patient_id,
+        "completed_at": utc_iso(row.completed_at),
+        "duration_seconds": row.duration_seconds,
+        "score": result.get("score"),
+        "score_details": result.get("score_details"),
+        "answers": result.get("answers", []),
+        "result_type": result.get("result_type"),
+        "content": result.get("content", {}),
+        "note": result.get("note"),
+        "device_info": result.get("device_info", {}),
+        "received_at": utc_iso(row.created_at),
     }
 
 

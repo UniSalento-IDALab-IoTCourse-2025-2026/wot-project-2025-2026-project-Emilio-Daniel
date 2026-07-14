@@ -83,4 +83,16 @@ export const api = {
       token: session?.access_token,
       body: task,
     }),
+  cancelTask: (taskId, note, session) =>
+    request(`/tasks/${taskId}/cancel`, {
+      method: "PATCH",
+      token: session?.access_token,
+      body: { note },
+    }),
+  updateTaskMedicalNote: (taskId, medicalNote, session) =>
+    request(`/tasks/${taskId}/medical-note`, {
+      method: "PATCH",
+      token: session?.access_token,
+      body: { medical_note: medicalNote },
+    }),
 };
