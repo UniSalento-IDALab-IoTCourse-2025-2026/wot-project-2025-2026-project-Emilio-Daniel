@@ -38,17 +38,30 @@ class Settings(BaseSettings):
 
     database_url: str = ""
 
+    firebase_enabled: bool = False
+    firebase_fake_enabled: bool = False
+    firebase_credentials_file: str = ""
+    firebase_project_id: str = ""
+
     @model_validator(mode="after")
     def reject_missing_secrets_in_production(self) -> "Settings":
         """Blocca l'avvio in produzione se mancano segreti o sono rimasti placeholder."""
+        if self.firebase_enabled and self.firebase_fake_enabled:
+            raise ValueError("Firebase real mode and fake mode cannot be enabled together.")
+
         if self.environment != "production":
             return self
+
+        if self.firebase_fake_enabled:
+            raise ValueError("IOT_BACKEND_FIREBASE_FAKE_ENABLED cannot be true in production.")
 
         required_values = {
             "IOT_BACKEND_MQTT_PASSWORD": self.mqtt_password,
             "IOT_BACKEND_DATABASE_URL": self.database_url,
             "IOT_BACKEND_AUTH_SECRET_KEY": self.auth_secret_key,
         }
+        if self.firebase_enabled:
+            required_values["IOT_BACKEND_FIREBASE_CREDENTIALS_FILE"] = self.firebase_credentials_file
         for env_name, value in required_values.items():
             if not value:
                 raise ValueError(f"{env_name} must be configured before running in production.")

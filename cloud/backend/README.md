@@ -292,6 +292,41 @@ cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud
 Get-Content backups\progetto_iot_backup.sql | docker compose exec -T postgres psql -U iot_backend -d progetto_iot
 ```
 
+## Firebase Cloud Messaging
+
+Le notifiche push reali usano Firebase Admin SDK. I segreti restano nei file `.env`
+locali e nel service account JSON locale, non nel repository.
+
+Variabili principali in `cloud/backend/.env`:
+
+```env
+IOT_BACKEND_FIREBASE_ENABLED=true
+IOT_BACKEND_FIREBASE_FAKE_ENABLED=false
+IOT_BACKEND_FIREBASE_CREDENTIALS_FILE=../firebase/service-account.json
+IOT_BACKEND_FIREBASE_PROJECT_ID=nome-progetto-firebase
+```
+
+Il file `cloud/firebase/service-account.json` deve essere scaricato dalla console
+Firebase ed e' ignorato da Git. Se Firebase non e' abilitato, il backend crea comunque
+la notifica in-app ma non invia la push.
+
+Nel progetto Firebase vanno registrate le app client:
+
+- Android: `it.unisalento.iotedgecompanion`, con file locale
+  `Applicazione IoT Companion/companion_Android_app/app/google-services.json`;
+- iOS: `it.unisalento.IoTEdgeCompanionIOS`, con file locale
+  `Applicazione IoT Companion/companion_iOS_app/GoogleService-Info.plist`.
+
+Per test locali senza credenziali Firebase:
+
+```env
+IOT_BACKEND_FIREBASE_ENABLED=false
+IOT_BACKEND_FIREBASE_FAKE_ENABLED=true
+```
+
+La modalita' fake registra `delivery.provider = "fake"` e non invia notifiche reali.
+In `production` viene rifiutata dalla configurazione.
+
 ## Prossimi passi
 
-- D10: integrare Firebase Cloud Messaging o modalita' fake per notifiche push.
+- D11: completare stato sistema e integrazione Google Health lato Cloud.
