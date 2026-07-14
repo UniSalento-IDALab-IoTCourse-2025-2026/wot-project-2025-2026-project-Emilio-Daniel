@@ -1542,9 +1542,138 @@ VITE_WS_BASE_URL=ws://127.0.0.1:8080/ws/v1
 VITE_DATA_SOURCE=real
 ```
 
-## 11. Pulizia dopo i test
+## 11. Test app Android paziente 0.3
 
-### 11.1 Fermare processi manuali
+### 11.1 Compilare e installare la nuova APK
+
+Cosa fa:
+
+```text
+compila la home paziente, i grafici nativi e la nuova schermata attivita'
+verifica risorse XML e codice Java prima dell'installazione
+produce la APK debug aggiornata
+```
+
+Comandi:
+
+```powershell
+cd "Applicazione IoT Companion\companion_Android_app"
+$env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"
+.\gradlew.bat clean assembleDebug lintDebug
+```
+
+APK da installare:
+
+```text
+Applicazione IoT Companion/companion_Android_app/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### 11.2 Configurare telefono, receiver e backend
+
+Cosa verifica:
+
+```text
+il telefono raggiunge sia il receiver BLE sia il backend clinico
+il backend e' esposto alla rete locale e non soltanto a 127.0.0.1
+```
+
+Avviare il backend con:
+
+```powershell
+cd cloud\backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
+```
+
+Nelle impostazioni amministrative dell'app usare:
+
+```text
+Receiver: http://IP_PC_O_RPI:8000/ble/sample
+Backend:  http://IP_PC_BACKEND:8080/api/v1
+```
+
+Da browser del telefono devono aprirsi:
+
+```text
+http://IP_PC_O_RPI:8000/docs
+http://IP_PC_BACKEND:8080/docs
+```
+
+### 11.3 Verificare home, dati e grafici
+
+Cosa verifica:
+
+```text
+il login associa il telefono esclusivamente al patient_id autorizzato
+la home mostra stanza, monitoraggio e ultimo aggiornamento
+frequenza cardiaca, SpO2, passi e sonno compaiono soltanto se acquisiti
+i valori mancanti restano indicati come non disponibili e non diventano zero
+i grafici usano le ultime finestre Edge e mostrano ora/valore al tocco
+```
+
+Procedura:
+
+1. accedere con l'account paziente associato a `patient-001`;
+2. premere `Aggiorna` dopo almeno un ciclo Edge completo;
+3. confrontare le schede con `edge_node/data/processed/latest_window.csv`;
+4. toccare piu' punti sui grafici di frequenza cardiaca e SpO2;
+5. verificare che ora e valore cambino senza spostare il layout;
+6. disattivare temporaneamente la rete e verificare che la cache resti visibile;
+7. riattivare la rete e controllare il nuovo aggiornamento.
+
+Il backend alimenta lo storico tramite:
+
+```text
+GET /api/v1/telemetry/patients/patient-001/windows?limit=90
+```
+
+### 11.4 Verificare attivita', messaggi e lavoro offline
+
+Cosa verifica:
+
+```text
+le attivita' mostrano tipo, priorita' e scadenza
+la compilazione mostra numero di passaggi e campi leggibili
+seen, started e completed vengono registrati nel backend
+un risultato creato senza rete resta in coda e viene ritrasmesso
+```
+
+Procedura:
+
+1. creare dalla dashboard un check-in o un test per `patient-001`;
+2. aggiornare l'app e aprire la scheda `Attivita' per te`;
+3. controllare tipo, scadenza e pulsante `Inizia attivita'`;
+4. completare tutti i passaggi e inviare;
+5. verificare in dashboard il passaggio a `completed`;
+6. ripetere con rete disattivata e controllare il messaggio di salvataggio locale;
+7. riattivare la rete e attendere la sincronizzazione automatica;
+8. inviare anche un messaggio dal medico e verificare `Nuovo`/`Letto`.
+
+### 11.5 Verificare che il BLE non abbia regressioni
+
+Cosa verifica:
+
+```text
+la nuova interfaccia non modifica il Foreground Service BLE
+la scansione continua con app chiusa e schermo bloccato
+```
+
+Procedura:
+
+1. controllare la notifica persistente `IoT Edge Companion attivo`;
+2. sostare vicino a ciascun beacon e verificare il cambio stanza;
+3. bloccare lo schermo per almeno dieci minuti;
+4. controllare che `edge_node/data/raw/ble_samples.csv` continui a ricevere righe;
+5. riaprire l'app e verificare che la stanza sia aggiornata.
+
+Quando e' superato:
+
+```text
+home, grafici, attivita', cache offline e monitoraggio BLE funzionano insieme
+```
+
+## 12. Pulizia dopo i test
+
+### 12.1 Fermare processi manuali
 
 Cosa fa:
 
@@ -1558,7 +1687,7 @@ Comando:
 CTRL+C
 ```
 
-### 11.2 Fermare Docker
+### 12.2 Fermare Docker
 
 Cosa fa:
 
@@ -1574,7 +1703,7 @@ docker compose down
 cd ..
 ```
 
-### 11.3 Pulire build frontend
+### 12.3 Pulire build frontend
 
 Cosa fa:
 
@@ -1600,7 +1729,7 @@ edge_node\config\edge.yml
 edge_node\models
 ```
 
-## 12. Comandi importanti in breve
+## 13. Comandi importanti in breve
 
 Questa sezione e' volutamente breve. Usarla quando tutto e' gia' stato configurato.
 

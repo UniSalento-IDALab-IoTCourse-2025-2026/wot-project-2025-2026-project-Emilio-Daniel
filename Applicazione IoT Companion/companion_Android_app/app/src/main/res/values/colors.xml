@@ -1,9 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="surface">#F4F7F9</color>
+    <color name="surface">#F3F7F7</color>
     <color name="panel">#FFFFFF</color>
-    <color name="primary">#0F766E</color>
-    <color name="primary_pressed">#115E59</color>
+    <color name="primary">#087F78</color>
+    <color name="primary_pressed">#08645F</color>
+    <color name="primary_dark">#0B4D4A</color>
+    <color name="mint">#5BC5A7</color>
+    <color name="mint_soft">#E8F7F2</color>
+    <color name="sky">#4C8EC8</color>
+    <color name="sky_soft">#EAF3FA</color>
+    <color name="coral">#E47C67</color>
+    <color name="coral_soft">#FCEFEB</color>
+    <color name="amber">#C78B19</color>
+    <color name="amber_soft">#FFF6DF</color>
     <color name="secondary">#E8EEF2</color>
     <color name="secondary_pressed">#D9E2E8</color>
     <color name="text_primary">#1F2933</color>

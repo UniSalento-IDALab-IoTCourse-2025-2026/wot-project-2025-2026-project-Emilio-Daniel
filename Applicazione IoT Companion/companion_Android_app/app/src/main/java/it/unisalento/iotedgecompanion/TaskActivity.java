@@ -2,6 +2,7 @@ package it.unisalento.iotedgecompanion;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.res.ColorStateList;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
@@ -15,8 +16,12 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -65,8 +70,13 @@ public class TaskActivity extends Activity {
         );
         JSONObject payload = task.optJSONObject("payload");
         JSONArray questions = payload == null ? null : payload.optJSONArray("questions");
+        int questionCount = questions == null ? 0 : questions.length();
+        ((TextView) findViewById(R.id.taskProgressText)).setText(
+                questionCount == 0 ? "Conferma richiesta" : questionCount + (questionCount == 1 ? " passaggio" : " passaggi")
+        );
+        ((TextView) findViewById(R.id.taskMetaText)).setText(taskDeadline());
         if (questions == null || questions.length() == 0) {
-            addInformativePanel("Questa attivita' non richiede domande strutturate. Puoi aggiungere una nota e confermare.");
+            addInformativePanel("Questa attività non richiede domande strutturate. Puoi aggiungere una nota e confermare.");
             return;
         }
         for (int index = 0; index < questions.length(); index++) {
@@ -108,7 +118,9 @@ public class TaskActivity extends Activity {
                 option.setText(options.optString(index));
                 option.setTextColor(getColor(R.color.text_primary));
                 option.setTextSize(14);
-                option.setPadding(0, dp(4), 0, dp(4));
+                option.setButtonTintList(ColorStateList.valueOf(getColor(R.color.primary)));
+                option.setMinHeight(dp(48));
+                option.setPadding(dp(3), dp(4), 0, dp(4));
                 group.addView(option);
             }
             panel.addView(group);
@@ -168,7 +180,7 @@ public class TaskActivity extends Activity {
             for (AnswerField field : answerFields) {
                 String value = field.value();
                 if (value == null || value.trim().isEmpty()) {
-                    statusText.setText("Completa tutte le risposte prima di inviare.");
+                    statusText.setText("Completa tutti i passaggi prima di inviare.");
                     field.focus();
                     return;
                 }
@@ -198,7 +210,7 @@ public class TaskActivity extends Activity {
             return;
         }
 
-        statusText.setText("Salvataggio sicuro del risultato...");
+        statusText.setText("Stiamo salvando le tue risposte...");
         findViewById(R.id.submitTaskButton).setEnabled(false);
         executor.execute(() -> {
             try {
@@ -225,8 +237,8 @@ public class TaskActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle(delivered ? "Risultato inviato" : "Risultato salvato")
                 .setMessage(delivered
-                        ? "Il team di cura ricevera' il risultato."
-                        : "La rete non e' disponibile. Il risultato e' protetto sul telefono e verra' inviato automaticamente.")
+                        ? "Grazie. Il team di cura riceverà il risultato."
+                        : "La rete non è disponibile. Il risultato è protetto sul telefono e verrà inviato automaticamente.")
                 .setCancelable(false)
                 .setPositiveButton("Chiudi", (dialog, which) -> finish())
                 .show();
@@ -234,7 +246,7 @@ public class TaskActivity extends Activity {
 
     private String prettyTaskType(String type) {
         if ("cognitive_test".equals(type)) {
-            return "TEST COGNITIVO ASSISTITO";
+            return "ATTIVITÀ COGNITIVA ASSISTITA";
         }
         if ("check_in".equals(type)) {
             return "CHECK-IN BENESSERE";
@@ -242,7 +254,22 @@ public class TaskActivity extends Activity {
         if ("medication_reminder".equals(type)) {
             return "PROMEMORIA TERAPEUTICO";
         }
-        return "ATTIVITA'";
+        return "ATTIVITÀ";
+    }
+
+    private String taskDeadline() {
+        String value = task.optString("due_at", task.optString("expires_at", null));
+        if (value == null || value.isEmpty() || "null".equals(value)) {
+            return "Senza scadenza";
+        }
+        try {
+            String formatted = OffsetDateTime.parse(value)
+                    .atZoneSameInstant(ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ofPattern("dd MMM, HH:mm", Locale.ITALY));
+            return "Entro " + formatted;
+        } catch (Exception ignored) {
+            return "Scadenza assegnata";
+        }
     }
 
     private int dp(int value) {

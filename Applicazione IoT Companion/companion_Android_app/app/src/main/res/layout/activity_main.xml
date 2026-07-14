@@ -1,35 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mainScrollView"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/surface"
+    android:clipToPadding="false"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:paddingStart="14dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="26dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_header"
+            android:elevation="3dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:padding="18dp">
+            android:padding="15dp">
 
             <ImageView
-                android:layout_width="62dp"
-                android:layout_height="62dp"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:background="@color/panel"
                 android:contentDescription="@string/app_logo_description"
+                android:padding="3dp"
                 android:scaleType="centerCrop"
                 android:src="@drawable/app_logo" />
 
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
+                android:layout_marginStart="13dp"
                 android:layout_weight="1"
                 android:orientation="vertical">
 
@@ -38,16 +46,16 @@
                     android:layout_height="wrap_content"
                     android:text="IoT Companion"
                     android:textColor="@color/on_primary"
-                    android:textSize="23sp"
+                    android:textSize="21sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
-                    android:text="Il tuo collegamento con il team di cura"
+                    android:layout_marginTop="2dp"
+                    android:text="Benessere e assistenza, ogni giorno"
                     android:textColor="@color/on_primary_muted"
-                    android:textSize="13sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -58,14 +66,14 @@
 
             <TextView
                 style="@style/SectionTitle"
-                android:text="Accedi al tuo profilo" />
+                android:text="Bentornato" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:layout_marginBottom="16dp"
-                android:text="Usa le credenziali consegnate dalla struttura. Il paziente associato viene verificato dal server."
+                android:layout_marginTop="5dp"
+                android:layout_marginBottom="18dp"
+                android:text="Accedi al tuo spazio personale per vedere messaggi, attività e andamento."
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 
@@ -121,70 +129,287 @@
             android:visibility="gone">
 
             <LinearLayout
-                style="@style/Panel"
-                android:layout_marginTop="14dp">
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="3dp"
+                android:paddingEnd="1dp">
 
-                <TextView
-                    android:id="@+id/welcomeText"
-                    style="@style/SectionTitle"
-                    android:text="Buongiorno" />
-
-                <TextView
-                    android:id="@+id/patientBindingText"
-                    android:layout_width="match_parent"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
-            </LinearLayout>
+                    android:layout_weight="1"
+                    android:orientation="vertical">
 
-            <LinearLayout
-                style="@style/Panel"
-                android:layout_marginTop="12dp">
+                    <TextView
+                        android:id="@+id/welcomeText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Buongiorno"
+                        android:textColor="@color/text_primary"
+                        android:textSize="24sp"
+                        android:textStyle="bold" />
 
-                <TextView
-                    style="@style/SectionTitle"
-                    android:text="Monitoraggio" />
-
-                <TextView
-                    android:id="@+id/monitoringStatusText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:background="@drawable/bg_status"
-                    android:padding="13dp"
-                    android:textColor="@color/status_text"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/connectionStatusText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:lineSpacingExtra="5dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
+                    <TextView
+                        android:id="@+id/patientBindingText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
 
                 <Button
                     android:id="@+id/refreshButton"
                     style="@style/ButtonSecondary"
-                    android:text="Aggiorna ora" />
+                    android:layout_width="96dp"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="0dp"
+                    android:text="Aggiorna" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/bg_health_status"
+                android:elevation="1dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/monitoringStatusText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge_green"
+                        android:paddingStart="10dp"
+                        android:paddingTop="5dp"
+                        android:paddingEnd="10dp"
+                        android:paddingBottom="5dp"
+                        android:text="Monitoraggio attivo"
+                        android:textColor="@color/primary_dark"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/wellnessTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="Tutto procede regolarmente"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/wellnessDetail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingExtra="2dp"
+                        android:text="I dati disponibili sono stati aggiornati."
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/roomText"
+                    android:layout_width="86dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:padding="8dp"
+                    android:text="Stanza\n--"
+                    android:textColor="@color/primary_dark"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="9dp"
+                android:paddingStart="3dp"
+                android:text="Il tuo riepilogo"
+                android:textColor="@color/text_primary"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    style="@style/MetricCard"
+                    android:layout_marginEnd="5dp">
+
+                    <TextView style="@style/MetricLabel" android:text="Frequenza cardiaca" />
+                    <TextView android:id="@+id/heartRateValue" style="@style/MetricValue" android:text="-- bpm" />
+                    <TextView android:id="@+id/heartRateHint" style="@style/MetricLabel" android:layout_marginTop="3dp" android:text="Dato non disponibile" />
+                </LinearLayout>
+
+                <LinearLayout
+                    style="@style/MetricCard"
+                    android:layout_marginStart="5dp">
+
+                    <TextView style="@style/MetricLabel" android:text="Ossigenazione" />
+                    <TextView android:id="@+id/spo2Value" style="@style/MetricValue" android:text="-- %" />
+                    <TextView android:id="@+id/spo2Hint" style="@style/MetricLabel" android:layout_marginTop="3dp" android:text="Dato non disponibile" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    style="@style/MetricCard"
+                    android:layout_marginEnd="5dp">
+
+                    <TextView style="@style/MetricLabel" android:text="Passi rilevati" />
+                    <TextView android:id="@+id/stepsValue" style="@style/MetricValue" android:text="--" />
+                    <TextView android:id="@+id/stepsHint" style="@style/MetricLabel" android:layout_marginTop="3dp" android:text="Dato non disponibile" />
+                </LinearLayout>
+
+                <LinearLayout
+                    style="@style/MetricCard"
+                    android:layout_marginStart="5dp">
+
+                    <TextView style="@style/MetricLabel" android:text="Sonno rilevato" />
+                    <TextView android:id="@+id/sleepValue" style="@style/MetricValue" android:text="--" />
+                    <TextView android:id="@+id/sleepHint" style="@style/MetricLabel" android:layout_marginTop="3dp" android:text="Dato non disponibile" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:gravity="bottom"
+                android:orientation="horizontal"
+                android:paddingStart="3dp"
+                android:paddingEnd="3dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Il tuo andamento"
+                    android:textColor="@color/text_primary"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/trendSummaryText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Ultime rilevazioni"
+                    android:textColor="@color/primary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="9dp"
+                android:background="@drawable/bg_chart_card"
+                android:elevation="1dp"
+                android:orientation="vertical"
+                android:paddingStart="12dp"
+                android:paddingTop="14dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Frequenza cardiaca media"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Tocca la linea per leggere ogni valore"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp" />
+
+                <it.unisalento.iotedgecompanion.HealthTrendView
+                    android:id="@+id/heartRateChart"
+                    android:layout_width="match_parent"
+                    android:layout_height="190dp"
+                    android:layout_marginTop="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_chart_card"
+                android:elevation="1dp"
+                android:orientation="vertical"
+                android:paddingStart="12dp"
+                android:paddingTop="14dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Ossigenazione del sangue"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Vengono mostrati solo i campioni acquisiti"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp" />
+
+                <it.unisalento.iotedgecompanion.HealthTrendView
+                    android:id="@+id/spo2Chart"
+                    android:layout_width="match_parent"
+                    android:layout_height="190dp"
+                    android:layout_marginTop="4dp" />
             </LinearLayout>
 
             <LinearLayout
                 style="@style/Panel"
-                android:layout_marginTop="12dp">
+                android:layout_marginTop="20dp">
+
+                <TextView style="@style/SectionTitle" android:text="Messaggi dal team" />
 
                 <TextView
-                    style="@style/SectionTitle"
-                    android:text="Messaggi" />
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Comunicazioni e suggerimenti pensati per te."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
 
                 <LinearLayout
                     android:id="@+id/notificationsContainer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="11dp"
                     android:orientation="vertical" />
             </LinearLayout>
 
@@ -192,45 +417,80 @@
                 style="@style/Panel"
                 android:layout_marginTop="12dp">
 
+                <TextView style="@style/SectionTitle" android:text="Attività per te" />
+
                 <TextView
-                    style="@style/SectionTitle"
-                    android:text="Attivita' per te" />
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Questionari, check-in e promemoria assegnati dal team di cura."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
 
                 <LinearLayout
                     android:id="@+id/tasksContainer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="11dp"
                     android:orientation="vertical" />
             </LinearLayout>
 
             <LinearLayout
                 style="@style/Panel"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="18dp">
+                android:layout_marginTop="12dp">
+
+                <TextView style="@style/SectionTitle" android:text="Connessioni e privacy" />
 
                 <TextView
-                    style="@style/SectionTitle"
-                    android:text="Gestione app" />
+                    android:id="@+id/connectionStatusText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:lineSpacingExtra="5dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
 
                 <TextView
                     android:id="@+id/offlineQueueText"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_status"
+                    android:padding="11dp"
+                    android:textColor="@color/status_text"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal">
 
                 <Button
                     android:id="@+id/adminSettingsButton"
                     style="@style/ButtonSecondary"
-                    android:text="Impostazioni amministrative" />
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="Impostazioni" />
 
                 <Button
                     android:id="@+id/logoutButton"
                     style="@style/ButtonSecondary"
-                    android:text="Esci dal profilo" />
+                    android:layout_width="0dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:text="Esci" />
             </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center"
+                android:text="Queste informazioni supportano il monitoraggio e non sostituiscono il parere medico."
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

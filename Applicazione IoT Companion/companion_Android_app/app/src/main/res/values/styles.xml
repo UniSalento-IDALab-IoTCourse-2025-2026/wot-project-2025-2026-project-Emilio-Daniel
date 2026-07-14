@@ -13,9 +13,36 @@
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:background">@drawable/bg_panel</item>
-        <item name="android:elevation">1dp</item>
+        <item name="android:elevation">2dp</item>
         <item name="android:orientation">vertical</item>
         <item name="android:padding">16dp</item>
+    </style>
+
+    <style name="MetricCard">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">112dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:background">@drawable/bg_metric_card</item>
+        <item name="android:elevation">1dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">14dp</item>
+    </style>
+
+    <style name="MetricLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="MetricValue">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">5dp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">23sp</item>
+        <item name="android:textStyle">bold</item>
     </style>
 
     <style name="SectionTitle">

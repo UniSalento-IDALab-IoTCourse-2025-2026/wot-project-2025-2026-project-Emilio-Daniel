@@ -60,6 +60,10 @@ final class BackendApiClient {
         return request("GET", "/notifications?patient_id=" + patientId() + "&page_size=100", null, true, true);
     }
 
+    JSONObject fetchWindows() throws Exception {
+        return request("GET", "/telemetry/patients/" + patientId() + "/windows?limit=90", null, true, true);
+    }
+
     JSONObject updateTaskState(String taskId, String state, String occurredAt) throws Exception {
         JSONObject payload = new JSONObject()
                 .put("state", state)

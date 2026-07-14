@@ -75,14 +75,16 @@ final class AppPreferences {
                 .remove("cachedCurrent")
                 .remove("cachedTasks")
                 .remove("cachedNotifications")
+                .remove("cachedWindows")
                 .apply();
     }
 
-    void cacheSnapshot(String current, String tasks, String notifications) {
+    void cacheSnapshot(String current, String tasks, String notifications, String windows) {
         preferences.edit()
                 .putString("cachedCurrent", current)
                 .putString("cachedTasks", tasks)
                 .putString("cachedNotifications", notifications)
+                .putString("cachedWindows", windows)
                 .putLong("lastBackendSyncAt", System.currentTimeMillis())
                 .putString("backendSyncStatus", "online")
                 .apply();
@@ -98,6 +100,10 @@ final class AppPreferences {
 
     String cachedNotifications() {
         return preferences.getString("cachedNotifications", "{\"items\":[]}");
+    }
+
+    String cachedWindows() {
+        return preferences.getString("cachedWindows", "{\"items\":[]}");
     }
 
     long lastBackendSyncAt() {

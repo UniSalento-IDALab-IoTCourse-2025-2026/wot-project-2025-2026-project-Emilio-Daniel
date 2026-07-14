@@ -26,6 +26,12 @@ final class PatientSyncManager {
             JSONObject current = client.fetchCurrent();
             JSONObject tasks = client.fetchTasks();
             JSONObject notifications = client.fetchNotifications();
+            JSONObject windows = new JSONObject(preferences.cachedWindows());
+            try {
+                windows = client.fetchWindows();
+            } catch (Exception ignored) {
+                // Lo storico arricchisce la home, ma non deve bloccare task e monitoraggio.
+            }
             boolean notificationsEnabled = PatientNotificationHelper.notificationsEnabled(context);
             String fcmToken = preferences.fcmToken();
             if (!preferences.fcmTokenRegistered()) {
@@ -36,7 +42,12 @@ final class PatientSyncManager {
                 client.sendHeartbeat(readBatteryPercentage(context), notificationsEnabled);
                 preferences.markHeartbeatSent();
             }
-            preferences.cacheSnapshot(current.toString(), tasks.toString(), notifications.toString());
+            preferences.cacheSnapshot(
+                    current.toString(),
+                    tasks.toString(),
+                    notifications.toString(),
+                    windows.toString()
+            );
             PatientNotificationHelper.notifyNewItems(context, tasks, notifications);
         } catch (Exception exception) {
             preferences.setBackendError("connessione non disponibile");

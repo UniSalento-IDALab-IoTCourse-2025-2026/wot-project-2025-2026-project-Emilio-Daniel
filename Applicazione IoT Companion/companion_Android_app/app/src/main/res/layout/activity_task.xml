@@ -3,80 +3,169 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/surface"
+    android:clipToPadding="false"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
-
-        <Button
-            android:id="@+id/backButton"
-            style="@style/ButtonSecondary"
-            android:layout_width="wrap_content"
-            android:paddingStart="18dp"
-            android:paddingEnd="18dp"
-            android:text="Indietro" />
+        android:paddingStart="14dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="28dp">
 
         <LinearLayout
-            style="@style/Panel"
-            android:layout_marginTop="12dp">
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/backButton"
+                style="@style/ButtonSecondary"
+                android:layout_width="94dp"
+                android:layout_height="42dp"
+                android:layout_marginTop="0dp"
+                android:text="Indietro" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="La tua attività"
+                    android:textColor="@color/text_primary"
+                    android:textSize="19sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Le risposte vengono inviate in modo protetto"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_health_status"
+            android:elevation="1dp"
+            android:orientation="vertical"
+            android:padding="17dp">
 
             <TextView
                 android:id="@+id/taskTypeText"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="@color/primary"
-                android:textSize="12sp"
+                android:background="@drawable/bg_badge_green"
+                android:paddingStart="10dp"
+                android:paddingTop="5dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="5dp"
+                android:textColor="@color/primary_dark"
+                android:textSize="11sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/taskTitleText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="12dp"
                 android:textColor="@color/text_primary"
-                android:textSize="22sp"
+                android:textSize="23sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/taskInstructionsText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="8dp"
                 android:lineSpacingExtra="3dp"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/taskProgressText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textColor="@color/primary_dark"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/taskMetaText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp" />
+            </LinearLayout>
         </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="19dp"
+            android:layout_marginBottom="9dp"
+            android:paddingStart="3dp"
+            android:text="Completa i passaggi"
+            android:textColor="@color/text_primary"
+            android:textSize="17sp"
+            android:textStyle="bold" />
 
         <LinearLayout
             android:id="@+id/questionsContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
             android:orientation="vertical" />
 
         <LinearLayout
             style="@style/Panel"
-            android:layout_marginTop="12dp">
+            android:layout_marginTop="4dp">
 
             <TextView
-                style="@style/InputLabel"
-                android:text="Nota facoltativa" />
+                style="@style/SectionTitle"
+                android:text="Vuoi aggiungere qualcosa?" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="10dp"
+                android:text="La nota è facoltativa e sarà visibile al team di cura."
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
 
             <EditText
                 android:id="@+id/taskNoteInput"
                 style="@style/InputField"
-                android:layout_height="96dp"
+                android:layout_height="94dp"
                 android:gravity="top"
-                android:hint="Aggiungi un commento"
-                android:inputType="textMultiLine" />
+                android:hint="Scrivi qui un commento"
+                android:inputType="textCapSentences|textMultiLine" />
 
             <Button
                 android:id="@+id/submitTaskButton"
                 style="@style/ButtonPrimary"
-                android:text="Invia risposte" />
+                android:text="Conferma e invia" />
 
             <TextView
                 android:id="@+id/taskStatusText"
@@ -87,5 +176,14 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
         </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="13dp"
+            android:gravity="center"
+            android:text="Puoi chiudere senza inviare usando Indietro."
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp" />
     </LinearLayout>
 </ScrollView>

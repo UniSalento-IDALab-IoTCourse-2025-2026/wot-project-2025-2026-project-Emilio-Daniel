@@ -5,6 +5,36 @@ riceve messaggi e attivita' dal team di cura e invia i risultati al backend.
 
 Il receiver Python e il modello AI non sono in questa cartella: stanno in `../edge_node/`.
 
+## Versione 0.3: esperienza quotidiana e andamento personale
+
+La home paziente e' stata riprogettata come un cruscotto semplice da consultare. Dopo
+il login mostra:
+
+- stato sintetico del monitoraggio e stanza corrente;
+- frequenza cardiaca media, SpO2, passi rilevati e sonno, solo quando acquisiti;
+- andamento interattivo di frequenza cardiaca e SpO2 nelle ultime finestre Edge;
+- messaggi del team di cura con stato nuovo/letto;
+- attivita' aperte con tipologia, priorita', scadenza e azione chiara;
+- stato delle connessioni e degli eventuali risultati in coda offline.
+
+I grafici sono disegnati nativamente dall'app, senza una libreria esterna: toccando la
+linea viene mostrata l'ora e il valore della rilevazione. I campioni mancanti restano
+mancanti e non vengono convertiti in zero.
+
+Lo storico arriva esclusivamente dall'endpoint autorizzato del paziente:
+
+```text
+GET /api/v1/telemetry/patients/{patient_id}/windows?limit=90
+```
+
+L'app visualizza al massimo le 30 finestre piu' recenti nei grafici e conserva 90
+finestre in cache per il riepilogo. Le informazioni sono presentate come supporto al
+monitoraggio e non come diagnosi.
+
+La schermata delle attivita' e' ora un percorso guidato con numero di passaggi,
+scadenza, domande in schede leggibili, nota facoltativa e conferma finale. Invio,
+tracciamento `seen/started/completed` e coda offline restano invariati.
+
 ## Versione 0.2: app paziente completa
 
 La schermata iniziale non espone piu' la configurazione tecnica. Presenta invece:
