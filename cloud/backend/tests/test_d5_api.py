@@ -21,6 +21,7 @@ from app.db.models import (
     EdgeDevice,
     FeatureWindow,
     Patient,
+    PatientAppStatus,
     PatientUser,
     SensorStatus,
     User,
@@ -55,7 +56,7 @@ def client() -> Generator[TestClient, None, None]:
 
 
 def seed_database(engine) -> None:
-    now = datetime(2026, 7, 12, 10, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     with Session(engine) as session:
         session.add(Patient(patient_id="patient-001", display_name="Paziente Demo"))
         doctor_user = User(
@@ -162,6 +163,19 @@ def seed_database(engine) -> None:
             ]
         )
         session.add(
+            PatientAppStatus(
+                patient_id="patient-001",
+                device_id="android-test-001",
+                status="online",
+                last_seen_at=now,
+                battery_pct=73,
+                app_version="0.3.0",
+                platform="android",
+                fcm_token="private-token",
+                notifications_enabled=True,
+            )
+        )
+        session.add(
             Decision(
                 message_id="decision-001",
                 patient_id="patient-001",
@@ -230,10 +244,15 @@ def test_windows_decisions_and_system_status(client: TestClient) -> None:
     assert system_status.status_code == 200
     body = system_status.json()
     assert body["sensors"]["google_health"]["status"] == "active"
+    assert body["thresholds_minutes"]["edge_stale"] == 10
     assert body["edge"]["last_cycle_at"] is not None
+    assert body["edge"]["status"] == "online"
     assert body["edge"]["quality_status"] == "warning"
     assert body["edge"]["mqtt"]["status"] == "published"
     assert body["sensors"]["ble"]["samples_collected"] == 12
+    assert body["sensors"]["patient_app"]["status"] == "active"
+    assert body["sensors"]["patient_app"]["fcm_registered"] is True
+    assert "private-token" not in str(body)
 
 
 def test_alert_acknowledge_and_resolve(client: TestClient) -> None:

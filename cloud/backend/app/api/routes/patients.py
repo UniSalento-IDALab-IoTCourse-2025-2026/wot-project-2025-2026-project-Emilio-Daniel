@@ -17,7 +17,8 @@ from app.auth.dependencies import (
     require_patient_access,
     write_audit,
 )
-from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Patient, SensorStatus, Task, TaskResult
+from app.core.config import get_settings
+from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Patient, PatientAppStatus, SensorStatus, Task, TaskResult
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 from app.services.push_notifications import notify_task_created
@@ -220,21 +221,36 @@ def patient_system_status(
 ) -> dict[str, Any]:
     """Restituisce lo stato tecnico aggregato di Edge, Watch, BLE e Google Health."""
     patient = get_patient_or_404(db, patient_id)
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
     current = current_payload(db, patient)
     latest_window = latest_feature_window(db, patient.patient_id)
     latest_cycle = latest_edge_cycle(db, patient.patient_id)
     cycle_status = latest_edge_cycle_status_payload(latest_cycle)
     watch_status = sensor_status(db, patient.patient_id, "watch")
     ble_status = sensor_status(db, patient.patient_id, "ble")
+    app_status = latest_patient_app_status(db, patient.patient_id)
     edge_payload = system_edge_payload(
         current_edge=current["edge"],
         latest_cycle=latest_cycle,
         cycle_status=cycle_status,
+        now=now,
+        stale_minutes=settings.edge_stale_minutes,
     )
+    watch_last_seen = watch_status.last_seen_at if watch_status else (latest_window.window_end if latest_window else None)
+    ble_last_seen = ble_status.last_seen_at if ble_status else (latest_window.window_end if latest_window else None)
+    google_health_last_seen = latest_window.window_end if latest_window else None
     return {
         "patient_id": patient.patient_id,
         "updated_at": current["last_update"],
         "mode": current["signal_type"],
+        "thresholds_minutes": {
+            "edge_stale": settings.edge_stale_minutes,
+            "watch_stale": settings.watch_stale_minutes,
+            "ble_stale": settings.ble_stale_minutes,
+            "google_health_stale": settings.google_health_stale_minutes,
+            "patient_app_stale": settings.patient_app_stale_minutes,
+        },
         "edge": edge_payload,
         "ai": {
             "fusion_mode": cycle_status.get("fusion_mode"),
@@ -244,19 +260,39 @@ def patient_system_status(
         },
         "sensors": {
             "watch": {
-                "status": watch_status.status if watch_status else ("active" if current["watch"]["present"] else "missing"),
+                "status": technical_status(
+                    configured_status=watch_status.status if watch_status else None,
+                    last_seen_at=watch_last_seen,
+                    now=now,
+                    stale_minutes=settings.watch_stale_minutes,
+                    active_if_present=current["watch"]["present"],
+                    missing_status="missing",
+                ),
                 "present": current["watch"]["present"],
                 "battery_pct": current["watch"]["battery_pct"],
-                "last_seen_at": utc_iso(watch_status.last_seen_at) if watch_status else current["last_update"],
+                "last_seen_at": utc_iso(watch_last_seen),
             },
             "ble": {
-                "status": ble_status.status if ble_status else ("active" if current["current_room"] else "stale"),
+                "status": technical_status(
+                    configured_status=ble_status.status if ble_status else None,
+                    last_seen_at=ble_last_seen,
+                    now=now,
+                    stale_minutes=settings.ble_stale_minutes,
+                    active_if_present=bool(current["current_room"]),
+                    missing_status="stale",
+                ),
                 "current_room": current["current_room"],
-                "last_seen_at": utc_iso(ble_status.last_seen_at) if ble_status else current["last_update"],
+                "last_seen_at": utc_iso(ble_last_seen),
                 "samples_collected": cycle_status.get("ble_samples_collected"),
             },
             "google_health": {
-                "status": google_health_status(cycle_status, current),
+                "status": google_health_status(
+                    cycle_status,
+                    current,
+                    last_seen_at=google_health_last_seen,
+                    now=now,
+                    stale_minutes=settings.google_health_stale_minutes,
+                ),
                 "enabled": cycle_status.get("google_health_enabled"),
                 "samples_logged": cycle_status.get("google_health_samples_logged"),
                 "available_feature_count": cycle_status.get("google_health_available_feature_count"),
@@ -273,6 +309,11 @@ def patient_system_status(
                     )
                 ),
             },
+            "patient_app": patient_app_status_payload(
+                app_status,
+                now=now,
+                stale_minutes=settings.patient_app_stale_minutes,
+            ),
         },
     }
 
@@ -425,9 +466,14 @@ def system_edge_payload(
     current_edge: dict[str, Any],
     latest_cycle: EdgeCycle | None,
     cycle_status: dict[str, Any],
+    now: datetime,
+    stale_minutes: int,
 ) -> dict[str, Any]:
     """Arricchisce lo stato Edge con dati tecnici dell'ultimo ciclo MQTT."""
     edge = dict(current_edge)
+    last_seen = latest_cycle.timestamp if latest_cycle else parse_datetime(current_edge.get("last_seen_at"))
+    edge["online"] = status_from_last_seen(last_seen, now=now, stale_minutes=stale_minutes, missing_status="offline") == "active"
+    edge["status"] = "online" if edge["online"] else ("stale" if last_seen else "offline")
     edge["last_cycle_at"] = utc_iso(latest_cycle.timestamp) if latest_cycle else None
     edge["cycle_status"] = first_present(
         cycle_status.get("status"),
@@ -477,7 +523,14 @@ def public_mqtt_payload(value: Any) -> dict[str, Any] | None:
     }
 
 
-def google_health_status(cycle_status: dict[str, Any], current: dict[str, Any]) -> str:
+def google_health_status(
+    cycle_status: dict[str, Any],
+    current: dict[str, Any],
+    *,
+    last_seen_at: datetime | None,
+    now: datetime,
+    stale_minutes: int,
+) -> str:
     """Calcola lo stato Google Health senza esporre dettagli OAuth sensibili."""
     if cycle_status.get("google_health_enabled") is False:
         return "disabled"
@@ -488,9 +541,10 @@ def google_health_status(cycle_status: dict[str, Any], current: dict[str, Any]) 
     ):
         return "error"
     feature_count = cycle_status.get("google_health_available_feature_count")
-    if isinstance(feature_count, int | float) and feature_count > 0:
-        return "active"
-    if current["watch"]["available_features"]:
+    has_features = isinstance(feature_count, int | float) and feature_count > 0
+    if not has_features:
+        has_features = bool(current["watch"]["available_features"])
+    if has_features and is_recent(last_seen_at, now=now, stale_minutes=stale_minutes):
         return "active"
     return "stale"
 
@@ -533,6 +587,69 @@ def sensor_status(db: Session, patient_id: str, sensor_type: str) -> SensorStatu
         .where(SensorStatus.patient_id == patient_id, SensorStatus.sensor_type == sensor_type)
         .limit(1)
     ).scalar_one_or_none()
+
+
+def latest_patient_app_status(db: Session, patient_id: str) -> PatientAppStatus | None:
+    return db.execute(
+        select(PatientAppStatus)
+        .where(PatientAppStatus.patient_id == patient_id)
+        .order_by(desc(PatientAppStatus.last_seen_at), desc(PatientAppStatus.id))
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def patient_app_status_payload(row: PatientAppStatus | None, *, now: datetime, stale_minutes: int) -> dict[str, Any]:
+    """Espone lo stato tecnico dell'app paziente senza mostrare token FCM."""
+    status = status_from_last_seen(row.last_seen_at if row else None, now=now, stale_minutes=stale_minutes, missing_status="missing")
+    return {
+        "status": status if row is None or row.status == "online" else row.status,
+        "device_id": row.device_id if row else None,
+        "platform": row.platform if row else None,
+        "app_version": row.app_version if row else None,
+        "battery_pct": row.battery_pct if row else None,
+        "notifications_enabled": row.notifications_enabled if row else False,
+        "fcm_registered": bool(row.fcm_token) if row else False,
+        "last_seen_at": utc_iso(row.last_seen_at) if row else None,
+    }
+
+
+def technical_status(
+    *,
+    configured_status: str | None,
+    last_seen_at: datetime | None,
+    now: datetime,
+    stale_minutes: int,
+    active_if_present: bool,
+    missing_status: str,
+) -> str:
+    """Combina stato ricevuto e freschezza temporale in active/stale/missing."""
+    if configured_status in {"error", "disabled", "offline"}:
+        return configured_status
+    if not active_if_present and last_seen_at is None:
+        return missing_status
+    return status_from_last_seen(last_seen_at, now=now, stale_minutes=stale_minutes, missing_status=missing_status)
+
+
+def status_from_last_seen(
+    last_seen_at: datetime | None,
+    *,
+    now: datetime,
+    stale_minutes: int,
+    missing_status: str,
+) -> str:
+    if last_seen_at is None:
+        return missing_status
+    return "active" if is_recent(last_seen_at, now=now, stale_minutes=stale_minutes) else "stale"
+
+
+def is_recent(last_seen_at: datetime | None, *, now: datetime, stale_minutes: int) -> bool:
+    if last_seen_at is None:
+        return False
+    return normalize_aware(now) - normalize_aware(last_seen_at) <= timedelta(minutes=stale_minutes)
+
+
+def normalize_aware(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 def window_payload(row: FeatureWindow) -> dict[str, Any]:

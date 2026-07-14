@@ -327,6 +327,21 @@ IOT_BACKEND_FIREBASE_FAKE_ENABLED=true
 La modalita' fake registra `delivery.provider = "fake"` e non invia notifiche reali.
 In `production` viene rifiutata dalla configurazione.
 
+## Stato Sistema
+
+L'endpoint `/api/v1/patients/{patient_id}/system-status` espone stato tecnico aggregato
+di Raspberry, BLE, Google Health, watch e app paziente. Le soglie stale sono configurabili:
+
+```env
+IOT_BACKEND_EDGE_STALE_MINUTES=10
+IOT_BACKEND_WATCH_STALE_MINUTES=12
+IOT_BACKEND_BLE_STALE_MINUTES=12
+IOT_BACKEND_GOOGLE_HEALTH_STALE_MINUTES=12
+IOT_BACKEND_PATIENT_APP_STALE_MINUTES=15
+```
+
+Il payload non espone token Google Health, token FCM, password o client secret.
+
 ## Prossimi passi
 
-- D11: completare stato sistema e integrazione Google Health lato Cloud.
+- D12: completare deployment e osservabilita' Cloud.

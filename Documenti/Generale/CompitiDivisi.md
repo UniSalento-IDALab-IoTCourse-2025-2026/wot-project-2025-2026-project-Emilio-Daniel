@@ -494,12 +494,12 @@ minimi e verificabili.
 
 ### D11. Stato sistema e integrazione Google Health
 
-- [ ] Salvare nel backend disponibilita' delle feature Google Health ricevute dall'Edge.
-- [ ] Mostrare come stato tecnico eventuali errori OAuth o dati non aggiornati.
-- [ ] Non trasferire al Cloud refresh token o credenziali Google presenti sul Raspberry.
-- [ ] Calcolare online/offline del Raspberry usando heartbeat e ultimo ciclo.
-- [ ] Calcolare stale/active di watch, BLE e app paziente con soglie configurabili.
-- [ ] Esporre lo stato aggregato tramite `/system-status`.
+- [x] Salvare nel backend disponibilita' delle feature Google Health ricevute dall'Edge.
+- [x] Mostrare come stato tecnico eventuali errori OAuth o dati non aggiornati.
+- [x] Non trasferire al Cloud refresh token o credenziali Google presenti sul Raspberry.
+- [x] Calcolare online/offline del Raspberry usando heartbeat e ultimo ciclo.
+- [x] Calcolare stale/active di watch, BLE e app paziente con soglie configurabili.
+- [x] Esporre lo stato aggregato tramite `/system-status`.
 
 ### D12. Deployment e osservabilita'
 

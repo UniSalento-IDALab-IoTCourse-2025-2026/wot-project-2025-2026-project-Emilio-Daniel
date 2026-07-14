@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     firebase_credentials_file: str = ""
     firebase_project_id: str = ""
 
+    edge_stale_minutes: int = Field(default=10, ge=1)
+    watch_stale_minutes: int = Field(default=12, ge=1)
+    ble_stale_minutes: int = Field(default=12, ge=1)
+    google_health_stale_minutes: int = Field(default=12, ge=1)
+    patient_app_stale_minutes: int = Field(default=15, ge=1)
+
     @model_validator(mode="after")
     def reject_missing_secrets_in_production(self) -> "Settings":
         """Blocca l'avvio in produzione se mancano segreti o sono rimasti placeholder."""
