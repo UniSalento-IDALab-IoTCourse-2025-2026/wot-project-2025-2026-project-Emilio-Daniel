@@ -111,6 +111,48 @@ def test_notification_without_registered_device_stays_in_app_visible() -> None:
         assert notification.payload["delivery"]["attempted"] == 0
 
 
+def test_patient_message_task_uses_message_push_title() -> None:
+    with make_session() as session:
+        session.add(
+            PatientAppStatus(
+                patient_id="patient-001",
+                device_id="android-001",
+                status="online",
+                platform="android",
+                fcm_token="private-token",
+                notifications_enabled=True,
+            )
+        )
+        task = Task(
+            patient_id="patient-001",
+            task_type="custom",
+            title="Promemoria personalizzato",
+            instructions="Testo lungo da leggere solo dentro l'app.",
+            payload={
+                "kind": "patient_message",
+                "message": {
+                    "title": "Messaggio dal medico",
+                    "body": "Testo lungo da leggere solo dentro l'app.",
+                    "tone": "normal",
+                },
+            },
+        )
+        session.add(task)
+        session.flush()
+        sender = RecordingSender(PushSendResult(success=True, provider_message_id="firebase-message-002"))
+
+        notification = notify_task_created(session, task)
+        send_notification_to_patient_devices(session, notification, sender=sender)
+        session.commit()
+
+        assert notification.title == "Messaggio dal medico"
+        assert notification.body == "Apri l'app per leggere il messaggio."
+        assert notification.payload["type"] == "patient_message"
+        assert notification.payload["kind"] == "patient_message"
+        assert notification.payload["message_title"] == "Messaggio dal medico"
+        assert "Testo lungo da leggere solo dentro l'app." not in str(notification.payload)
+
+
 def test_fake_mode_marks_delivery_without_firebase_credentials(monkeypatch) -> None:
     monkeypatch.setenv("IOT_BACKEND_FIREBASE_ENABLED", "false")
     monkeypatch.setenv("IOT_BACKEND_FIREBASE_FAKE_ENABLED", "true")
