@@ -60,9 +60,22 @@ class FirebasePushSender:
                 initialize_app(credentials.Certificate(str(credentials_path)))
             self._initialized = True
 
+        android_notification = messaging.AndroidNotification(
+            title=title,
+            body=body,
+            icon="ic_notification",
+            color="#087F78",
+            channel_id="patient_updates",
+            priority="high",
+            visibility="private",
+        )
         message = messaging.Message(
             notification=messaging.Notification(title=title, body=body),
             data={key: str(value) for key, value in data.items()},
+            android=messaging.AndroidConfig(
+                priority="high",
+                notification=android_notification,
+            ),
             token=token,
         )
         try:
@@ -78,19 +91,48 @@ _firebase_sender = FirebasePushSender()
 
 def notify_task_created(db: Session, task: Task) -> Notification:
     """Crea la notifica paziente per un nuovo task e prova l'invio push reale."""
+    notification_title, notification_body, payload = task_notification_content(task)
     notification = create_notification(
         db,
         patient_id=task.patient_id,
-        title="Nuova attivita'",
-        body="Hai una nuova attivita' da completare nell'app.",
-        payload={
-            "type": "task_created",
-            "task_id": f"task-{task.id}",
-            "task_type": task.task_type,
-        },
+        title=notification_title,
+        body=notification_body,
+        payload=payload,
     )
     send_notification_to_patient_devices(db, notification)
     return notification
+
+
+def task_notification_content(task: Task) -> tuple[str, str, dict[str, Any]]:
+    """Prepara testo e payload push distinguendo task operativi e messaggi medico-paziente."""
+    base_payload = {
+        "type": "task_created",
+        "task_id": f"task-{task.id}",
+        "task_type": task.task_type,
+    }
+    if is_patient_message_task(task):
+        message = task.payload.get("message", {}) if isinstance(task.payload, dict) else {}
+        message_title = str(message.get("title") or task.title or "Messaggio dal medico").strip()
+        return (
+            message_title[:255],
+            "Apri l'app per leggere il messaggio.",
+            {
+                **base_payload,
+                "type": "patient_message",
+                "kind": "patient_message",
+                "message_title": message_title[:120],
+            },
+        )
+    return (
+        "Nuova attivita'",
+        "Hai una nuova attivita' da completare nell'app.",
+        base_payload,
+    )
+
+
+def is_patient_message_task(task: Task) -> bool:
+    """Riconosce i messaggi creati dalla dashboard come task custom per l'app paziente."""
+    return task.task_type == "custom" and isinstance(task.payload, dict) and task.payload.get("kind") == "patient_message"
 
 
 def notify_alert_created(db: Session, alert: Alert) -> Notification | None:

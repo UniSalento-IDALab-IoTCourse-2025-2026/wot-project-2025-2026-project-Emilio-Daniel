@@ -23,7 +23,11 @@ public class PatientFirebaseMessagingService extends FirebaseMessagingService {
         String title = message.getNotification() == null
                 ? "Nuovo aggiornamento disponibile"
                 : message.getNotification().getTitle();
-        PatientNotificationHelper.showPushMessage(this, title);
+        String body = message.getNotification() == null
+                ? "Apri l'app per visualizzare i dettagli."
+                : message.getNotification().getBody();
+        String type = message.getData().get("type");
+        PatientNotificationHelper.showPushMessage(this, title, body, type);
         executor.execute(() -> PatientSyncManager.synchronize(this));
     }
 

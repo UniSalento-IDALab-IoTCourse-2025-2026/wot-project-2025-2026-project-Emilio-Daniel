@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.os.Build;
 
 import org.json.JSONArray;
@@ -30,12 +31,23 @@ final class PatientNotificationHelper {
                 + collectNewNotifications(notifications.optJSONArray("items"), announced);
         preferences.raw().edit().putStringSet("announcedItems", announced).apply();
         if (newCount > 0) {
-            show(context, newCount == 1 ? "Hai un nuovo aggiornamento" : "Hai nuovi aggiornamenti");
+            show(
+                    context,
+                    newCount == 1 ? "Hai un nuovo aggiornamento" : "Hai nuovi aggiornamenti",
+                    "Apri l'app per visualizzare i dettagli.",
+                    "notification"
+            );
         }
     }
 
     static void showPushMessage(Context context, String title) {
-        show(context, title == null || title.isEmpty() ? "Nuovo aggiornamento disponibile" : title);
+        showPushMessage(context, title, "Apri l'app per visualizzare i dettagli.", "notification");
+    }
+
+    static void showPushMessage(Context context, String title, String body, String type) {
+        String safeTitle = title == null || title.isEmpty() ? titleForType(type) : title;
+        String safeBody = body == null || body.isEmpty() ? bodyForType(type) : body;
+        show(context, safeTitle, safeBody, type);
     }
 
     static boolean notificationsEnabled(Context context) {
@@ -82,7 +94,7 @@ final class PatientNotificationHelper {
         return count;
     }
 
-    private static void show(Context context, String title) {
+    private static void show(Context context, String title, String body, String type) {
         createChannel(context);
         Intent intent = new Intent(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -97,12 +109,20 @@ final class PatientNotificationHelper {
                 .setContentTitle("IoT Edge Companion")
                 .setContentText("Nuovo aggiornamento disponibile")
                 .build();
+        Notification.BigTextStyle style = new Notification.BigTextStyle()
+                .setBigContentTitle(titleForExpandedView(title, type))
+                .bigText(body);
         Notification notification = new Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
-                .setContentText("Apri l'app per visualizzare i dettagli.")
+                .setContentText(body)
+                .setSubText(labelForType(type))
+                .setColor(colorForType(context, type))
+                .setStyle(style)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
+                .setCategory(Notification.CATEGORY_MESSAGE)
+                .setPriority(Notification.PRIORITY_HIGH)
                 .setVisibility(Notification.VISIBILITY_PRIVATE)
                 .setPublicVersion(publicVersion)
                 .build();
@@ -125,7 +145,64 @@ final class PatientNotificationHelper {
             );
             channel.setDescription("Attivita' e messaggi inviati dal personale sanitario");
             channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+            channel.enableLights(true);
+            channel.setLightColor(context.getColor(R.color.primary));
+            channel.enableVibration(true);
             manager.createNotificationChannel(channel);
         }
+    }
+
+    private static String titleForType(String type) {
+        if ("patient_message".equals(type)) {
+            return "Messaggio dal medico";
+        }
+        if ("alert_created".equals(type)) {
+            return "Aggiornamento importante";
+        }
+        if ("task_created".equals(type)) {
+            return "Nuova attivita'";
+        }
+        return "Nuovo aggiornamento disponibile";
+    }
+
+    private static String bodyForType(String type) {
+        if ("patient_message".equals(type)) {
+            return "Apri l'app per leggere il messaggio.";
+        }
+        if ("task_created".equals(type)) {
+            return "Apri l'app per vedere l'attivita'.";
+        }
+        return "Apri l'app per visualizzare i dettagli.";
+    }
+
+    private static String labelForType(String type) {
+        if ("patient_message".equals(type)) {
+            return "Messaggio";
+        }
+        if ("alert_created".equals(type)) {
+            return "Avviso";
+        }
+        if ("task_created".equals(type)) {
+            return "Attivita'";
+        }
+        return "Aggiornamento";
+    }
+
+    private static String titleForExpandedView(String title, String type) {
+        String label = labelForType(type);
+        return label + " - " + title;
+    }
+
+    private static int colorForType(Context context, String type) {
+        if ("alert_created".equals(type)) {
+            return context.getColor(R.color.coral);
+        }
+        if ("task_created".equals(type)) {
+            return context.getColor(R.color.sky);
+        }
+        if ("patient_message".equals(type)) {
+            return context.getColor(R.color.primary);
+        }
+        return Color.rgb(8, 127, 120);
     }
 }
