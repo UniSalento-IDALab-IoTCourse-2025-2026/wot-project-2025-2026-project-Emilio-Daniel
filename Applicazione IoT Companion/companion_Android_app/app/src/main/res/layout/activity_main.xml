@@ -18,23 +18,46 @@
             android:orientation="vertical"
             android:padding="20dp">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:letterSpacing="0"
-                android:text="@string/app_name"
-                android:textColor="@color/on_primary"
-                android:textSize="24sp"
-                android:textStyle="bold" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:letterSpacing="0"
-                android:text="Edge BLE companion"
-                android:textColor="@color/on_primary_muted"
-                android:textSize="14sp" />
+                <ImageView
+                    android:layout_width="58dp"
+                    android:layout_height="58dp"
+                    android:adjustViewBounds="true"
+                    android:contentDescription="@string/app_logo_description"
+                    android:scaleType="centerCrop"
+                    android:src="@drawable/app_logo" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0"
+                        android:text="@string/app_name"
+                        android:textColor="@color/on_primary"
+                        android:textSize="24sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:letterSpacing="0"
+                        android:text="Edge BLE companion"
+                        android:textColor="@color/on_primary_muted"
+                        android:textSize="14sp" />
+                </LinearLayout>
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout

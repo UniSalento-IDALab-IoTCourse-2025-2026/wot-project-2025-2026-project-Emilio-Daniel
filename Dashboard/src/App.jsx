@@ -22,13 +22,14 @@ import {
   Mail,
   MapPin,
   Menu,
+  MessageSquare,
   MonitorCog,
   Plus,
   RefreshCcw,
   Search,
+  Send,
   Server,
   ShieldCheck,
-  Stethoscope,
   UserRound,
   UserRoundCheck,
   Users,
@@ -192,6 +193,39 @@ const taskTemplates = {
   },
 };
 
+const patientMessageSuggestions = [
+  {
+    id: "gentle_activity",
+    title: "Breve attivita consigliata",
+    priority: "normal",
+    body: "Se ti senti nelle condizioni di farlo, prova a svolgere qualche minuto di movimento leggero in casa o una breve camminata. Non forzarti e fermati se avverti disagio.",
+  },
+  {
+    id: "long_inactivity",
+    title: "Routine da riattivare",
+    priority: "normal",
+    body: "Abbiamo notato un periodo prolungato di inattivita. Se ti senti bene, prova ad alzarti con calma, bere un bicchiere d'acqua e muoverti per pochi minuti.",
+  },
+  {
+    id: "wellbeing_check",
+    title: "Come ti senti?",
+    priority: "normal",
+    body: "Vorrei sapere come ti senti in questo momento. Quando apri l'app, prenditi un attimo per aggiornarmi sul tuo stato generale.",
+  },
+  {
+    id: "wearable_check",
+    title: "Controllo dispositivo",
+    priority: "high",
+    body: "Per favore verifica che il dispositivo indossabile sia al polso, acceso e correttamente carico. Questo ci aiuta a mantenere il monitoraggio continuo.",
+  },
+  {
+    id: "caregiver_support",
+    title: "Contatta un familiare",
+    priority: "urgent",
+    body: "Ti chiedo di contattare un familiare o caregiver di riferimento appena possibile, oppure di restare vicino al telefono. Il medico desidera una verifica di supporto.",
+  },
+];
+
 export function App() {
   const [session, setSession] = useState(() => loadSession());
 
@@ -203,6 +237,14 @@ export function App() {
     clearSession();
     setSession(null);
   }} />;
+}
+
+function AppLogoMark({ inverse = false }) {
+  return (
+    <div className={`brand-mark logo-mark ${inverse ? "brand-mark-inverse" : ""}`}>
+      <img src="/assets/app-logo.jpg" alt="" />
+    </div>
+  );
 }
 
 function Login({ onLogin }) {
@@ -233,7 +275,7 @@ function Login({ onLogin }) {
         <div className="login-brand-panel" aria-hidden="true">
           <div className="login-brand-content">
             <div className="login-brand-lockup">
-              <div className="brand-mark brand-mark-inverse"><Stethoscope size={26} /></div>
+              <AppLogoMark inverse />
               <div>
                 <span>Triage IoT</span>
                 <strong>Clinical workspace</strong>
@@ -265,7 +307,7 @@ function Login({ onLogin }) {
         </div>
         <div className="login-form-panel">
           <div className="login-mobile-brand">
-            <div className="brand-mark"><Stethoscope size={22} /></div>
+            <AppLogoMark />
             <strong>Triage IoT</strong>
           </div>
           <div className="login-heading">
@@ -471,7 +513,7 @@ function Dashboard({ session, onLogout }) {
       />
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`} aria-label="Navigazione principale">
         <div className="sidebar-header">
-          <div className="brand-mark"><Stethoscope size={22} /></div>
+          <AppLogoMark />
           <div>
             <p className="eyebrow">Console clinica</p>
             <h1>Triage IoT</h1>
@@ -2313,6 +2355,8 @@ function AlertsView({ data, session, patientId, onChanged }) {
             const resolved = alert.status === "resolved";
             const busyForAlert = busy.startsWith(`${alert.alert_id}:`);
             const reasons = alertReasonList(alert);
+            const score = alertScore(alert);
+            const band = aiScoreBand(score);
             return (
             <article key={alert.alert_id} className={`alert-item ${alert.level} ${resolved ? "is-resolved" : ""}`}>
               <div className="alert-content">
@@ -2326,12 +2370,25 @@ function AlertsView({ data, session, patientId, onChanged }) {
                 </div>
                 <h4>{alert.title}</h4>
                 <p>{alert.description}</p>
-                <dl className="alert-meta-grid">
-                  <Detail label="Indice AI" value={scoreBandText(alertScore(alert))} />
-                  <Detail label="Categoria" value={categoryLabel(alert.category)} />
-                  <Detail label="Stato" value={alertStatusLabel(alert.status)} />
-                  <Detail label="Identificativo" value={alert.alert_id} />
-                </dl>
+                <div className="alert-data-grid">
+                  <div className={`alert-score-card ${band.key}`}>
+                    <span>Indice AI</span>
+                    <strong>{scoreBandText(score)}</strong>
+                    <small>{band.label}</small>
+                  </div>
+                  <div className="alert-data-card">
+                    <span>Categoria</span>
+                    <strong>{categoryLabel(alert.category)}</strong>
+                  </div>
+                  <div className="alert-data-card">
+                    <span>Stato operativo</span>
+                    <strong>{alertStatusLabel(alert.status)}</strong>
+                  </div>
+                  <div className="alert-data-card">
+                    <span>ID segnalazione</span>
+                    <strong>{alert.alert_id}</strong>
+                  </div>
+                </div>
                 {reasons.length > 0 && (
                   <ul className="reason-list" aria-label="Motivi alert">
                     {reasons.map((reason) => (
@@ -2352,6 +2409,10 @@ function AlertsView({ data, session, patientId, onChanged }) {
                 <small>{formatDateTime(alert.opened_at)} · stato {alert.status}</small>
               </div>
               <div className="alert-actions">
+                <div className="alert-actions-title">
+                  <strong>Azioni medico</strong>
+                  <span>{resolved ? "Segnalazione chiusa" : "Revisione richiesta"}</span>
+                </div>
                 <button className="secondary-button" type="button" disabled={resolved || busyForAlert || alert.status === "acknowledged"} onClick={() => setDialog({ type: "acknowledge", alert })}>
                   <CheckCircle2 size={16} />
                   Prendi in carico
@@ -2404,6 +2465,7 @@ function TasksView({ data, session, patientId, onChanged }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
+  const [messageComposerOpen, setMessageComposerOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [hideCancelledTasks, setHideCancelledTasks] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -2416,6 +2478,13 @@ function TasksView({ data, session, patientId, onChanged }) {
     instructions: taskTemplates.wellbeing.instructions,
     expiresAt: "",
     medicalNote: "",
+  });
+  const [messageForm, setMessageForm] = useState({
+    title: "Messaggio dal medico",
+    body: "",
+    priority: "normal",
+    note: "",
+    suggestionId: "",
   });
 
   const visibleTasks = useMemo(
@@ -2441,6 +2510,15 @@ function TasksView({ data, session, patientId, onChanged }) {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [composerOpen, busy]);
 
+  useEffect(() => {
+    if (!messageComposerOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape" && !busy) setMessageComposerOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [messageComposerOpen, busy]);
+
   function updateTaskForm(field, value) {
     if (field === "template") {
       const template = taskTemplates[value] ?? taskTemplates.wellbeing;
@@ -2457,6 +2535,73 @@ function TasksView({ data, session, patientId, onChanged }) {
 
   function updateNoteDraft(taskId, value) {
     setNoteDrafts((previous) => ({ ...previous, [taskId]: value }));
+  }
+
+  function updateMessageForm(field, value) {
+    setMessageForm((previous) => ({ ...previous, [field]: value }));
+  }
+
+  function applyMessageSuggestion(suggestion) {
+    setMessageForm((previous) => ({
+      ...previous,
+      title: suggestion.title,
+      body: suggestion.body,
+      priority: suggestion.priority,
+      suggestionId: suggestion.id,
+    }));
+    setError("");
+  }
+
+  async function sendPatientMessage() {
+    const title = messageForm.title.trim() || "Messaggio dal medico";
+    const body = messageForm.body.trim();
+    if (!body) {
+      setError("Scrivi il testo del messaggio prima di inviarlo.");
+      return;
+    }
+    setBusy("message");
+    setError("");
+    setSuccess("");
+    try {
+      const payload = {
+        type: "custom",
+        schema_version: 1,
+        priority: messageForm.priority,
+        assigned_to: "patient",
+        title,
+        instructions: body,
+        payload: {
+          kind: "patient_message",
+          delivery: {
+            push_notification: true,
+            in_app_banner: true,
+          },
+          suggestion_id: messageForm.suggestionId || null,
+          message: {
+            title,
+            body,
+            tone: messageForm.priority,
+          },
+        },
+        medical_note: messageForm.note.trim() || null,
+      };
+      const created = await api.createTask(patientId, payload, session);
+      setMessageComposerOpen(false);
+      setSelectedTaskId(created.task_id);
+      setMessageForm({
+        title: "Messaggio dal medico",
+        body: "",
+        priority: "normal",
+        note: "",
+        suggestionId: "",
+      });
+      setSuccess("Messaggio inviato al paziente. L'app companion potra mostrarlo come notifica o banner in-app.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
   }
 
   async function createTask() {
@@ -2540,10 +2685,16 @@ function TasksView({ data, session, patientId, onChanged }) {
             <p>Check-in e follow-up inviati all'applicazione companion.</p>
           </div>
         </div>
+        <div className="view-heading-actions">
+        <button className="secondary-button" type="button" onClick={() => setMessageComposerOpen(true)} disabled={Boolean(busy)}>
+          <MessageSquare size={17} />
+          Messaggio paziente
+        </button>
         <button className="primary-button" type="button" onClick={() => setComposerOpen(true)} disabled={Boolean(busy)}>
           <Plus size={17} />
           Nuova attività
         </button>
+        </div>
       </div>
       <div className="task-overview">
         <div><span>Totali</span><strong>{data.tasks.length}</strong></div>
@@ -2578,6 +2729,82 @@ function TasksView({ data, session, patientId, onChanged }) {
       </div>
       {error && <p className="inline-feedback error" role="alert"><AlertTriangle size={17} />{error}</p>}
       {success && <p className="inline-feedback success" role="status"><CheckCircle2 size={17} />{success}</p>}
+      {messageComposerOpen && (
+        <div
+          className="task-composer-backdrop"
+          role="presentation"
+          onMouseDown={(event) => event.target === event.currentTarget && !busy && setMessageComposerOpen(false)}
+        >
+          <section className="task-composer-panel patient-message-composer" aria-label="Messaggio paziente">
+            <div className="task-composer-header">
+              <span className="dialog-icon"><MessageSquare size={20} /></span>
+              <div>
+                <h3>Messaggio al paziente</h3>
+                <p>Invia una comunicazione personalizzata che l'app companion potra mostrare come notifica o avviso in-app.</p>
+              </div>
+              <button className="dialog-close" type="button" onClick={() => !busy && setMessageComposerOpen(false)} disabled={Boolean(busy)} aria-label="Chiudi">
+                <X size={19} />
+              </button>
+            </div>
+            <div className="patient-message-body">
+              <div className="message-suggestion-grid" aria-label="Messaggi consigliati">
+                {patientMessageSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    className={messageForm.suggestionId === suggestion.id ? "active" : ""}
+                    type="button"
+                    onClick={() => applyMessageSuggestion(suggestion)}
+                  >
+                    <strong>{suggestion.title}</strong>
+                    <span>{suggestion.body}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="task-form-grid patient-message-form">
+                <label>
+                  Priorita
+                  <select value={messageForm.priority} onChange={(event) => updateMessageForm("priority", event.target.value)}>
+                    <option value="normal">Ordinaria</option>
+                    <option value="high">Alta</option>
+                    <option value="urgent">Urgente</option>
+                  </select>
+                </label>
+                <label>
+                  Titolo notifica
+                  <input value={messageForm.title} onChange={(event) => updateMessageForm("title", event.target.value)} maxLength={90} />
+                </label>
+                <label className="span-2">
+                  Testo del messaggio
+                  <textarea
+                    value={messageForm.body}
+                    onChange={(event) => updateMessageForm("body", event.target.value)}
+                    placeholder="Scrivi qui il messaggio che il paziente dovra leggere nell'app companion."
+                    maxLength={600}
+                  />
+                </label>
+                <label className="span-2">
+                  Nota interna facoltativa
+                  <textarea
+                    value={messageForm.note}
+                    onChange={(event) => updateMessageForm("note", event.target.value)}
+                    placeholder="Nota visibile nello storico medico, non necessariamente mostrata al paziente."
+                    maxLength={400}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="task-composer-actions">
+              <button className="secondary-button" type="button" onClick={() => !busy && setMessageComposerOpen(false)} disabled={Boolean(busy)}>
+                Annulla
+              </button>
+              <button className="primary-button" type="button" onClick={sendPatientMessage} disabled={busy === "message"}>
+                {busy === "message" ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />}
+                {busy === "message" ? "Invio" : "Invia messaggio"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {composerOpen && (
         <div
           className="task-composer-backdrop"
@@ -2671,7 +2898,7 @@ function TasksView({ data, session, patientId, onChanged }) {
                 <h4>{task.title}</h4>
                 <p>{task.instructions ?? "Nessuna istruzione aggiuntiva."}</p>
                 <div className="task-meta">
-                  <span><Info size={14} /> {taskTypeLabel(task.type ?? task.task_type)}</span>
+                  <span><Info size={14} /> {taskDisplayType(task)}</span>
                   <span><CalendarClock size={14} /> Creata {formatDateTime(task.created_at)}</span>
                   {task.due_at && <span><Clock3 size={14} /> Scadenza {formatDateTime(task.due_at)}</span>}
                   {task.result?.completed_at && <span><CheckCircle2 size={14} /> Completata {formatDateTime(task.result.completed_at)}</span>}
@@ -2728,7 +2955,7 @@ function TaskDetailPanel({ task, noteDraft, cancelNote, busy, onNoteChange, onCa
     <div className="task-detail-panel">
       <div className="task-detail-header">
         <div>
-          <span className="detail-eyebrow">{taskTypeLabel(task.type ?? task.task_type)}</span>
+          <span className="detail-eyebrow">{taskDisplayType(task)}</span>
           <h4>{task.title}</h4>
         </div>
         <span className={`status-pill ${task.status}`}>{taskStatusLabel(task.status)}</span>
@@ -3396,6 +3623,16 @@ function taskTypeLabel(type) {
   }[type] ?? categoryLabel(type);
 }
 
+function isPatientMessageTask(task) {
+  const payload = task?.payload?.content ?? task?.payload ?? {};
+  return (task?.type ?? task?.task_type) === "custom" && payload?.kind === "patient_message";
+}
+
+function taskDisplayType(task) {
+  if (isPatientMessageTask(task)) return "Messaggio paziente";
+  return taskTypeLabel(task?.type ?? task?.task_type);
+}
+
 function taskAssigneeLabel(value) {
   return {
     patient: "Paziente",
@@ -3405,6 +3642,7 @@ function taskAssigneeLabel(value) {
 
 function taskIcon(task) {
   const type = task.type ?? task.task_type;
+  if (isPatientMessageTask(task)) return <MessageSquare size={19} />;
   if (type === "cognitive_test") return <BrainCircuit size={19} />;
   if (type === "check_in") return <HeartPulse size={19} />;
   return <ClipboardList size={19} />;
