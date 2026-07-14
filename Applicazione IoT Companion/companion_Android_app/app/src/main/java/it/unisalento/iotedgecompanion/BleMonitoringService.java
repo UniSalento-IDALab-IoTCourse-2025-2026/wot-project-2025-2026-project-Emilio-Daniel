@@ -48,6 +48,7 @@ public class BleMonitoringService extends Service {
     private static final long RESTART_SCAN_DELAY_MS = 3000L;
     private static final long OBSERVATION_TTL_MS = 45000L;
     private static final long PATIENT_SYNC_INTERVAL_MS = 60000L;
+    private static final int EMPTY_REPORTS_BEFORE_COMPAT_SCAN = 2;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -57,6 +58,8 @@ public class BleMonitoringService extends Service {
     private PowerManager.WakeLock wakeLock;
     private boolean running = false;
     private boolean scanning = false;
+    private boolean useIBeaconFilter = true;
+    private int emptyReportCount = 0;
 
     private final ScanCallback scanCallback = new ScanCallback() {
         @Override
@@ -189,7 +192,7 @@ public class BleMonitoringService extends Service {
         try {
             scanning = true;
             bleScanner.startScan(buildScanFilters(), buildScanSettings(), scanCallback);
-            startAsForeground("Scansione beacon attiva");
+            startAsForeground(useIBeaconFilter ? "Scansione beacon attiva" : "Scansione beacon compatibile");
         } catch (RuntimeException exception) {
             scanning = false;
             startAsForeground("Scansione BLE non avviata");
@@ -231,10 +234,20 @@ public class BleMonitoringService extends Service {
         removeStaleObservations();
         BeaconObservation strongest = strongestObservation();
         if (strongest != null) {
+            emptyReportCount = 0;
             sendBleSample(strongest);
             startAsForeground("Ultima stanza: " + strongest.room);
         } else {
-            startAsForeground("Nessun beacon mappato rilevato");
+            emptyReportCount++;
+            if (useIBeaconFilter && emptyReportCount >= EMPTY_REPORTS_BEFORE_COMPAT_SCAN) {
+                switchToCompatibilityScan();
+            } else {
+                startAsForeground(
+                        useIBeaconFilter
+                                ? "Nessun beacon iBeacon mappato"
+                                : "Nessun beacon mappato rilevato"
+                );
+            }
         }
         scheduleNextReport(REPORT_INTERVAL_MS);
     }
@@ -277,12 +290,14 @@ public class BleMonitoringService extends Service {
 
     private List<ScanFilter> buildScanFilters() {
         /*
-         * Usa un filtro iBeacon esplicito. Android applica forti limitazioni
-         * alle scansioni in background senza filtro; dichiarare il manufacturer
-         * Apple iBeacon aiuta il sistema a continuare a consegnare risultati
-         * anche quando l'app non e' in primo piano.
+         * In modalita standard usa un filtro iBeacon esplicito. Se pero' il
+         * telefono non consegna risultati con quel filtro, il servizio passa
+         * automaticamente alla modalita compatibile senza filtri.
          */
         List<ScanFilter> filters = new ArrayList<>();
+        if (!useIBeaconFilter) {
+            return filters;
+        }
         byte[] manufacturerData = new byte[]{0x02, 0x15};
         byte[] manufacturerMask = new byte[]{(byte) 0xFF, (byte) 0xFF};
         filters.add(
@@ -291,6 +306,20 @@ public class BleMonitoringService extends Service {
                         .build()
         );
         return filters;
+    }
+
+    private void switchToCompatibilityScan() {
+        /*
+         * Alcuni telefoni non restituiscono i BlueBeacon con il filtro
+         * manufacturer iBeacon anche se l'app di scansione li mostra. Dopo due
+         * cicli vuoti allarghiamo la scansione senza fermare il servizio.
+         */
+        stopCurrentScan();
+        observations.clear();
+        useIBeaconFilter = false;
+        emptyReportCount = 0;
+        startAsForeground("Ricerca beacon in modalita compatibile");
+        scheduleScanRestart(500L);
     }
 
     private void sendBleSample(BeaconObservation observation) {

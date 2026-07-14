@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import subprocess
 import sys
 import time
@@ -112,9 +113,13 @@ def main() -> None:
 
 def _print_startup_summary(args: argparse.Namespace) -> None:
     """Mostra in modo chiaro cosa verra' avviato."""
+    lan_ip = _guess_lan_ip()
     _log("Avvio stack IoT edge")
     _log(f"Config: {args.config}")
     _log(f"Receiver: http://{args.host}:{args.port}")
+    if args.host == "0.0.0.0" and lan_ip:
+        _log(f"Endpoint Android BLE: http://{lan_ip}:{args.port}/ble/sample")
+        _log(f"Docs receiver da telefono: http://{lan_ip}:{args.port}/docs")
     _log(f"Runtime loop: ogni {max(1, args.interval_seconds)} secondi")
     if args.disable_auto_baseline:
         _log("Baseline automatica: disattivata")
@@ -199,6 +204,16 @@ def _terminate_processes(processes: list[subprocess.Popen]) -> None:
 def _log(message: str) -> None:
     """Stampa un log compatto e immediatamente visibile nel terminale."""
     print(f"EDGE-STACK: {message}", flush=True)
+
+
+def _guess_lan_ip() -> str | None:
+    """Stima l'IP LAN utile al telefono Android nella rete locale."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return str(sock.getsockname()[0])
+    except OSError:
+        return None
 
 
 if __name__ == "__main__":
