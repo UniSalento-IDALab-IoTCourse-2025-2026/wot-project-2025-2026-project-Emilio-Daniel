@@ -30,3 +30,44 @@ export function scoreText(value) {
   return Number(value).toFixed(1);
 }
 
+export function aiScoreBand(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) {
+    return {
+      key: "unknown",
+      label: "Non disponibile",
+      range: "n/d",
+      description: "Score AI non ancora disponibile.",
+    };
+  }
+  if (score < 40) {
+    return {
+      key: "normal",
+      label: "Normalità",
+      range: "0-40",
+      description: "I dati rientrano nella routine attesa.",
+    };
+  }
+  if (score < 60) {
+    return {
+      key: "attention",
+      label: "Attenzione",
+      range: "40-60",
+      description: "Segnale da osservare, senza allarme automatico.",
+    };
+  }
+  if (score < 80) {
+    return {
+      key: "risk",
+      label: "Rischio",
+      range: "60-80",
+      description: "Scostamento importante da revisionare.",
+    };
+  }
+  return {
+    key: "critical",
+    label: "Massima Allerta",
+    range: "80-100",
+    description: "Priorità massima di revisione clinica.",
+  };
+}

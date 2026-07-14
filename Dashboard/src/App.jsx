@@ -41,14 +41,16 @@ import { api, clearSession, loadSession, saveSession } from "./api/client.js";
 import { readableApiError } from "./api/errors.js";
 import { openPatientSocket } from "./api/realtime.js";
 import { config } from "./config.js";
-import { formatDateTime, isStale, levelLabel, scoreText } from "./utils/format.js";
+import { aiScoreBand, formatDateTime, isStale, levelLabel, scoreText } from "./utils/format.js";
 
 const tabs = [
   { id: "patient", label: "Quadro clinico", shortLabel: "Paziente", icon: HeartPulse },
   { id: "alerts", label: "Segnalazioni", shortLabel: "Alert", icon: AlertTriangle },
-  { id: "tasks", label: "Attivita", shortLabel: "Task", icon: ClipboardList },
+  { id: "tasks", label: "Attività", shortLabel: "Task", icon: ClipboardList },
   { id: "system", label: "Stato sistema", shortLabel: "Sistema", icon: MonitorCog },
 ];
+
+const PATIENT_PROFILE_STORAGE_KEY = "iot_dashboard_patient_profiles_v1";
 
 const taskTemplates = {
   wellbeing: {
@@ -238,8 +240,9 @@ function Login({ onLogin }) {
               </div>
             </div>
             <div className="login-brand-message">
-              <span className="login-kicker">Continuita assistenziale</span>
-              <h2>Il quadro del paziente, chiaro quando serve.</h2>
+              <span className="login-kicker">Monitoraggio clinico integrato</span>
+              <h2>Segnali chiari.<br />Decisioni consapevoli.</h2>
+              <p>Una vista essenziale sull'andamento del paziente, dalla routine quotidiana ai parametri fisiologici.</p>
             </div>
             <div className="login-signal-board">
               <div className="login-signal-row">
@@ -267,8 +270,8 @@ function Login({ onLogin }) {
           </div>
           <div className="login-heading">
             <span className="secure-access"><LockKeyhole size={14} /> Accesso riservato</span>
-            <h1 id="login-title">Bentornato</h1>
-            <p>Accedi alla console clinica.</p>
+            <h1 id="login-title">Accesso clinico</h1>
+            <p>Inserisci le credenziali per entrare nell'area di monitoraggio.</p>
           </div>
           <form className="login-form" onSubmit={submit}>
             <label>
@@ -311,12 +314,12 @@ function Login({ onLogin }) {
             {error && <p className="error-text login-error" role="alert"><AlertTriangle size={17} />{error}</p>}
             <button className="primary-button login-submit" type="submit" disabled={loading}>
               {loading ? <LoaderCircle className="spin" size={19} /> : <ShieldCheck size={19} />}
-              {loading ? "Accesso in corso" : "Accedi alla dashboard"}
+              {loading ? "Verifica in corso" : "Entra nella dashboard"}
             </button>
           </form>
           <div className="login-footer">
-            <span className="environment-dot" />
-            Ambiente {config.dataSource === "real" ? "operativo" : "dimostrativo"}
+            <span className="environment-dot" aria-hidden="true" />
+            <span><strong>Sistema disponibile</strong> · Ambiente {config.dataSource === "real" ? "operativo" : "dimostrativo"}</span>
           </div>
         </div>
       </section>
@@ -332,6 +335,7 @@ function Dashboard({ session, onLogout }) {
   const [patientFilter, setPatientFilter] = useState("all");
   const [patientSearch, setPatientSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [patientIdentityOpen, setPatientIdentityOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [state, setState] = useState({ loading: true, error: "", data: null });
   const [wsStatus, setWsStatus] = useState("idle");
@@ -582,6 +586,10 @@ function Dashboard({ session, onLogout }) {
           </div>
           <div className="topbar-actions">
             <StatusPill status={wsStatus} />
+            <button className="patient-profile-button" type="button" onClick={() => setPatientIdentityOpen(true)}>
+              <UserRound size={17} />
+              Anagrafica
+            </button>
             <button className="notification-button" type="button" onClick={() => selectTab("alerts")} title="Apri segnalazioni" aria-label="Apri segnalazioni">
               <Bell size={18} />
               {activeAlertCount > 0 && <span>{activeAlertCount}</span>}
@@ -615,6 +623,12 @@ function Dashboard({ session, onLogout }) {
           </div>
         )}
       </section>
+      <PatientIdentityDialog
+        open={patientIdentityOpen}
+        onClose={() => setPatientIdentityOpen(false)}
+        patient={selectedPatient}
+        current={state.data?.current}
+      />
     </main>
   );
 }
@@ -739,13 +753,45 @@ function OverviewMetric({ icon, label, value, tone }) {
   );
 }
 
+function SortableHeader({ label, sortKey, sort, onSort }) {
+  const active = sort.key === sortKey;
+  const indicator = active ? (sort.direction === "asc" ? "ASC" : "DESC") : "--";
+  return (
+    <th>
+      <button
+        className={`table-sort-button ${active ? "active" : ""}`}
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={`Ordina per ${label}`}
+      >
+        <span>{label}</span>
+        <span aria-hidden="true">{indicator}</span>
+      </button>
+    </th>
+  );
+}
+
 function PatientView({ data }) {
   const { current, windows, decisions } = data;
   const stale = isStale(current.last_update);
   const latestDecision = decisions.at(-1);
   const [rangeMode, setRangeMode] = useState("day");
+  const [recentWindowsHidden, setRecentWindowsHidden] = useState(false);
+  const [recentSort, setRecentSort] = useState({ key: "window_end", direction: "desc" });
   const visibleWindows = useMemo(() => filterWindowsByRange(windows, rangeMode), [windows, rangeMode]);
   const chartWindows = visibleWindows.length > 0 ? visibleWindows : windows;
+  const recentRows = useMemo(
+    () => sortRecentWindows(windows, recentSort),
+    [windows, recentSort]
+  );
+
+  function changeRecentSort(key) {
+    setRecentWindowsHidden(false);
+    setRecentSort((previous) => ({
+      key,
+      direction: previous.key === key && previous.direction === "desc" ? "asc" : "desc",
+    }));
+  }
 
   return (
     <div className="content-grid">
@@ -761,8 +807,8 @@ function PatientView({ data }) {
           {stale && <span className="badge warning">Dati obsoleti</span>}
         </div>
         <div className="metric-row">
-          <Metric icon={<Gauge size={18} />} label="Priorita di revisione" value={levelLabel(current.level)} tone={current.level} />
-          <Metric icon={<BrainCircuit size={18} />} label="Indice di scostamento" value={scoreText(current.anomaly_score)} />
+          <Metric icon={<Gauge size={18} />} label="Priorita di revisione" value={aiScoreBand(current.anomaly_score).label} tone={aiScoreBand(current.anomaly_score).key} />
+          <Metric icon={<BrainCircuit size={18} />} label="Indice AI" value={scoreBandText(current.anomaly_score)} tone={aiScoreBand(current.anomaly_score).key} />
           <Metric icon={<MapPin size={18} />} label="Posizione rilevata" value={roomLabel(current.current_room)} />
           <Metric icon={<Clock3 size={18} />} label="Ultimo aggiornamento" value={formatDateTime(current.last_update)} />
         </div>
@@ -841,21 +887,37 @@ function PatientView({ data }) {
               <p className="panel-subtitle">Serie temporale consolidata ogni quattro minuti.</p>
             </div>
           </div>
-          <span className="badge">{windows.length} finestre</span>
+          <div className="panel-actions">
+            <span className="badge">{recentWindowsHidden ? "vista pulita" : `${windows.length} finestre`}</span>
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => setRecentWindowsHidden((previous) => !previous)}
+            >
+              {recentWindowsHidden ? "Mostra dati" : "Pulisci vista"}
+            </button>
+          </div>
         </div>
-        <div className="table-wrap">
+        {recentWindowsHidden ? (
+          <ViewEmptyState
+            icon={<CalendarClock size={24} />}
+            title="Vista pulita"
+            text="I dati non sono stati cancellati: sono solo nascosti in questa sessione della dashboard."
+          />
+        ) : (
+        <div className="table-wrap recent-windows-table">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Fine finestra</th>
-                <th>Frequenza cardiaca</th>
-                <th>SpO2</th>
-                <th>Cucina</th>
-                <th>Cambi stanza</th>
+                <SortableHeader label="Fine finestra" sortKey="window_end" sort={recentSort} onSort={changeRecentSort} />
+                <SortableHeader label="Frequenza cardiaca" sortKey="heart_rate_mean" sort={recentSort} onSort={changeRecentSort} />
+                <SortableHeader label="SpO2" sortKey="spo2_mean" sort={recentSort} onSort={changeRecentSort} />
+                <SortableHeader label="Cucina" sortKey="kitchen_minutes" sort={recentSort} onSort={changeRecentSort} />
+                <SortableHeader label="Cambi stanza" sortKey="room_changes" sort={recentSort} onSort={changeRecentSort} />
               </tr>
             </thead>
             <tbody>
-              {windows.map((window) => (
+              {recentRows.map((window) => (
                 <tr key={window.window_id ?? window.window_end}>
                   <td>{formatDateTime(window.window_end)}</td>
                   <td>{formatFeatureValue(window.features.heart_rate_mean, "bpm")}</td>
@@ -867,8 +929,228 @@ function PatientView({ data }) {
             </tbody>
           </table>
         </div>
+        )}
       </section>
     </div>
+  );
+}
+
+function PatientIdentityDialog({ open, onClose, patient, current }) {
+  const patientId = current?.patient_id ?? patient?.patient_id ?? "patient";
+  const [profile, setProfile] = useState(() => loadPatientProfile(patientId, patient));
+  const [savedMessage, setSavedMessage] = useState("");
+
+  useEffect(() => {
+    setProfile(loadPatientProfile(patientId, patient));
+    setSavedMessage("");
+  }, [patientId, patient?.display_name]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [open, onClose]);
+
+  const filledCount = countPatientProfileFields(profile);
+  const displayName = patientProfileDisplayName(profile, patient, patientId);
+
+  function updateProfile(field, value) {
+    setProfile((previous) => ({ ...previous, [field]: field === "taxCode" ? value.toUpperCase() : value }));
+    setSavedMessage("");
+  }
+
+  function saveProfile() {
+    savePatientProfile(patientId, profile);
+    setSavedMessage("Scheda anagrafica salvata su questo dispositivo.");
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="patient-identity-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="patient-identity-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-identity-title">
+        <div className="patient-identity-dialog-header">
+          <span className="patient-identity-icon"><UserRound size={21} /></span>
+          <div>
+            <span className="clinical-kicker">Dati identificativi</span>
+            <h3 id="patient-identity-title">Scheda anagrafica paziente</h3>
+            <p>{displayName} · ID clinico: {patientId}</p>
+          </div>
+          <button className="dialog-close" type="button" onClick={onClose} aria-label="Chiudi">
+            <X size={19} />
+          </button>
+        </div>
+
+        <div className="patient-identity-dialog-body">
+          <div className="patient-identity-dialog-summary">
+            <strong>{filledCount}/10 dati compilati</strong>
+            <span>I dati restano locali nel browser della dashboard.</span>
+          </div>
+          <div className="patient-identity-grid">
+            <label>
+              Nome
+              <input value={profile.firstName} onChange={(event) => updateProfile("firstName", event.target.value)} placeholder="Mario" />
+            </label>
+            <label>
+              Cognome
+              <input value={profile.lastName} onChange={(event) => updateProfile("lastName", event.target.value)} placeholder="Rossi" />
+            </label>
+            <label>
+              Codice fiscale
+              <input value={profile.taxCode} onChange={(event) => updateProfile("taxCode", event.target.value)} placeholder="RSSMRA..." maxLength={16} />
+            </label>
+            <label>
+              Data di nascita
+              <input type="date" value={profile.birthDate} onChange={(event) => updateProfile("birthDate", event.target.value)} />
+            </label>
+            <label>
+              Telefono
+              <input value={profile.phone} onChange={(event) => updateProfile("phone", event.target.value)} placeholder="+39 ..." />
+            </label>
+            <label>
+              Email
+              <input type="email" value={profile.email} onChange={(event) => updateProfile("email", event.target.value)} placeholder="paziente@example.it" />
+            </label>
+            <label className="span-2">
+              Indirizzo
+              <input value={profile.address} onChange={(event) => updateProfile("address", event.target.value)} placeholder="Via, numero civico, citta" />
+            </label>
+            <label>
+              Caregiver di riferimento
+              <input value={profile.caregiverName} onChange={(event) => updateProfile("caregiverName", event.target.value)} placeholder="Nome familiare/caregiver" />
+            </label>
+            <label>
+              Telefono caregiver
+              <input value={profile.caregiverPhone} onChange={(event) => updateProfile("caregiverPhone", event.target.value)} placeholder="+39 ..." />
+            </label>
+            <label className="span-2">
+              Note identificative
+              <textarea value={profile.notes} onChange={(event) => updateProfile("notes", event.target.value)} placeholder="Informazioni utili al medico, senza diagnosi automatiche." />
+            </label>
+          </div>
+        </div>
+
+        <div className="patient-identity-dialog-footer">
+          {savedMessage && <span className="inline-save-message"><CheckCircle2 size={15} />{savedMessage}</span>}
+          <button className="secondary-button" type="button" onClick={onClose}>Chiudi</button>
+          <button className="primary-button" type="button" onClick={saveProfile}>
+            <CheckCircle2 size={17} />
+            Salva scheda
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PatientIdentityPanel({ patient, current }) {
+  const patientId = current?.patient_id ?? patient?.patient_id ?? "patient";
+  const [visible, setVisible] = useState(false);
+  const [profile, setProfile] = useState(() => loadPatientProfile(patientId, patient));
+  const [savedMessage, setSavedMessage] = useState("");
+
+  useEffect(() => {
+    setProfile(loadPatientProfile(patientId, patient));
+    setSavedMessage("");
+    setVisible(false);
+  }, [patientId, patient?.display_name]);
+
+  const filledCount = countPatientProfileFields(profile);
+  const displayName = patientProfileDisplayName(profile, patient, patientId);
+  const hasProfileData = filledCount > 0;
+
+  function updateProfile(field, value) {
+    setProfile((previous) => ({ ...previous, [field]: field === "taxCode" ? value.toUpperCase() : value }));
+    setSavedMessage("");
+  }
+
+  function saveProfile() {
+    savePatientProfile(patientId, profile);
+    setSavedMessage("Scheda anagrafica salvata su questo dispositivo.");
+  }
+
+  return (
+    <section className={`panel span-2 patient-identity-panel ${visible ? "expanded" : "collapsed"}`}>
+      <div className="patient-identity-summary">
+        <span className="patient-identity-icon"><UserRound size={20} /></span>
+        <div className="patient-identity-copy">
+          <span className="clinical-kicker">Anagrafica paziente</span>
+          <h3>{visible ? displayName : "Dati paziente nascosti"}</h3>
+          <p>
+            {visible
+              ? `ID clinico: ${patientId}`
+              : hasProfileData
+                ? `Scheda compilata per ${patientId}. Aprila solo quando serve identificare il paziente.`
+                : `Scheda non ancora compilata per ${patientId}.`}
+          </p>
+        </div>
+        <div className="patient-identity-actions">
+          <span>{filledCount}/10 dati compilati</span>
+          <button className="secondary-button" type="button" onClick={() => setVisible((previous) => !previous)}>
+            {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+            {visible ? "Nascondi dati" : hasProfileData ? "Mostra dati" : "Compila scheda"}
+          </button>
+        </div>
+      </div>
+
+      {visible && (
+        <div className="patient-identity-body">
+          <div className="patient-identity-grid">
+            <label>
+              Nome
+              <input value={profile.firstName} onChange={(event) => updateProfile("firstName", event.target.value)} placeholder="Mario" />
+            </label>
+            <label>
+              Cognome
+              <input value={profile.lastName} onChange={(event) => updateProfile("lastName", event.target.value)} placeholder="Rossi" />
+            </label>
+            <label>
+              Codice fiscale
+              <input value={profile.taxCode} onChange={(event) => updateProfile("taxCode", event.target.value)} placeholder="RSSMRA..." maxLength={16} />
+            </label>
+            <label>
+              Data di nascita
+              <input type="date" value={profile.birthDate} onChange={(event) => updateProfile("birthDate", event.target.value)} />
+            </label>
+            <label>
+              Telefono
+              <input value={profile.phone} onChange={(event) => updateProfile("phone", event.target.value)} placeholder="+39 ..." />
+            </label>
+            <label>
+              Email
+              <input type="email" value={profile.email} onChange={(event) => updateProfile("email", event.target.value)} placeholder="paziente@example.it" />
+            </label>
+            <label className="span-2">
+              Indirizzo
+              <input value={profile.address} onChange={(event) => updateProfile("address", event.target.value)} placeholder="Via, numero civico, città" />
+            </label>
+            <label>
+              Caregiver di riferimento
+              <input value={profile.caregiverName} onChange={(event) => updateProfile("caregiverName", event.target.value)} placeholder="Nome familiare/caregiver" />
+            </label>
+            <label>
+              Telefono caregiver
+              <input value={profile.caregiverPhone} onChange={(event) => updateProfile("caregiverPhone", event.target.value)} placeholder="+39 ..." />
+            </label>
+            <label className="span-2">
+              Note identificative
+              <textarea value={profile.notes} onChange={(event) => updateProfile("notes", event.target.value)} placeholder="Informazioni utili al medico, senza diagnosi automatiche." />
+            </label>
+          </div>
+          <div className="patient-identity-footer">
+            <p>I dati sono salvati localmente nel browser della dashboard e possono essere nascosti dalla vista principale.</p>
+            {savedMessage && <span className="inline-save-message"><CheckCircle2 size={15} />{savedMessage}</span>}
+            <button className="primary-button" type="button" onClick={saveProfile}>
+              <CheckCircle2 size={17} />
+              Salva scheda
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -911,6 +1193,7 @@ function AiExplanationPanel({ decision, system, current }) {
           <span className="clinical-kicker">Valutazione corrente</span>
           <h4>{decisionHeadline(finalLevel)}</h4>
           <p>{clinicalDecisionSummary(models, finalLevel)}</p>
+          <AiScoreBandLegend score={finalScore} />
           <div className="clinical-summary-meta">
             <span><Clock3 size={15} /> {formatAnalysisWindow(decision.window_start, decision.window_end)}</span>
             <span><Gauge size={15} /> {activeModels} {activeModels === 1 ? "fonte attiva" : "fonti attive"}</span>
@@ -988,12 +1271,34 @@ function AiExplanationPanel({ decision, system, current }) {
 
 function ScoreGauge({ score, level }) {
   const boundedScore = Math.min(100, Math.max(0, Number(score) || 0));
+  const band = aiScoreBand(score);
   return (
-    <div className={`score-gauge ${level}`} style={{ "--score": boundedScore }} aria-label={`Indice di scostamento ${scoreText(score)} su 100`}>
+    <div className={`score-gauge ${level} score-band-${band.key}`} style={{ "--score": boundedScore }} aria-label={`Indice AI ${scoreText(score)} su 100, ${band.label}`}>
       <div className="score-gauge-inner">
         <strong>{scoreText(score)}</strong>
         <span>su 100</span>
+        <em>{band.label}</em>
       </div>
+    </div>
+  );
+}
+
+function AiScoreBandLegend({ score }) {
+  const current = aiScoreBand(score);
+  const bands = [
+    { key: "normal", label: "Normalità", range: "0-40" },
+    { key: "attention", label: "Attenzione", range: "40-60" },
+    { key: "risk", label: "Rischio", range: "60-80" },
+    { key: "critical", label: "Massima Allerta", range: "80-100" },
+  ];
+  return (
+    <div className="ai-score-bands" aria-label="Legenda score AI">
+      {bands.map((band) => (
+        <span key={band.key} className={`ai-score-band ${band.key} ${current.key === band.key ? "active" : ""}`}>
+          <strong>{band.range}</strong>
+          {band.label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -1483,7 +1788,7 @@ const modelOrder = [
   {
     key: "generic_wearable",
     label: "Parametri dal wearable",
-    description: "Dati fisiologici, sonno e attivita",
+    description: "Dati fisiologici, sonno e attività",
     icon: Watch,
   },
   {
@@ -1725,8 +2030,54 @@ function formatFeatureValue(value, unit) {
   if (isMissingValue(value)) return "n/d";
   if (typeof value === "boolean") return value ? "Si" : "No";
   const numeric = Number(value);
-  const formatted = Number.isFinite(numeric) ? Number(numeric.toFixed(2)).toString() : String(value);
+  const decimals = unit === "min" ? 1 : 2;
+  const formatted = Number.isFinite(numeric) ? Number(numeric.toFixed(decimals)).toString() : String(value);
   return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function emptyPatientProfile(patient) {
+  const nameParts = String(patient?.display_name ?? "").trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : "",
+    lastName: nameParts.length > 1 ? nameParts.at(-1) : "",
+    taxCode: "",
+    birthDate: "",
+    phone: "",
+    email: "",
+    address: "",
+    caregiverName: "",
+    caregiverPhone: "",
+    notes: "",
+  };
+}
+
+function loadPatientProfile(patientId, patient) {
+  const fallback = emptyPatientProfile(patient);
+  try {
+    const stored = JSON.parse(localStorage.getItem(PATIENT_PROFILE_STORAGE_KEY) || "{}");
+    return { ...fallback, ...(stored?.[patientId] ?? {}) };
+  } catch {
+    return fallback;
+  }
+}
+
+function savePatientProfile(patientId, profile) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PATIENT_PROFILE_STORAGE_KEY) || "{}");
+    localStorage.setItem(PATIENT_PROFILE_STORAGE_KEY, JSON.stringify({ ...stored, [patientId]: profile }));
+  } catch {
+    // Supporto locale alla dashboard: se il browser blocca il salvataggio, il sistema clinico resta operativo.
+  }
+}
+
+function countPatientProfileFields(profile) {
+  const fields = ["firstName", "lastName", "taxCode", "birthDate", "phone", "email", "address", "caregiverName", "caregiverPhone", "notes"];
+  return fields.filter((field) => String(profile?.[field] ?? "").trim()).length;
+}
+
+function patientProfileDisplayName(profile, patient, patientId) {
+  const fullName = [profile?.firstName, profile?.lastName].map((part) => String(part ?? "").trim()).filter(Boolean).join(" ");
+  return fullName || patient?.display_name || patientId;
 }
 
 function formatAxisValue(value) {
@@ -1895,7 +2246,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
           source_score: alertScore(alert),
         },
       }, session);
-      setSuccess("Attivita di follow-up creata per il paziente.");
+      setSuccess("Attività di follow-up creata per il paziente.");
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -1976,7 +2327,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
                 <h4>{alert.title}</h4>
                 <p>{alert.description}</p>
                 <dl className="alert-meta-grid">
-                  <Detail label="Indice di scostamento" value={scoreText(alertScore(alert))} />
+                  <Detail label="Indice AI" value={scoreBandText(alertScore(alert))} />
                   <Detail label="Categoria" value={categoryLabel(alert.category)} />
                   <Detail label="Stato" value={alertStatusLabel(alert.status)} />
                   <Detail label="Identificativo" value={alert.alert_id} />
@@ -2011,7 +2362,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
                 </button>
                 <button className="text-button" type="button" disabled={busyForAlert} onClick={() => createAlertTask(alert)}>
                   <ClipboardList size={16} />
-                  Crea attivita di follow-up
+                  Crea attività di follow-up
                 </button>
               </div>
             </article>
@@ -2054,6 +2405,7 @@ function TasksView({ data, session, patientId, onChanged }) {
   const [success, setSuccess] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [hideCancelledTasks, setHideCancelledTasks] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [noteDrafts, setNoteDrafts] = useState({});
   const [cancelDialog, setCancelDialog] = useState(null);
@@ -2067,14 +2419,27 @@ function TasksView({ data, session, patientId, onChanged }) {
   });
 
   const visibleTasks = useMemo(
-    () => data.tasks.filter((task) => statusFilter === "all" || task.status === statusFilter),
-    [data.tasks, statusFilter]
+    () => data.tasks.filter((task) => {
+      if (hideCancelledTasks && task.status === "cancelled") return false;
+      return statusFilter === "all" || task.status === statusFilter;
+    }),
+    [data.tasks, statusFilter, hideCancelledTasks]
   );
   const openTasks = data.tasks.filter((task) => !["completed", "cancelled", "expired"].includes(task.status)).length;
   const completedTasks = data.tasks.filter((task) => task.status === "completed").length;
   const expiredTasks = data.tasks.filter((task) => task.status === "expired").length;
+  const cancelledTasks = data.tasks.filter((task) => task.status === "cancelled").length;
   const selectedTask = visibleTasks.find((task) => task.task_id === selectedTaskId) ?? visibleTasks[0] ?? null;
   const selectedTemplate = taskTemplates[taskForm.template] ?? taskTemplates.wellbeing;
+
+  useEffect(() => {
+    if (!composerOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape" && !busy) setComposerOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [composerOpen, busy]);
 
   function updateTaskForm(field, value) {
     if (field === "template") {
@@ -2096,7 +2461,7 @@ function TasksView({ data, session, patientId, onChanged }) {
 
   async function createTask() {
     if (!taskForm.title.trim()) {
-      setError("Inserisci un titolo per l'attivita.");
+      setError("Inserisci un titolo per l'attività.");
       return;
     }
     setBusy("create");
@@ -2119,7 +2484,7 @@ function TasksView({ data, session, patientId, onChanged }) {
       const created = await api.createTask(patientId, payload, session);
       setComposerOpen(false);
       setSelectedTaskId(created.task_id);
-      setSuccess("Attivita inviata correttamente al paziente.");
+      setSuccess("Attività inviata correttamente al paziente.");
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -2171,13 +2536,13 @@ function TasksView({ data, session, patientId, onChanged }) {
         <div className="view-heading-copy">
           <span className="view-heading-icon task"><ClipboardList size={22} /></span>
           <div>
-            <h3>Attivita per il paziente</h3>
+            <h3>Attività per il paziente</h3>
             <p>Check-in e follow-up inviati all'applicazione companion.</p>
           </div>
         </div>
         <button className="primary-button" type="button" onClick={() => setComposerOpen(true)} disabled={Boolean(busy)}>
           <Plus size={17} />
-          Nuova attivita
+          Nuova attività
         </button>
       </div>
       <div className="task-overview">
@@ -2185,6 +2550,7 @@ function TasksView({ data, session, patientId, onChanged }) {
         <div><span>Da completare</span><strong>{openTasks}</strong></div>
         <div><span>Completate</span><strong>{completedTasks}</strong></div>
         <div><span>Scadute</span><strong>{expiredTasks}</strong></div>
+        <div><span>Annullate</span><strong>{cancelledTasks}</strong></div>
         <label>
           Stato
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
@@ -2197,13 +2563,92 @@ function TasksView({ data, session, patientId, onChanged }) {
             <option value="cancelled">Annullate</option>
           </select>
         </label>
+        <button
+          className="text-button task-clean-button"
+          type="button"
+          onClick={() => {
+            const nextHideCancelledTasks = !hideCancelledTasks;
+            setHideCancelledTasks(nextHideCancelledTasks);
+            if (nextHideCancelledTasks && statusFilter === "cancelled") setStatusFilter("all");
+          }}
+          disabled={cancelledTasks === 0}
+        >
+          {hideCancelledTasks ? "Mostra annullate" : "Pulisci annullate"}
+        </button>
       </div>
       {error && <p className="inline-feedback error" role="alert"><AlertTriangle size={17} />{error}</p>}
       {success && <p className="inline-feedback success" role="status"><CheckCircle2 size={17} />{success}</p>}
+      {composerOpen && (
+        <div
+          className="task-composer-backdrop"
+          role="presentation"
+          onMouseDown={(event) => event.target === event.currentTarget && !busy && setComposerOpen(false)}
+        >
+        <section className="task-composer-panel" aria-label="Nuova attività">
+          <div className="task-composer-header">
+            <span className="dialog-icon"><ClipboardList size={20} /></span>
+            <div>
+              <h3>Nuova attività</h3>
+              <p>Prepara un contenuto da inviare al paziente tramite l'app companion.</p>
+            </div>
+            <button className="dialog-close" type="button" onClick={() => !busy && setComposerOpen(false)} disabled={Boolean(busy)} aria-label="Chiudi">
+              <X size={19} />
+            </button>
+          </div>
+          <div className="task-form-grid">
+            <label>
+              Tipo test
+              <select value={taskForm.template} onChange={(event) => updateTaskForm("template", event.target.value)}>
+                {Object.entries(taskTemplates).map(([key, template]) => (
+                  <option key={key} value={key}>{template.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Priorità
+              <select value={taskForm.priority} onChange={(event) => updateTaskForm("priority", event.target.value)}>
+                <option value="normal">Ordinaria</option>
+                <option value="high">Alta</option>
+                <option value="urgent">Urgente</option>
+              </select>
+            </label>
+            <label className="span-2">
+              Titolo
+              <input value={taskForm.title} onChange={(event) => updateTaskForm("title", event.target.value)} maxLength={120} />
+            </label>
+            <div className="span-2 task-template-preview">
+              <strong>{selectedTemplate.label}</strong>
+              <span>{selectedTemplate.expectedScore}</span>
+            </div>
+            <label className="span-2">
+              Istruzioni
+              <textarea value={taskForm.instructions} onChange={(event) => updateTaskForm("instructions", event.target.value)} placeholder="Indicazioni visibili al paziente" />
+            </label>
+            <label className="span-2">
+              Scadenza facoltativa
+              <input type="datetime-local" value={taskForm.expiresAt} onChange={(event) => updateTaskForm("expiresAt", event.target.value)} />
+            </label>
+            <label className="span-2">
+              Nota medico facoltativa
+              <textarea value={taskForm.medicalNote} onChange={(event) => updateTaskForm("medicalNote", event.target.value)} placeholder="Nota visibile nello storico del task" />
+            </label>
+          </div>
+          <div className="task-composer-actions">
+            <button className="secondary-button" type="button" onClick={() => !busy && setComposerOpen(false)} disabled={Boolean(busy)}>
+              Annulla
+            </button>
+            <button className="primary-button" type="button" onClick={createTask} disabled={busy === "create"}>
+              {busy === "create" ? <LoaderCircle className="spin" size={17} /> : <CheckCircle2 size={17} />}
+              {busy === "create" ? "Salvataggio" : "Crea e invia"}
+            </button>
+          </div>
+        </section>
+        </div>
+      )}
       {data.tasks.length === 0 ? (
-        <ViewEmptyState icon={<ClipboardList size={24} />} title="Nessuna attivita assegnata" text="Crea un check-in o un follow-up per iniziare." />
+        <ViewEmptyState icon={<ClipboardList size={24} />} title="Nessuna attività assegnata" text="Crea un check-in o un follow-up per iniziare." />
       ) : visibleTasks.length === 0 ? (
-        <ViewEmptyState icon={<Search size={24} />} title="Nessun risultato" text="Non ci sono attivita con lo stato selezionato." />
+        <ViewEmptyState icon={<Search size={24} />} title="Nessun risultato" text="Non ci sono attività con lo stato selezionato." />
       ) : (
         <div className="task-list">
           {visibleTasks.map((task) => (
@@ -2249,56 +2694,6 @@ function TasksView({ data, session, patientId, onChanged }) {
           onAskCancel={() => setCancelDialog(selectedTask)}
         />
       )}
-      <ActionDialog
-        open={composerOpen}
-        icon={<ClipboardList size={22} />}
-        title="Nuova attivita"
-        description="Prepara un contenuto da inviare al paziente tramite l'app companion."
-        confirmLabel="Crea e invia"
-        busy={busy === "create"}
-        wide
-        onClose={() => !busy && setComposerOpen(false)}
-        onConfirm={createTask}
-      >
-        <div className="task-form-grid">
-          <label>
-            Tipo test
-            <select value={taskForm.template} onChange={(event) => updateTaskForm("template", event.target.value)}>
-              {Object.entries(taskTemplates).map(([key, template]) => (
-                <option key={key} value={key}>{template.label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Priorita
-            <select value={taskForm.priority} onChange={(event) => updateTaskForm("priority", event.target.value)}>
-              <option value="normal">Ordinaria</option>
-              <option value="high">Alta</option>
-              <option value="urgent">Urgente</option>
-            </select>
-          </label>
-          <label className="span-2">
-            Titolo
-            <input value={taskForm.title} onChange={(event) => updateTaskForm("title", event.target.value)} maxLength={120} />
-          </label>
-          <div className="span-2 task-template-preview">
-            <strong>{selectedTemplate.label}</strong>
-            <span>{selectedTemplate.expectedScore}</span>
-          </div>
-          <label className="span-2">
-            Istruzioni
-            <textarea value={taskForm.instructions} onChange={(event) => updateTaskForm("instructions", event.target.value)} placeholder="Indicazioni visibili al paziente" />
-          </label>
-          <label className="span-2">
-            Scadenza facoltativa
-            <input type="datetime-local" value={taskForm.expiresAt} onChange={(event) => updateTaskForm("expiresAt", event.target.value)} />
-          </label>
-          <label className="span-2">
-            Nota medico facoltativa
-            <textarea value={taskForm.medicalNote} onChange={(event) => updateTaskForm("medicalNote", event.target.value)} placeholder="Nota visibile nello storico del task" />
-          </label>
-        </div>
-      </ActionDialog>
       <ActionDialog
         open={Boolean(cancelDialog)}
         icon={<X size={22} />}
@@ -2876,6 +3271,12 @@ function formatNumber(value, fallback = "n/d") {
   return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
 }
 
+function scoreBandText(value) {
+  const band = aiScoreBand(value);
+  if (band.key === "unknown") return "n/d";
+  return `${scoreText(value)} - ${band.label}`;
+}
+
 function formatDurationMinutes(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "durata non disponibile";
@@ -2904,6 +3305,33 @@ function filterAlerts(alerts, filters) {
     const maxAgeMs = filters.rangeFilter === "24h" ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
     return Date.now() - timestamp <= maxAgeMs;
   });
+}
+
+function sortRecentWindows(windows, sort) {
+  const direction = sort.direction === "asc" ? 1 : -1;
+  return [...windows].sort((left, right) => {
+    const leftValue = recentWindowSortValue(left, sort.key);
+    const rightValue = recentWindowSortValue(right, sort.key);
+    const leftMissing = leftValue === null || leftValue === undefined || Number.isNaN(leftValue);
+    const rightMissing = rightValue === null || rightValue === undefined || Number.isNaN(rightValue);
+    if (leftMissing && rightMissing) return 0;
+    if (leftMissing) return 1;
+    if (rightMissing) return -1;
+    if (leftValue < rightValue) return -1 * direction;
+    if (leftValue > rightValue) return 1 * direction;
+    return 0;
+  });
+}
+
+function recentWindowSortValue(window, key) {
+  if (key === "window_end") {
+    const timestamp = new Date(window.window_end ?? window.window_start ?? 0).getTime();
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+  const value = window.features?.[key];
+  if (isMissingValue(value)) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : String(value).toLowerCase();
 }
 
 function alertTimestamp(alert) {
@@ -2935,7 +3363,7 @@ function categoryLabel(category) {
     clinical: "Clinica",
     technical: "Tecnica",
     wandering: "Spostamenti notturni",
-    inactivity: "Riduzione dell'attivita",
+    inactivity: "Riduzione dell'attività",
     wearable: "Parametri wearable",
     spatial: "Routine spaziale",
   };
