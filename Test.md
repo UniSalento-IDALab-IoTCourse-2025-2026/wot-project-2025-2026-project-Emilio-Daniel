@@ -1620,7 +1620,7 @@ cd ..
 cd "C:\Users\emili\OneDrive\Desktop\Secondo Semestre\IoT\Progetto IoT 2026\cloud\backend"
 Stop-Process -Id 20208
 .\.venv\Scripts\python.exe -m alembic upgrade head
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 ### Terminale 3 - Worker MQTT backend
@@ -1651,8 +1651,12 @@ Aprire:
 Dashboard: http://127.0.0.1:5173
 Backend docs: http://127.0.0.1:8080/docs
 
-Le credenziali di accesso sono:
+Le credenziali di accesso del medico demo sono:
  - medico.demo@localhost.invalid
+ - provaprova
+
+Le credenziali di accesso del paziente demo sono:
+ - paziente.demo@localhost.invalid
  - provaprova
 ```
 

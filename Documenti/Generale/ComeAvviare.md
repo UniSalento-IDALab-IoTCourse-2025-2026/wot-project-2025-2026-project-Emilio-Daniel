@@ -24,6 +24,17 @@ In parole povere: il telefono Android invia la stanza rilevata tramite beacon, i
 Watch fornisce i dati biometrici tramite Google Health quando abilitato, e il
 Raspberry/PC unisce tutto ogni 4 minuti.
 
+Attenzione: per il test completo con app Android paziente serve anche il backend
+clinico. Lo script Windows ora supporta quindi due modalita':
+
+```text
+avvio Edge
+-> receiver BLE + runtime + MQTT publisher
+
+avvio completo PC
+-> Docker mqtt/postgres + backend + worker MQTT + receiver BLE + runtime
+```
+
 ## Requisiti Prima Di Avviare
 
 Devono esistere questi file/cartelle:
@@ -80,6 +91,51 @@ Alternativa PowerShell esplicita:
 ```powershell
 .\Script\avvio\avviaSistema.ps1
 ```
+
+Questa modalita' avvia l'Edge, quindi espone il receiver BLE su:
+
+```text
+http://0.0.0.0:8000
+```
+
+Nel terminale verra' stampato anche l'URL LAN da inserire nell'app Android, ad esempio:
+
+```text
+http://192.168.5.227:8000/ble/sample
+```
+
+## Avvio Completo Su Windows Per Test App Android
+
+Quando vogliamo testare anche login paziente, task e notifiche dell'app Android, serve
+anche il backend clinico sulla porta `8080`.
+
+Da PowerShell, dalla root del progetto:
+
+```powershell
+.\Script\avvio\avviaSistema.ps1 -Completo
+```
+
+Questo comando prova ad avviare:
+
+```text
+Docker mqtt + postgres
+migrazioni Alembic
+backend clinico su 0.0.0.0:8080
+worker MQTT backend
+receiver BLE su 0.0.0.0:8000
+runtime Edge ogni 4 minuti
+```
+
+Alla partenza stampa gli URL da mettere nell'app Android:
+
+```text
+Receiver BLE     http://IP_PC:8000/ble/sample
+Backend clinico  http://IP_PC:8080/api/v1
+Backend docs     http://IP_PC:8080/docs
+```
+
+Se Docker, backend o worker sono gia' avviati manualmente, si puo' usare la modalita'
+Edge normale ed evitare doppioni.
 
 Se serve avviare senza launcher, il comando tecnico equivalente e':
 

@@ -9,6 +9,8 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.text.InputType;
@@ -162,7 +164,7 @@ public class AdminSettingsActivity extends Activity {
         renderGatewaySummary();
         lockGatewayConfigEditor();
         setStatus("Gateway salvato e monitoraggio aggiornato");
-        startMonitoringService();
+        restartMonitoringService();
     }
 
     private void saveBeaconMap() {
@@ -178,7 +180,7 @@ public class AdminSettingsActivity extends Activity {
         renderBeaconSummary();
         lockBeaconMapEditor();
         setStatus("Mappa beacon salvata");
-        startMonitoringService();
+        restartMonitoringService();
     }
 
     private void showAdminLoginDialog(String title, String positiveLabel, AdminAction action) {
@@ -356,6 +358,16 @@ public class AdminSettingsActivity extends Activity {
             startService(intent);
         }
         setStatus("Monitoraggio IoT avviato in background");
+    }
+
+    private void restartMonitoringService() {
+        /*
+         * Dopo modifiche a gateway o mappa beacon serve un riavvio reale del
+         * servizio. Se era gia' acceso, un semplice startService non forza la
+         * nuova scansione BLE a ripartire da zero.
+         */
+        stopService(new Intent(this, BleMonitoringService.class));
+        new Handler(Looper.getMainLooper()).postDelayed(this::startMonitoringService, 700L);
     }
 
     private void stopMonitoringService() {
