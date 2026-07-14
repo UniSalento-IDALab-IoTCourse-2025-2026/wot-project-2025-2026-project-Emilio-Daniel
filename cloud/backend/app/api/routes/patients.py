@@ -20,6 +20,7 @@ from app.auth.dependencies import (
 from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Patient, SensorStatus, Task, TaskResult
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
+from app.services.push_notifications import notify_task_created
 
 router = APIRouter()
 ALERT_ESCALATION_MINUTES = 30
@@ -186,6 +187,7 @@ def create_patient_task(
         payload=normalized_task_payload,
     )
     db.add(task)
+    db.flush()
     write_audit(
         db,
         actor=current_user,
@@ -194,6 +196,7 @@ def create_patient_task(
         target_type="task",
         details={"type": task_type, "title": title},
     )
+    notify_task_created(db, task)
     db.commit()
     db.refresh(task)
     event_bus.publish(

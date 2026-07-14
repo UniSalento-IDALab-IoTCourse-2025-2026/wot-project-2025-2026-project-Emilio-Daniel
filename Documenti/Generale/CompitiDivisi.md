@@ -482,15 +482,15 @@ minimi e verificabili.
 
 ### D10. Firebase Cloud Messaging
 
-- [ ] Creare o configurare il progetto Firebase del sistema.
-- [ ] Implementare registrazione e aggiornamento dei token dispositivo.
-- [ ] Associare token a utente, dispositivo e ambiente.
-- [ ] Inviare push per task, alert severi e problemi tecnici selezionati.
-- [ ] Usare testi diversi per paziente, caregiver e medico.
-- [ ] Evitare dati clinici sensibili nel testo visibile sulla schermata bloccata.
-- [ ] Gestire token scaduti o non validi.
-- [ ] Registrare esito dell'invio senza salvare il token nei log applicativi.
-- [ ] Preparare una modalita' fake per test senza credenziali Firebase.
+- [x] Creare o configurare il progetto Firebase del sistema.
+- [x] Implementare registrazione e aggiornamento dei token dispositivo.
+- [x] Associare token a utente, dispositivo e ambiente.
+- [x] Inviare push per task, alert severi e problemi tecnici selezionati.
+- [x] Usare testi diversi per paziente, caregiver e medico.
+- [x] Evitare dati clinici sensibili nel testo visibile sulla schermata bloccata.
+- [x] Gestire token scaduti o non validi.
+- [x] Registrare esito dell'invio senza salvare il token nei log applicativi.
+- [x] Preparare una modalita' fake per test senza credenziali Firebase.
 
 ### D11. Stato sistema e integrazione Google Health
 

@@ -21,6 +21,7 @@ from app.db.models import (
 from app.mqtt.events import InternalEvent, event_bus
 from app.mqtt.schemas import EdgeMqttPayload, decode_payload
 from app.mqtt.topics import ParsedTopic, parse_topic
+from app.services.push_notifications import notify_alert_created
 
 ALERT_LEVELS_FROM_DECISION = {"orange", "red"}
 ALERT_SPAM_WINDOW_MINUTES = 30
@@ -188,22 +189,23 @@ def create_alert_from_decision_if_needed(db: Session, decision: Decision) -> Non
     if has_similar_open_alert(db, decision.patient_id, decision.level, category, source, decision.timestamp):
         return
 
-    db.add(
-        Alert(
-            message_id=message_id,
-            patient_id=decision.patient_id,
-            decision_id=decision.id,
-            level=level,
-            status="new",
-            category=category,
-            source=source,
-            clinical_severity=decision.level if category in {"clinical", "behavioral"} else None,
-            technical_severity=decision.level if category == "technical" else None,
-            title=alert_title_from_decision(decision),
-            description=alert_description_from_decision(decision),
-            opened_at=decision.timestamp,
-        )
+    alert = Alert(
+        message_id=message_id,
+        patient_id=decision.patient_id,
+        decision_id=decision.id,
+        level=level,
+        status="new",
+        category=category,
+        source=source,
+        clinical_severity=decision.level if category in {"clinical", "behavioral"} else None,
+        technical_severity=decision.level if category == "technical" else None,
+        title=alert_title_from_decision(decision),
+        description=alert_description_from_decision(decision),
+        opened_at=decision.timestamp,
     )
+    db.add(alert)
+    db.flush()
+    notify_alert_created(db, alert)
 
 
 def alert_message_id_from_decision(decision_message_id: str) -> str:
@@ -276,21 +278,22 @@ def alert_description_from_decision(decision: Decision) -> str:
 def store_alert(db: Session, payload: EdgeMqttPayload) -> None:
     level = str(payload.payload.get("level") or payload.model_extra.get("level") or "red")
     category = str(payload.payload.get("category") or "behavioral")
-    db.add(
-        Alert(
-            message_id=payload.message_id,
-            patient_id=payload.patient_id,
-            level=level,
-            status=str(payload.payload.get("status") or "new"),
-            category=category,
-            source=str(payload.payload.get("source") or "edge"),
-            clinical_severity=payload.payload.get("clinical_severity") or (level if category in {"clinical", "behavioral"} else None),
-            technical_severity=payload.payload.get("technical_severity") or (level if category == "technical" else None),
-            title=str(payload.payload.get("title") or "Edge alert"),
-            description=optional_str(payload.payload.get("description")),
-            opened_at=parse_optional_datetime(payload.payload.get("opened_at")) or payload.timestamp,
-        )
+    alert = Alert(
+        message_id=payload.message_id,
+        patient_id=payload.patient_id,
+        level=level,
+        status=str(payload.payload.get("status") or "new"),
+        category=category,
+        source=str(payload.payload.get("source") or "edge"),
+        clinical_severity=payload.payload.get("clinical_severity") or (level if category in {"clinical", "behavioral"} else None),
+        technical_severity=payload.payload.get("technical_severity") or (level if category == "technical" else None),
+        title=str(payload.payload.get("title") or "Edge alert"),
+        description=optional_str(payload.payload.get("description")),
+        opened_at=parse_optional_datetime(payload.payload.get("opened_at")) or payload.timestamp,
     )
+    db.add(alert)
+    db.flush()
+    notify_alert_created(db, alert)
 
 
 def store_sensor_status(db: Session, topic: ParsedTopic, payload: EdgeMqttPayload) -> None:

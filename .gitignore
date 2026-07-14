@@ -48,6 +48,7 @@ Applicazione IoT Companion/companion_iOS_app/**/build/
 Applicazione IoT Companion/companion_iOS_app/**/DerivedData/
 Applicazione IoT Companion/companion_iOS_app/**/*.xcuserdata/
 Applicazione IoT Companion/companion_iOS_app/**/*.xcuserstate
+Applicazione IoT Companion/companion_iOS_app/GoogleService-Info.plist
 *.joblib
 *.pkl
 *.sqlite
@@ -75,6 +76,9 @@ cloud/mqtt/log/*
 !cloud/mqtt/log/.gitkeep
 cloud/backups/*
 !cloud/backups/.gitkeep
+cloud/firebase/*
+!cloud/firebase/.gitkeep
+*service-account*.json
 
 # Dataset generati localmente per addestramento/calibrazione.
 # Si rigenerano quando servono e non devono appesantire GitHub.
