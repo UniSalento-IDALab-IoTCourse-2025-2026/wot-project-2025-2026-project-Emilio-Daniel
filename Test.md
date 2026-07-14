@@ -1787,6 +1787,12 @@ Le credenziali di accesso del medico demo sono:
 Le credenziali di accesso del paziente demo sono:
  - paziente.demo@localhost.invalid
  - provaprova
+
+Receiver
+http://IP_PC:8000/ble/sample
+
+Backend clinico
+http://IP_PC:8080/api/v1
 ```
 
 ### Test automatici rapidi

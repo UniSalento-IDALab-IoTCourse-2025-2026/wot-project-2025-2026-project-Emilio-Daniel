@@ -269,6 +269,34 @@ Se Android Studio propone di aggiornare Android Gradle Plugin o Gradle, si puo' 
 
 ## Come creare un APK installabile
 
+Il progetto forza Gradle a usare il Java incluso in Android Studio:
+
+```text
+C:/Program Files/Android/Android Studio/jbr
+```
+
+Questo evita l'errore `IllegalArgumentException: 25.0.1`, causato quando il
+terminale usa Java 25 invece del JBR compatibile con Android Gradle Plugin.
+
+Da terminale Windows, il modo piu' semplice e':
+
+```powershell
+cd "Applicazione IoT Companion\companion_Android_app"
+.\CreaAPK.ps1
+```
+
+Lo script produce:
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+Per provare manualmente Gradle:
+
+```powershell
+.\gradlew.bat :app:assembleDebug
+```
+
 Da Android Studio:
 
 1. `Build -> Build Bundle(s) / APK(s) -> Build APK(s)`.
