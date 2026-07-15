@@ -1,6 +1,7 @@
-import {
+﻿import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   ArrowDownUp,
   Bell,
   BrainCircuit,
@@ -32,6 +33,7 @@ import {
   Send,
   Server,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   UserRound,
   UserRoundCheck,
@@ -51,11 +53,17 @@ import { aiScoreBand, formatDateTime, isStale, levelLabel, scoreText } from "./u
 const tabs = [
   { id: "patient", label: "Quadro clinico", shortLabel: "Paziente", icon: HeartPulse },
   { id: "alerts", label: "Segnalazioni", shortLabel: "Alert", icon: AlertTriangle },
-  { id: "tasks", label: "Attività", shortLabel: "Task", icon: ClipboardList },
+  { id: "tasks", label: "Attivita", shortLabel: "Task", icon: ClipboardList },
   { id: "system", label: "Stato sistema", shortLabel: "Sistema", icon: MonitorCog },
 ];
 
 const PATIENT_PROFILE_STORAGE_KEY = "iot_dashboard_patient_profiles_v1";
+
+const priorityOptions = [
+  { value: "normal", label: "Ordinaria" },
+  { value: "high", label: "Alta" },
+  { value: "urgent", label: "Urgente" },
+];
 
 const taskTemplates = {
   wellbeing: {
@@ -390,10 +398,6 @@ function Login({ onLogin }) {
               {loading ? "Verifica in corso" : "Entra nella dashboard"}
             </button>
           </form>
-          <div className="login-footer">
-            <span className="environment-dot" aria-hidden="true" />
-            <span><strong>Sistema disponibile</strong> · Ambiente {config.dataSource === "real" ? "operativo" : "dimostrativo"}</span>
-          </div>
         </div>
       </section>
     </main>
@@ -414,22 +418,25 @@ function Dashboard({ session, onLogout }) {
   const [clearAllError, setClearAllError] = useState("");
   const [clearAllBusy, setClearAllBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [state, setState] = useState({ loading: true, error: "", data: null });
+  const [profileVersion, setProfileVersion] = useState(0);
+  const [patientListState, setPatientListState] = useState({ loading: true, error: "" });
+  const [state, setState] = useState({ loading: false, error: "", data: null });
   const [wsStatus, setWsStatus] = useState("idle");
   const [events, setEvents] = useState([]);
 
-  async function loadPatients() {
-    setState((previous) => ({ ...previous, loading: true, error: "" }));
+  async function loadPatients(options = {}) {
+    const background = options.background === true || patients.length > 0;
+    setPatientListState((previous) => ({
+      loading: background ? previous.loading : true,
+      error: "",
+    }));
     try {
       const payload = await api.patients(session);
       const items = payload.items ?? [];
       setPatients(items);
-      if (!selectedPatientId && items[0]) {
-        const first = [...items].sort((a, b) => severityRank(b.level) - severityRank(a.level))[0];
-        setSelectedPatientId(first.patient_id);
-      }
+      setPatientListState({ loading: false, error: "" });
     } catch (error) {
-      setState({ loading: false, error: readableApiError(error), data: null });
+      setPatientListState({ loading: false, error: readableApiError(error) });
     }
   }
 
@@ -518,20 +525,31 @@ function Dashboard({ session, onLogout }) {
     () => {
       const normalizedSearch = patientSearch.trim().toLocaleLowerCase("it");
       const filtered = filterPatients(patients, patientFilter).filter((patient) => (
-        !normalizedSearch || patient.display_name?.toLocaleLowerCase("it").includes(normalizedSearch)
+        !normalizedSearch || patientDisplayName(patient).toLocaleLowerCase("it").includes(normalizedSearch)
       ));
       return sortPatients(filtered, patientSort);
     },
-    [patients, patientFilter, patientSearch, patientSort]
+    [patients, patientFilter, patientSearch, patientSort, profileVersion]
   );
 
   const activeView = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
   const activeAlertCount = state.data?.alerts?.filter((alert) => alert.status !== "resolved").length ?? 0;
   const activeTaskCount = state.data?.tasks?.filter((task) => !["completed", "cancelled"].includes(task.status)).length ?? 0;
   const userLabel = session?.user?.display_name ?? session?.user?.email ?? "Medico";
+  const selectedPatientName = patientDisplayName(selectedPatient, selectedPatientId);
 
   function selectPatient(patientId) {
     setSelectedPatientId(patientId);
+    setActiveTab("patient");
+    setSidebarOpen(false);
+  }
+
+  function returnToPatientDirectory() {
+    setSelectedPatientId(null);
+    setActiveTab("patient");
+    setEvents([]);
+    setWsStatus("idle");
+    setState({ loading: false, error: "", data: null });
     setSidebarOpen(false);
   }
 
@@ -576,6 +594,27 @@ function Dashboard({ session, onLogout }) {
     } finally {
       setClearAllBusy(false);
     }
+  }
+
+  if (!selectedPatientId) {
+    return (
+      <PatientDirectory
+        patients={patients}
+        visiblePatients={visiblePatients}
+        loading={patientListState.loading}
+        error={patientListState.error}
+        userLabel={userLabel}
+        patientSearch={patientSearch}
+        patientSort={patientSort}
+        patientFilter={patientFilter}
+        onSearchChange={setPatientSearch}
+        onSortChange={setPatientSort}
+        onFilterChange={setPatientFilter}
+        onSelectPatient={selectPatient}
+        onRefresh={() => loadPatients({ background: true })}
+        onLogout={onLogout}
+      />
+    );
   }
 
   return (
@@ -623,65 +662,25 @@ function Dashboard({ session, onLogout }) {
         </section>
 
         <section className="sidebar-section patients-section">
-          <div className="section-title">
-            <Users size={16} />
-            Pazienti assegnati
-            <span className="section-count">{patients.length}</span>
+          <div className="section-title">Paziente selezionato</div>
+          <div className={`sidebar-selected-patient ${isStale(selectedPatient?.last_update) ? "stale" : ""}`}>
+            <span className={`patient-avatar ${selectedPatient?.level ?? "green"}`}>{patientInitials(selectedPatientName)}</span>
+            <span className="patient-button-copy">
+              <strong>{selectedPatientName}</strong>
+              <small className="patient-meta-line">
+                <Home size={13} />
+                {roomLabel(selectedPatient?.current_room)}
+              </small>
+              <small className="patient-meta-line">
+                <span className={`signal-chip ${signalKind(selectedPatient)}`}>{signalLabel(selectedPatient)}</span>
+                {isStale(selectedPatient?.last_update) && <span className="stale-chip">obsoleto</span>}
+              </small>
+            </span>
           </div>
-          <label className="patient-search">
-            <Search size={16} />
-            <input
-              value={patientSearch}
-              onChange={(event) => setPatientSearch(event.target.value)}
-              placeholder="Cerca paziente"
-              aria-label="Cerca paziente"
-            />
-            {patientSearch && (
-              <button type="button" onClick={() => setPatientSearch("")} aria-label="Cancella ricerca"><X size={15} /></button>
-            )}
-          </label>
-          <PatientListControls
-            sortMode={patientSort}
-            filterMode={patientFilter}
-            onSortChange={setPatientSort}
-            onFilterChange={setPatientFilter}
-          />
-          {patients.length === 0 && <p className="empty-text">Nessun paziente assegnato.</p>}
-          {patients.length > 0 && visiblePatients.length === 0 && (
-            <p className="empty-text">Nessun paziente nel filtro scelto.</p>
-          )}
-          <div className="patient-list">
-            {visiblePatients.map((patient) => (
-              <button
-                key={patient.patient_id}
-                className={`patient-button ${patient.patient_id === selectedPatientId ? "active" : ""} ${isStale(patient.last_update) ? "stale" : ""}`}
-                type="button"
-                onClick={() => selectPatient(patient.patient_id)}
-              >
-                <span className={`patient-avatar ${patient.level}`}>{patientInitials(patient.display_name)}</span>
-                <span className="patient-button-copy">
-                  <strong>{patient.display_name}</strong>
-                  <small className="patient-meta-line">
-                    <Home size={13} />
-                    {roomLabel(patient.current_room)}
-                  </small>
-                  <small className="patient-meta-line">
-                    <Watch size={13} />
-                    {patient.watch_present ? "wearable presente" : "wearable non rilevato"}
-                    <Server size={13} />
-                    {patient.edge_online ? "Raspberry online" : "Raspberry offline"}
-                  </small>
-                  <small className="patient-meta-line">
-                    <span className={`signal-chip ${signalKind(patient)}`}>
-                      {signalLabel(patient)}
-                    </span>
-                    {isStale(patient.last_update) && <span className="stale-chip">obsoleto</span>}
-                  </small>
-                </span>
-                <ChevronRight className="patient-chevron" size={16} />
-              </button>
-            ))}
-          </div>
+          <button className="change-patient-button" type="button" onClick={returnToPatientDirectory}>
+            <ArrowLeft size={17} />
+            Cambia paziente
+          </button>
         </section>
 
         <div className="sidebar-user">
@@ -698,7 +697,7 @@ function Dashboard({ session, onLogout }) {
               <Menu size={21} />
             </button>
             <div>
-              <div className="breadcrumb"><span>{selectedPatient?.display_name ?? "Paziente"}</span><ChevronRight size={14} /><strong>{activeView.shortLabel}</strong></div>
+              <div className="breadcrumb"><span>{selectedPatientName}</span><ChevronRight size={14} /><strong>{activeView.shortLabel}</strong></div>
               <h2>{activeView.label}</h2>
             </div>
           </div>
@@ -726,15 +725,18 @@ function Dashboard({ session, onLogout }) {
         {!state.loading && !state.error && !state.data && <EmptyState />}
         {!state.loading && !state.error && state.data && (
           <div className="workspace-content">
-            <OverviewStrip patients={patients} selectedPatientId={selectedPatientId} />
             <div className="view-stage" key={`${activeTab}-${selectedPatientId}`}>
-              {activeTab === "patient" && <PatientView data={state.data} onClearPatientData={clearCurrentPatientView} />}
+              {activeTab === "patient" && <PatientView data={state.data} patient={selectedPatient} onClearPatientData={clearCurrentPatientView} />}
               {activeTab === "alerts" && (
                 <AlertsView
                   data={state.data}
                   session={session}
                   patientId={selectedPatientId}
                   onChanged={() => loadPatientData(selectedPatientId, { background: true })}
+                  onTaskCreated={async () => {
+                    await loadPatientData(selectedPatientId, { background: true });
+                    setActiveTab("tasks");
+                  }}
                 />
               )}
               {activeTab === "tasks" && <TasksView data={state.data} session={session} patientId={selectedPatientId} onChanged={() => loadPatientData(selectedPatientId, { background: true })} />}
@@ -748,6 +750,7 @@ function Dashboard({ session, onLogout }) {
         onClose={() => setPatientIdentityOpen(false)}
         patient={selectedPatient}
         current={state.data?.current}
+        onSaved={() => setProfileVersion((version) => version + 1)}
       />
       <ActionDialog
         open={clearAllOpen}
@@ -804,6 +807,139 @@ function ErrorState({ message, onRetry }) {
 
 function EmptyState() {
   return <div className="state-card empty-state"><span className="state-icon"><Info size={22} /></span><div><strong>Nessun dato disponibile</strong><p>Il quadro si popolera alla ricezione della prima finestra Edge.</p></div></div>;
+}
+
+function PatientDirectory({
+  patients,
+  visiblePatients,
+  loading,
+  error,
+  userLabel,
+  patientSearch,
+  patientSort,
+  patientFilter,
+  onSearchChange,
+  onSortChange,
+  onFilterChange,
+  onSelectPatient,
+  onRefresh,
+  onLogout,
+}) {
+  const counts = patients.reduce(
+    (accumulator, patient) => {
+      accumulator.total += 1;
+      if (["red", "orange"].includes(patient.level)) accumulator.priority += 1;
+      if (signalKind(patient) === "technical") accumulator.technical += 1;
+      if (isStale(patient.last_update)) accumulator.stale += 1;
+      return accumulator;
+    },
+    { total: 0, priority: 0, technical: 0, stale: 0 }
+  );
+
+  return (
+    <main className="patient-directory-shell">
+      <header className="directory-topbar">
+        <div className="directory-brand">
+          <AppLogoMark />
+          <div>
+            <p className="eyebrow">Console clinica</p>
+            <h1>Triage IoT</h1>
+          </div>
+        </div>
+        <div className="directory-user">
+          <span className="user-avatar"><UserRound size={18} /></span>
+          <span><strong>{userLabel}</strong><small>Medico</small></span>
+          <button className="icon-button" type="button" onClick={onRefresh} title="Aggiorna pazienti" aria-label="Aggiorna pazienti">
+            <RefreshCcw className={loading ? "spin" : ""} size={18} />
+          </button>
+          <button className="secondary-button" type="button" onClick={onLogout}><LogOut size={17} /> Esci</button>
+        </div>
+      </header>
+
+      <section className="patient-directory-hero">
+        <div>
+          <span className="directory-kicker"><Users size={17} /> Pazienti assegnati</span>
+          <h2>Scegli il paziente da monitorare</h2>
+          <p>Ordina per urgenza clinica o ultimo aggiornamento, poi entra nel profilo per quadro clinico, segnalazioni, attivita e stato sistema.</p>
+        </div>
+        <div className="directory-metrics" aria-label="Sintesi pazienti assegnati">
+          <OverviewMetric icon={<Users size={17} />} label="Monitorati" value={counts.total} />
+          <OverviewMetric icon={<AlertTriangle size={17} />} label="Prioritari" value={counts.priority} tone={counts.priority ? "orange" : "green"} />
+          <OverviewMetric icon={<MonitorCog size={17} />} label="Tecnici" value={counts.technical} tone={counts.technical ? "technical" : "green"} />
+          <OverviewMetric icon={<Clock3 size={17} />} label="Obsoleti" value={counts.stale} tone={counts.stale ? "yellow" : "green"} />
+        </div>
+      </section>
+
+      <section className="patient-directory-panel">
+        <div className="directory-toolbar">
+          <label className="patient-search directory-search">
+            <Search size={16} />
+            <input
+              value={patientSearch}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Cerca per nome paziente"
+              aria-label="Cerca paziente"
+            />
+            {patientSearch && (
+              <button type="button" onClick={() => onSearchChange("")} aria-label="Cancella ricerca"><X size={15} /></button>
+            )}
+          </label>
+          <PatientListControls
+            sortMode={patientSort}
+            filterMode={patientFilter}
+            onSortChange={onSortChange}
+            onFilterChange={onFilterChange}
+          />
+        </div>
+
+        {loading && patients.length === 0 && <LoadingState />}
+        {!loading && error && patients.length === 0 && <ErrorState message={error} onRetry={onRefresh} />}
+        {!loading && !error && patients.length === 0 && (
+          <div className="state-card empty-state"><span className="state-icon"><Info size={22} /></span><div><strong>Nessun paziente assegnato</strong><p>Quando il backend associa i pazienti al medico, compariranno in questa pagina.</p></div></div>
+        )}
+        {error && patients.length > 0 && (
+          <div className="directory-inline-warning"><AlertTriangle size={16} /> Lista non aggiornata: {error}</div>
+        )}
+        {!loading && patients.length > 0 && visiblePatients.length === 0 && (
+          <div className="state-card empty-state"><span className="state-icon"><Search size={22} /></span><div><strong>Nessun risultato</strong><p>Prova a cambiare ricerca o filtro.</p></div></div>
+        )}
+        {visiblePatients.length > 0 && (
+          <div className="directory-patient-grid">
+            {visiblePatients.map((patient) => {
+              const displayName = patientDisplayName(patient);
+              return (
+                <button
+                  key={patient.patient_id}
+                  className={`directory-patient-card ${patient.level ?? "green"} ${isStale(patient.last_update) ? "stale" : ""}`}
+                  type="button"
+                  onClick={() => onSelectPatient(patient.patient_id)}
+                >
+                  <span className={`patient-avatar ${patient.level ?? "green"}`}>{patientInitials(displayName)}</span>
+                  <span className="directory-card-main">
+                    <span className="directory-card-header">
+                      <strong>{displayName}</strong>
+                      <span className={`signal-chip ${signalKind(patient)}`}>{signalLabel(patient)}</span>
+                    </span>
+                    <span className="directory-card-details">
+                      <span><MapPin size={14} /> {roomLabel(patient.current_room)}</span>
+                      <span><Watch size={14} /> {patient.watch_present ? "wearable presente" : "wearable n/d"}</span>
+                      <span><Server size={14} /> {patient.edge_online ? "Raspberry online" : "Raspberry offline"}</span>
+                    </span>
+                    <span className="directory-card-footer">
+                      <span>Score {scoreText(patient.anomaly_score)}</span>
+                      <span>Update {formatDateTime(patient.last_update)}</span>
+                      {isStale(patient.last_update) && <span className="stale-chip">obsoleto</span>}
+                    </span>
+                  </span>
+                  <ChevronRight className="patient-chevron" size={18} />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </main>
+  );
 }
 
 function PatientListControls({ sortMode, filterMode, onSortChange, onFilterChange }) {
@@ -865,6 +1001,7 @@ function OverviewStrip({ patients, selectedPatientId }) {
     }
   );
   const selected = patients.find((patient) => patient.patient_id === selectedPatientId);
+  const selectedName = patientDisplayName(selected);
 
   return (
     <section className="overview-strip" aria-label="Overview pazienti">
@@ -873,9 +1010,9 @@ function OverviewStrip({ patients, selectedPatientId }) {
       <OverviewMetric icon={<MonitorCog size={17} />} label="Tecnici" value={counts.technicalSignals} tone="technical" />
       <OverviewMetric icon={<Clock3 size={17} />} label="Obsoleti" value={counts.stale} tone={counts.stale ? "yellow" : "green"} />
       <div className="selected-summary">
-        <span className={`selected-patient-avatar ${selected?.level ?? "green"}`}>{patientInitials(selected?.display_name)}</span>
+        <span className={`selected-patient-avatar ${selected?.level ?? "green"}`}>{patientInitials(selectedName)}</span>
         <div>
-          <strong>{selected?.display_name ?? "Nessun paziente selezionato"}</strong>
+          <strong>{selected ? selectedName : "Nessun paziente selezionato"}</strong>
           <small>{selected ? `${levelLabel(selected.level)} - ${signalLabel(selected)}` : "Seleziona dalla lista"}</small>
         </div>
       </div>
@@ -895,6 +1032,7 @@ function OverviewMetric({ icon, label, value, tone }) {
 function SortableHeader({ label, sortKey, sort, onSort }) {
   const active = sort.key === sortKey;
   const indicator = active ? (sort.direction === "asc" ? "ASC" : "DESC") : "--";
+  const indicatorLabel = active ? (sort.direction === "asc" ? "ordine crescente" : "ordine decrescente") : "ordinabile";
   return (
     <th>
       <button
@@ -904,19 +1042,70 @@ function SortableHeader({ label, sortKey, sort, onSort }) {
         title={`Ordina per ${label}`}
       >
         <span>{label}</span>
-        <span aria-hidden="true">{indicator}</span>
+        <span aria-label={indicatorLabel}>{indicator}</span>
       </button>
     </th>
   );
 }
 
-function PatientView({ data, onClearPatientData }) {
+function PrettySelect({ label, value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+  const selected = options.find((option) => option.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!wrapperRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [open]);
+
+  return (
+    <label className="pretty-select-field" ref={wrapperRef}>
+      {label}
+      <button
+        className={`pretty-select-button ${open ? "open" : ""}`}
+        type="button"
+        onClick={() => setOpen((previous) => !previous)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span>{selected?.label ?? "Seleziona"}</span>
+        <ChevronDown size={17} />
+      </button>
+      {open && (
+        <div className="pretty-select-menu" role="listbox">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              className={option.value === value ? "active" : ""}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
+function PatientView({ data, patient, onClearPatientData }) {
   const { current, windows, decisions } = data;
   const stale = isStale(current.last_update);
   const latestDecision = decisions.at(-1);
   const [rangeMode, setRangeMode] = useState("day");
   const [recentWindowsHidden, setRecentWindowsHidden] = useState(false);
   const [chartsHidden, setChartsHidden] = useState(false);
+  const [windowFiltersOpen, setWindowFiltersOpen] = useState(false);
   const [expandedChart, setExpandedChart] = useState(null);
   const [recentSort, setRecentSort] = useState({ key: "window_end", direction: "desc" });
   const [windowInterval, setWindowInterval] = useState({ date: "", from: "", to: "" });
@@ -941,24 +1130,7 @@ function PatientView({ data, onClearPatientData }) {
 
   return (
     <div className="content-grid">
-      <section className={`panel span-2 current-overview ${current.level ?? "green"}`}>
-        <div className="panel-heading">
-          <div className="section-heading-group">
-            <span className="section-heading-icon"><HeartPulse size={20} /></span>
-            <div>
-              <h3>Stato corrente</h3>
-              <p className="panel-subtitle">Ultima valutazione consolidata dai flussi disponibili.</p>
-            </div>
-          </div>
-          {stale && <span className="badge warning">Dati obsoleti</span>}
-        </div>
-        <div className="metric-row">
-          <Metric icon={<Gauge size={18} />} label="Priorita di revisione" value={aiScoreBand(current.anomaly_score).label} tone={aiScoreBand(current.anomaly_score).key} />
-          <Metric icon={<BrainCircuit size={18} />} label="Indice AI" value={scoreBandText(current.anomaly_score)} tone={aiScoreBand(current.anomaly_score).key} />
-          <Metric icon={<MapPin size={18} />} label="Posizione rilevata" value={roomLabel(current.current_room)} />
-          <Metric icon={<Clock3 size={18} />} label="Ultimo aggiornamento" value={formatDateTime(current.last_update)} />
-        </div>
-      </section>
+      <PatientClinicalHero current={current} patient={patient} stale={stale} />
 
       <section className="panel span-2">
         <AiExplanationPanel decision={latestDecision} system={data.system} current={current} />
@@ -978,7 +1150,7 @@ function PatientView({ data, onClearPatientData }) {
             <h3>Dati wearable e spaziali</h3>
             <p className="panel-subtitle">Finestra visualizzata: {rangeLabel(rangeMode)}. I valori mancanti restano non acquisiti.</p>
           </div>
-          <div className="segmented-control range-control" aria-label="Intervallo dati">
+          <div className={`segmented-control range-control ${rangeMode}`} aria-label="Intervallo dati">
             <button
               className={rangeMode === "day" ? "active" : ""}
               type="button"
@@ -994,18 +1166,21 @@ function PatientView({ data, onClearPatientData }) {
               Settimana
             </button>
           </div>
-        </div>
-        <div className="panel-toolbar-inline">
-          <button className="secondary-button" type="button" onClick={() => setChartsHidden((previous) => !previous)}>
-            <Trash2 size={16} />
-            {chartsHidden ? "Ripristina grafici" : "Pulisci grafici"}
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setChartsHidden((previous) => !previous)}
+            title={chartsHidden ? "Mostra grafici" : "Nascondi grafici"}
+            aria-label={chartsHidden ? "Mostra grafici" : "Nascondi grafici"}
+          >
+            {chartsHidden ? <Eye size={18} /> : <EyeOff size={18} />}
           </button>
         </div>
         {chartsHidden ? (
           <ViewEmptyState
-            icon={<Trash2 size={24} />}
-            title="Grafici puliti"
-            text="La vista dei grafici e' stata svuotata in questa sessione. I dati originali restano disponibili sul backend."
+            icon={<EyeOff size={24} />}
+            title="Grafici nascosti"
+            text="La vista dei grafici e' nascosta in questa sessione. I dati originali restano disponibili sul backend."
           />
         ) : (
           <WearableSpatialDashboard windows={chartWindows} current={current} onExpandChart={setExpandedChart} />
@@ -1024,19 +1199,32 @@ function PatientView({ data, onClearPatientData }) {
           <div className="panel-actions">
             <span className="badge">{recentWindowsHidden ? "vista pulita" : `${windows.length} finestre`}</span>
             <button
-              className="text-button"
+              className="icon-button"
               type="button"
               onClick={() => setRecentWindowsHidden((previous) => !previous)}
+              title={recentWindowsHidden ? "Mostra tabella" : "Nascondi tabella"}
+              aria-label={recentWindowsHidden ? "Mostra tabella" : "Nascondi tabella"}
             >
-              {recentWindowsHidden ? "Mostra dati" : "Pulisci vista"}
+              {recentWindowsHidden ? <Eye size={18} /> : <EyeOff size={18} />}
+            </button>
+            <button
+              className={`icon-button ${windowFiltersOpen || hasWindowInterval(windowInterval) ? "active" : ""}`}
+              type="button"
+              onClick={() => setWindowFiltersOpen((previous) => !previous)}
+              title={windowFiltersOpen ? "Nascondi filtri" : "Mostra filtri"}
+              aria-label={windowFiltersOpen ? "Nascondi filtri" : "Mostra filtri"}
+            >
+              <SlidersHorizontal size={18} />
             </button>
           </div>
         </div>
-        <WindowIntervalFilters
-          value={windowInterval}
-          onChange={setWindowInterval}
-          onClear={() => setWindowInterval({ date: "", from: "", to: "" })}
-        />
+        {windowFiltersOpen && (
+          <WindowIntervalFilters
+            value={windowInterval}
+            onChange={setWindowInterval}
+            onClear={() => setWindowInterval({ date: "", from: "", to: "" })}
+          />
+        )}
         {recentWindowsHidden ? (
           <ViewEmptyState
             icon={<CalendarClock size={24} />}
@@ -1075,7 +1263,50 @@ function PatientView({ data, onClearPatientData }) {
   );
 }
 
-function PatientIdentityDialog({ open, onClose, patient, current }) {
+function PatientClinicalHero({ current, patient, stale }) {
+  const band = aiScoreBand(current.anomaly_score);
+  const level = current.level ?? band.key ?? "green";
+  const wearablePresent = current.wearable_present ?? current.watch_present;
+  const edgeOnline = current.edge_online;
+  const displayName = patientDisplayName(patient, current.patient_id);
+
+  return (
+    <section className={`panel span-2 patient-clinical-hero ${level}`}>
+      <div className="patient-clinical-main">
+        <div className="patient-clinical-title">
+          <span className={`selected-patient-avatar ${level}`}>{patientInitials(displayName)}</span>
+          <div>
+            <span className="clinical-kicker">Profilo paziente</span>
+            <h3>{displayName}</h3>
+            <p>Quadro consolidato dell'ultima finestra Edge disponibile.</p>
+          </div>
+        </div>
+        <div className="patient-clinical-score">
+          <span className={`clinical-level-badge ${level}`}>{levelLabel(level)}</span>
+          <strong>{scoreBandText(current.anomaly_score)}</strong>
+          <small>Indice AI</small>
+        </div>
+      </div>
+
+      <div className="patient-clinical-grid" aria-label="Sintesi stato paziente">
+        <Metric icon={<Gauge size={18} />} label="Priorita" value={band.label} tone={band.key} />
+        <Metric icon={<MapPin size={18} />} label="Stanza" value={roomLabel(current.current_room)} />
+        <Metric icon={<Clock3 size={18} />} label="Ultimo aggiornamento" value={formatDateTime(current.last_update)} tone={stale ? "yellow" : "green"} />
+        <Metric icon={<Watch size={18} />} label="Wearable" value={wearablePresent === false ? "Non rilevato" : wearablePresent === true ? "Presente" : "Non disponibile"} tone={wearablePresent === false ? "technical" : "green"} />
+        <Metric icon={<Server size={18} />} label="Raspberry" value={edgeOnline === false ? "Offline" : edgeOnline === true ? "Online" : "Non disponibile"} tone={edgeOnline === false ? "technical" : "green"} />
+      </div>
+
+      {stale && (
+        <div className="patient-clinical-warning">
+          <AlertTriangle size={17} />
+          <span>Dati obsoleti: verificare l'ultimo ciclo Edge prima di prendere decisioni operative.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PatientIdentityDialog({ open, onClose, patient, current, onSaved }) {
   const patientId = current?.patient_id ?? patient?.patient_id ?? "patient";
   const [profile, setProfile] = useState(() => loadPatientProfile(patientId, patient));
   const [savedMessage, setSavedMessage] = useState("");
@@ -1105,6 +1336,7 @@ function PatientIdentityDialog({ open, onClose, patient, current }) {
   function saveProfile() {
     savePatientProfile(patientId, profile);
     setSavedMessage("Scheda anagrafica salvata su questo dispositivo.");
+    onSaved?.();
   }
 
   if (!open) return null;
@@ -1116,8 +1348,8 @@ function PatientIdentityDialog({ open, onClose, patient, current }) {
           <span className="patient-identity-icon"><UserRound size={21} /></span>
           <div>
             <span className="clinical-kicker">Dati identificativi</span>
-            <h3 id="patient-identity-title">Scheda anagrafica paziente</h3>
-            <p>{displayName} · ID clinico: {patientId}</p>
+            <h3 id="patient-identity-title">{displayName}</h3>
+            <p>ID clinico: {patientId}</p>
           </div>
           <button className="dialog-close" type="button" onClick={onClose} aria-label="Chiudi">
             <X size={19} />
@@ -1126,8 +1358,8 @@ function PatientIdentityDialog({ open, onClose, patient, current }) {
 
         <div className="patient-identity-dialog-body">
           <div className="patient-identity-dialog-summary">
-            <strong>{filledCount}/10 dati compilati</strong>
-            <span>I dati restano locali nel browser della dashboard.</span>
+            <span>Completamento scheda</span>
+            <strong>{filledCount}/10</strong>
           </div>
           <div className="patient-identity-grid">
             <label>
@@ -1228,7 +1460,7 @@ function PatientIdentityPanel({ patient, current }) {
           </p>
         </div>
         <div className="patient-identity-actions">
-          <span>{filledCount}/10 dati compilati</span>
+          <span>{filledCount}/10</span>
           <button className="secondary-button" type="button" onClick={() => setVisible((previous) => !previous)}>
             {visible ? <EyeOff size={16} /> : <Eye size={16} />}
             {visible ? "Nascondi dati" : hasProfileData ? "Mostra dati" : "Compila scheda"}
@@ -1265,7 +1497,7 @@ function PatientIdentityPanel({ patient, current }) {
             </label>
             <label className="span-2">
               Indirizzo
-              <input value={profile.address} onChange={(event) => updateProfile("address", event.target.value)} placeholder="Via, numero civico, città" />
+              <input value={profile.address} onChange={(event) => updateProfile("address", event.target.value)} placeholder="Via, numero civico, citta" />
             </label>
             <label>
               Caregiver di riferimento
@@ -1313,9 +1545,9 @@ function WindowIntervalFilters({ value, onChange, onClear }) {
         A
         <input type="time" value={value.to} onChange={(event) => update("to", event.target.value)} />
       </label>
-      <button className="secondary-button" type="button" onClick={onClear} disabled={!hasFilter}>
+      <button className="clear-filter-button" type="button" onClick={onClear} disabled={!hasFilter}>
         <X size={16} />
-        Pulisci filtro
+        Azzera
       </button>
     </div>
   );
@@ -1365,13 +1597,6 @@ function AiExplanationPanel({ decision, system, current }) {
             <span><Gauge size={15} /> {activeModels} {activeModels === 1 ? "fonte attiva" : "fonti attive"}</span>
           </div>
         </div>
-        <div className="clinical-safety-note">
-          <ShieldCheck size={19} />
-          <div>
-            <strong>Supporto alla decisione</strong>
-            <span>La valutazione finale resta al medico.</span>
-          </div>
-        </div>
       </section>
 
       <section className="ai-section-block">
@@ -1380,7 +1605,6 @@ function AiExplanationPanel({ decision, system, current }) {
             <h4>Contributo delle fonti</h4>
             <p>Ogni indice misura quanto i dati si discostano dal proprio riferimento.</p>
           </div>
-          {!personalAvailable && <span className="soft-status"><UserRoundCheck size={14} /> Profilo in preparazione</span>}
         </div>
         <div className="model-score-list">
           {models.map((model) => <ModelScoreCard key={model.key} model={model} />)}
@@ -1409,16 +1633,16 @@ function AiExplanationPanel({ decision, system, current }) {
         </section>
       </div>
 
-      <section className="ai-section-block factors-section">
-        <div className="ai-section-heading">
+      <details className="ai-section-block factors-section factors-disclosure">
+        <summary className="ai-section-heading">
           <div>
             <h4>Fattori che hanno inciso maggiormente</h4>
             <p>Indicatori ordinati per distanza dal riferimento utilizzato dal sistema.</p>
           </div>
-          <span className="soft-status"><Info size={14} /> Dati disponibili</span>
-        </div>
+          <ChevronDown size={18} />
+        </summary>
         <ClinicalFactors models={models} />
-      </section>
+      </details>
 
       <section className="decision-rationale">
         <div className="decision-rationale-icon"><CheckCircle2 size={18} /></div>
@@ -1452,7 +1676,7 @@ function ScoreGauge({ score, level }) {
 function AiScoreBandLegend({ score }) {
   const current = aiScoreBand(score);
   const bands = [
-    { key: "normal", label: "Normalità", range: "0-40" },
+    { key: "normal", label: "Routine", range: "0-40" },
     { key: "attention", label: "Attenzione", range: "40-60" },
     { key: "risk", label: "Rischio", range: "60-80" },
     { key: "critical", label: "Massima Allerta", range: "80-100" },
@@ -1823,16 +2047,16 @@ function ChartDialog({ chart, windows, onClose }) {
           </button>
         </div>
         <div className="expanded-chart-panel">
-        <TrendChart
-          windows={dialogWindows}
-          feature={chart.feature}
-          color={chart.color}
-          unit={chart.unit}
-          title={chart.title}
-          expanded
-          large={false}
-          minimal={chart.minimal}
-        />
+          <TrendChart
+            windows={dialogWindows}
+            feature={chart.feature}
+            color={chart.color}
+            unit={chart.unit}
+            title={chart.title}
+            expanded
+            large={false}
+            minimal={chart.minimal}
+          />
         </div>
       </section>
     </div>,
@@ -1865,9 +2089,9 @@ function TrendChart({ windows, feature, color, unit, title, expanded = false, la
     : large
       ? 920
       : 360;
-  const height = expanded ? (minimal ? 430 : 320) : large ? 310 : 154;
+  const height = expanded ? (minimal ? 360 : 255) : large ? 310 : 154;
   const padding = expanded
-    ? { top: minimal ? 36 : 30, right: 40, bottom: 78, left: 84 }
+    ? { top: minimal ? 30 : 24, right: 36, bottom: minimal ? 64 : 54, left: 78 }
     : large
       ? { top: 24, right: 28, bottom: 60, left: 68 }
       : { top: 16, right: 14, bottom: 34, left: 46 };
@@ -2106,10 +2330,6 @@ function TrendChart({ windows, feature, color, unit, title, expanded = false, la
             <span>{feature === "anomaly_score" ? "Finestra di raccolta" : "Istante temporale"}</span>
             <strong>{feature === "anomaly_score" ? `${activePoint.startLabel} - ${activePoint.endLabel}` : activePoint.label}</strong>
           </div>
-          <div>
-            <span>Origine dato</span>
-            <strong>{activePoint.status === "imputed" ? "Dato imputato" : "Dato acquisito"}</strong>
-          </div>
         </div>
       )}
     </div>
@@ -2173,7 +2393,7 @@ function SpatialSummary({ latestFeatures }) {
     <div className="spatial-summary">
       <Metric label="Cambi stanza" value={formatFeatureValue(latestFeatures.room_changes, "")} />
       <Metric label="Cambi notturni" value={formatFeatureValue(latestFeatures.night_room_changes, "")} />
-      <Metric label="Permanenza max" value={formatFeatureValue(latestFeatures.longest_single_room_minutes, "min")} />
+      <Metric label="Permanenza massima" value={formatFeatureValue(latestFeatures.longest_single_room_minutes, "min")} />
     </div>
   );
 }
@@ -2193,7 +2413,7 @@ const modelOrder = [
   {
     key: "generic_wearable",
     label: "Parametri dal wearable",
-    description: "Dati fisiologici, sonno e attività",
+    description: "Dati fisiologici, sonno e attivita",
     icon: Watch,
   },
   {
@@ -2534,6 +2754,12 @@ function patientProfileDisplayName(profile, patient, patientId) {
   return fullName || patient?.display_name || patientId;
 }
 
+function patientDisplayName(patient, fallbackPatientId) {
+  const patientId = patient?.patient_id ?? fallbackPatientId;
+  if (!patientId) return patient?.display_name ?? "Paziente";
+  return patientProfileDisplayName(loadPatientProfile(patientId, patient), patient, patientId);
+}
+
 function formatAxisValue(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "n/d";
@@ -2615,14 +2841,15 @@ function roomLabel(room) {
     bedroom: "Camera",
     bathroom: "Bagno",
     living_room: "Soggiorno",
-    unknown: "Non acquisita",
+    unknown: "Stanza non rilevata",
   }[room ?? "unknown"] ?? room;
 }
 
-function AlertsView({ data, session, patientId, onChanged }) {
+function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
   const [levelFilter, setLevelFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [rangeFilter, setRangeFilter] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [hiddenResolvedAlerts, setHiddenResolvedAlerts] = useState(() => new Set());
   const [notes, setNotes] = useState({});
   const [busy, setBusy] = useState("");
@@ -2703,8 +2930,12 @@ function AlertsView({ data, session, patientId, onChanged }) {
           source_score: alertScore(alert),
         },
       }, session);
-      setSuccess("Attività di follow-up creata per il paziente.");
-      onChanged();
+      setSuccess("Attivita di follow-up creata. Apro la pagina Attivita aggiornata.");
+      if (onTaskCreated) {
+        await onTaskCreated();
+      } else {
+        await onChanged();
+      }
     } catch (apiError) {
       setError(readableApiError(apiError));
     } finally {
@@ -2742,39 +2973,49 @@ function AlertsView({ data, session, patientId, onChanged }) {
         <div className="view-heading-stats">
           <span><strong>{activeAlerts}</strong> attive</span>
           <span><strong>{data.alerts.filter((alert) => alert.status === "resolved").length}</strong> risolte</span>
+          <button
+            className={`icon-button ${filtersOpen || levelFilter !== "all" || statusFilter !== "all" || rangeFilter !== "all" ? "active" : ""}`}
+            type="button"
+            onClick={() => setFiltersOpen((previous) => !previous)}
+            title={filtersOpen ? "Nascondi filtri" : "Mostra filtri"}
+            aria-label={filtersOpen ? "Nascondi filtri" : "Mostra filtri"}
+          >
+            <SlidersHorizontal size={18} />
+          </button>
         </div>
       </div>
-      <div className="filter-toolbar alert-toolbar" aria-label="Filtri alert">
-        <div className="filter-toolbar-title"><ArrowDownUp size={17} /><span>Filtra elenco</span></div>
-        <label>
-          Livello
-          <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
-            <option value="all">Tutti</option>
-            <option value="yellow">Attenzione</option>
-            <option value="orange">Anomalia</option>
-            <option value="red">Priorita alta</option>
-            <option value="technical">Problema tecnico</option>
-          </select>
-        </label>
-        <label>
-          Stato
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="all">Tutti</option>
-            <option value="new">Nuovi</option>
-            <option value="acknowledged">Presi in carico</option>
-            <option value="resolved">Risolti</option>
-          </select>
-        </label>
-        <label>
-          Intervallo
-          <select value={rangeFilter} onChange={(event) => setRangeFilter(event.target.value)}>
-            <option value="all">Tutto</option>
-            <option value="24h">Ultime 24 ore</option>
-            <option value="7d">Ultimi 7 giorni</option>
-          </select>
-        </label>
-        <span className="results-count"><strong>{filteredAlerts.length}</strong> risultati</span>
-      </div>
+      {filtersOpen && (
+        <div className="filter-toolbar alert-toolbar" aria-label="Filtri alert">
+          <label>
+            Livello
+            <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
+              <option value="all">Tutti</option>
+              <option value="yellow">Attenzione</option>
+              <option value="orange">Anomalia</option>
+              <option value="red">Priorita' alta</option>
+              <option value="technical">Problema tecnico</option>
+            </select>
+          </label>
+          <label>
+            Stato
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">Tutti</option>
+              <option value="new">Nuovi</option>
+              <option value="acknowledged">Presi in carico</option>
+              <option value="resolved">Risolti</option>
+            </select>
+          </label>
+          <label>
+            Intervallo
+            <select value={rangeFilter} onChange={(event) => setRangeFilter(event.target.value)}>
+              <option value="all">Tutto</option>
+              <option value="24h">Ultime 24 ore</option>
+              <option value="7d">Ultimi 7 giorni</option>
+            </select>
+          </label>
+          <span className="results-count"><strong>{filteredAlerts.length}</strong> risultati</span>
+        </div>
+      )}
       {error && <p className="inline-feedback error" role="alert"><AlertTriangle size={17} />{error}</p>}
       {success && <p className="inline-feedback success" role="status"><CheckCircle2 size={17} />{success}</p>}
       {data.alerts.length === 0 ? (
@@ -2789,6 +3030,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
             const reasons = alertReasonList(alert);
             const score = alertScore(alert);
             const band = aiScoreBand(score);
+            const resolutionNote = alertResolutionNote(alert);
             return (
             <article key={alert.alert_id} className={`alert-item ${alert.level} ${resolved ? "is-resolved compact-resolved" : ""}`}>
               <div className="alert-content">
@@ -2805,7 +3047,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
                 <div className="alert-data-grid">
                   <div className={`alert-score-card ${band.key}`}>
                     <span>Indice AI</span>
-                    <strong>{scoreBandText(score)}</strong>
+                    <strong>{Number.isFinite(Number(score)) ? scoreText(score) : "n/d"}</strong>
                     <small>{band.label}</small>
                   </div>
                   <div className="alert-data-card">
@@ -2838,7 +3080,13 @@ function AlertsView({ data, session, patientId, onChanged }) {
                     <span><strong>Risoluzione</strong>{alert.resolved_by ?? "Non risolta"}{alert.resolved_at ? `, ${formatDateTime(alert.resolved_at)}` : ""}</span>
                   </span>
                 </div>
-                <small>{formatDateTime(alert.opened_at)} · stato {alert.status}</small>
+                {resolved && resolutionNote && (
+                  <div className="alert-resolution-note">
+                    <strong>Nota medico</strong>
+                    <p>{resolutionNote}</p>
+                  </div>
+                )}
+                <small>{formatDateTime(alert.opened_at)} - stato {alert.status}</small>
               </div>
               {!resolved ? (
                 <div className="alert-actions">
@@ -2856,7 +3104,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
                 </button>
                 <button className="text-button" type="button" disabled={busyForAlert} onClick={() => createAlertTask(alert)}>
                   <ClipboardList size={16} />
-                  Crea attività di follow-up
+                  Crea attivita di follow-up
                 </button>
                 </div>
               ) : (
@@ -2931,6 +3179,7 @@ function TasksView({ data, session, patientId, onChanged }) {
   const [messageComposerOpen, setMessageComposerOpen] = useState(false);
   const [caregiverMessageComposerOpen, setCaregiverMessageComposerOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [taskFiltersOpen, setTaskFiltersOpen] = useState(false);
   const [hideCancelledTasks, setHideCancelledTasks] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [noteDrafts, setNoteDrafts] = useState({});
@@ -2969,7 +3218,7 @@ function TasksView({ data, session, patientId, onChanged }) {
   const completedTasks = data.tasks.filter((task) => task.status === "completed").length;
   const expiredTasks = data.tasks.filter((task) => task.status === "expired").length;
   const cancelledTasks = data.tasks.filter((task) => task.status === "cancelled").length;
-  const selectedTask = visibleTasks.find((task) => task.task_id === selectedTaskId) ?? visibleTasks[0] ?? null;
+  const selectedTask = selectedTaskId ? visibleTasks.find((task) => task.task_id === selectedTaskId) ?? null : null;
   const selectedTemplate = taskTemplates[taskForm.template] ?? taskTemplates.wellbeing;
 
   useEffect(() => {
@@ -3080,9 +3329,9 @@ function TasksView({ data, session, patientId, onChanged }) {
         },
         medical_note: messageForm.note.trim() || null,
       };
-      const created = await api.createTask(patientId, payload, session);
+      await api.createTask(patientId, payload, session);
       setMessageComposerOpen(false);
-      setSelectedTaskId(created.task_id);
+      setSelectedTaskId(null);
       setMessageForm({
         title: "Messaggio dal medico",
         body: "",
@@ -3134,7 +3383,7 @@ function TasksView({ data, session, patientId, onChanged }) {
 
   async function createTask() {
     if (!taskForm.title.trim()) {
-      setError("Inserisci un titolo per l'attività.");
+      setError("Inserisci un titolo per l'attivita.");
       return;
     }
     setBusy("create");
@@ -3153,11 +3402,20 @@ function TasksView({ data, session, patientId, onChanged }) {
         scoring: template.scoring,
         medical_note: taskForm.medicalNote.trim() || null,
       };
-      if (taskForm.expiresAt) payload.expires_at = new Date(taskForm.expiresAt).toISOString();
-      const created = await api.createTask(patientId, payload, session);
+      if (taskForm.expiresAt.trim()) {
+        const normalizedDate = taskForm.expiresAt.trim().replace(" ", "T");
+        const parsedDate = new Date(normalizedDate);
+        if (Number.isNaN(parsedDate.getTime())) {
+          setError("Inserisci la scadenza nel formato AAAA-MM-GG HH:MM, oppure lasciala vuota.");
+          setBusy("");
+          return;
+        }
+        payload.expires_at = parsedDate.toISOString();
+      }
+      await api.createTask(patientId, payload, session);
       setComposerOpen(false);
-      setSelectedTaskId(created.task_id);
-      setSuccess("Attività inviata correttamente al paziente.");
+      setSelectedTaskId(null);
+      setSuccess("Attivita inviata correttamente al paziente.");
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -3226,22 +3484,22 @@ function TasksView({ data, session, patientId, onChanged }) {
         <div className="view-heading-copy">
           <span className="view-heading-icon task"><ClipboardList size={22} /></span>
           <div>
-            <h3>Attività per il paziente</h3>
+            <h3>Attivita per il paziente</h3>
             <p>Check-in e follow-up inviati all'applicazione companion.</p>
           </div>
         </div>
         <div className="view-heading-actions">
-        <button className="secondary-button" type="button" onClick={() => setCaregiverMessageComposerOpen(true)} disabled={Boolean(busy)}>
+        <button className="secondary-button compact-action" type="button" onClick={() => setCaregiverMessageComposerOpen(true)} disabled={Boolean(busy)}>
           <MessageSquare size={17} />
-          Messaggio caregiver
+          Caregiver
         </button>
-        <button className="secondary-button" type="button" onClick={() => setMessageComposerOpen(true)} disabled={Boolean(busy)}>
+        <button className="secondary-button compact-action" type="button" onClick={() => setMessageComposerOpen(true)} disabled={Boolean(busy)}>
           <MessageSquare size={17} />
-          Messaggio paziente
+          Paziente
         </button>
-        <button className="primary-button" type="button" onClick={() => setComposerOpen(true)} disabled={Boolean(busy)}>
+        <button className="primary-button compact-action" type="button" onClick={() => setComposerOpen(true)} disabled={Boolean(busy)}>
           <Plus size={17} />
-          Nuova attività
+          Nuova
         </button>
         </div>
       </div>
@@ -3251,34 +3509,49 @@ function TasksView({ data, session, patientId, onChanged }) {
         <div><span>Completate</span><strong>{completedTasks}</strong></div>
         <div><span>Scadute</span><strong>{expiredTasks}</strong></div>
         <div><span>Annullate</span><strong>{cancelledTasks}</strong></div>
-        <label>
-          Stato
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="all">Tutte</option>
-            <option value="created">Create</option>
-            <option value="sent">Inviate</option>
-            <option value="seen">Viste</option>
-            <option value="completed">Completate</option>
-            <option value="expired">Scadute</option>
-            <option value="cancelled">Annullate</option>
-          </select>
-        </label>
         <button
-          className="text-button task-clean-button"
+          className={`icon-button ${taskFiltersOpen || statusFilter !== "all" || hideCancelledTasks ? "active" : ""}`}
+          type="button"
+          onClick={() => setTaskFiltersOpen((previous) => !previous)}
+          title={taskFiltersOpen ? "Nascondi filtri" : "Mostra filtri"}
+          aria-label={taskFiltersOpen ? "Nascondi filtri" : "Mostra filtri"}
+        >
+          <SlidersHorizontal size={18} />
+        </button>
+        <button
+          className={`icon-button task-clean-button ${hideCancelledTasks ? "active" : ""}`}
           type="button"
           onClick={() => {
             const nextHideCancelledTasks = !hideCancelledTasks;
             setHideCancelledTasks(nextHideCancelledTasks);
             if (nextHideCancelledTasks && statusFilter === "cancelled") setStatusFilter("all");
           }}
-          disabled={cancelledTasks === 0}
+          title={hideCancelledTasks ? "Mostra annullate" : "Nascondi annullate"}
+          aria-label={hideCancelledTasks ? "Mostra annullate" : "Nascondi annullate"}
         >
-          {hideCancelledTasks ? "Mostra annullate" : "Pulisci annullate"}
+          {hideCancelledTasks ? <Eye size={17} /> : <EyeOff size={17} />}
         </button>
       </div>
+      {taskFiltersOpen && (
+        <div className="filter-toolbar task-filter-toolbar" aria-label="Filtri attivita">
+          <label>
+            Stato
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">Tutte</option>
+              <option value="created">Create</option>
+              <option value="sent">Inviate</option>
+              <option value="seen">Viste</option>
+              <option value="completed">Completate</option>
+              <option value="expired">Scadute</option>
+              <option value="cancelled">Annullate</option>
+            </select>
+          </label>
+          <span className="results-count"><strong>{visibleTasks.length}</strong> risultati</span>
+        </div>
+      )}
       {error && <p className="inline-feedback error" role="alert"><AlertTriangle size={17} />{error}</p>}
       {success && <p className="inline-feedback success" role="status"><CheckCircle2 size={17} />{success}</p>}
-      {messageComposerOpen && (
+      {messageComposerOpen && createPortal(
         <div
           className="task-composer-backdrop"
           role="presentation"
@@ -3310,14 +3583,12 @@ function TasksView({ data, session, patientId, onChanged }) {
                 ))}
               </div>
               <div className="task-form-grid patient-message-form">
-                <label>
-                  Priorita
-                  <select value={messageForm.priority} onChange={(event) => updateMessageForm("priority", event.target.value)}>
-                    <option value="normal">Ordinaria</option>
-                    <option value="high">Alta</option>
-                    <option value="urgent">Urgente</option>
-                  </select>
-                </label>
+                <PrettySelect
+                  label="Priorita"
+                  value={messageForm.priority}
+                  options={priorityOptions}
+                  onChange={(value) => updateMessageForm("priority", value)}
+                />
                 <label>
                   Titolo notifica
                   <input value={messageForm.title} onChange={(event) => updateMessageForm("title", event.target.value)} maxLength={90} />
@@ -3352,15 +3623,16 @@ function TasksView({ data, session, patientId, onChanged }) {
               </button>
             </div>
           </section>
-        </div>
+        </div>,
+        document.body
       )}
-      {caregiverMessageComposerOpen && (
+      {caregiverMessageComposerOpen && createPortal(
         <div
           className="task-composer-backdrop"
           role="presentation"
           onMouseDown={(event) => event.target === event.currentTarget && !busy && setCaregiverMessageComposerOpen(false)}
         >
-          <section className="task-composer-panel patient-message-composer" aria-label="Messaggio caregiver">
+          <section className="task-composer-panel patient-message-composer" aria-label="Caregiver">
             <div className="task-composer-header">
               <span className="dialog-icon"><MessageSquare size={20} /></span>
               <div>
@@ -3386,14 +3658,12 @@ function TasksView({ data, session, patientId, onChanged }) {
                 ))}
               </div>
               <div className="task-form-grid patient-message-form">
-                <label>
-                  Priorita
-                  <select value={caregiverMessageForm.priority} onChange={(event) => updateCaregiverMessageForm("priority", event.target.value)}>
-                    <option value="normal">Ordinaria</option>
-                    <option value="high">Alta</option>
-                    <option value="urgent">Urgente</option>
-                  </select>
-                </label>
+                <PrettySelect
+                  label="Priorita"
+                  value={caregiverMessageForm.priority}
+                  options={priorityOptions}
+                  onChange={(value) => updateCaregiverMessageForm("priority", value)}
+                />
                 <label>
                   Titolo notifica
                   <input value={caregiverMessageForm.title} onChange={(event) => updateCaregiverMessageForm("title", event.target.value)} maxLength={90} />
@@ -3419,19 +3689,20 @@ function TasksView({ data, session, patientId, onChanged }) {
               </button>
             </div>
           </section>
-        </div>
+        </div>,
+        document.body
       )}
-      {composerOpen && (
+      {composerOpen && createPortal(
         <div
           className="task-composer-backdrop"
           role="presentation"
           onMouseDown={(event) => event.target === event.currentTarget && !busy && setComposerOpen(false)}
         >
-        <section className="task-composer-panel" aria-label="Nuova attività">
+        <section className="task-composer-panel" aria-label="Nuova">
           <div className="task-composer-header">
             <span className="dialog-icon"><ClipboardList size={20} /></span>
             <div>
-              <h3>Nuova attività</h3>
+              <h3>Nuova</h3>
               <p>Prepara un contenuto da inviare al paziente tramite l'app companion.</p>
             </div>
             <button className="dialog-close" type="button" onClick={() => !busy && setComposerOpen(false)} disabled={Boolean(busy)} aria-label="Chiudi">
@@ -3439,22 +3710,18 @@ function TasksView({ data, session, patientId, onChanged }) {
             </button>
           </div>
           <div className="task-form-grid">
-            <label>
-              Tipo test
-              <select value={taskForm.template} onChange={(event) => updateTaskForm("template", event.target.value)}>
-                {Object.entries(taskTemplates).map(([key, template]) => (
-                  <option key={key} value={key}>{template.label}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Priorità
-              <select value={taskForm.priority} onChange={(event) => updateTaskForm("priority", event.target.value)}>
-                <option value="normal">Ordinaria</option>
-                <option value="high">Alta</option>
-                <option value="urgent">Urgente</option>
-              </select>
-            </label>
+            <PrettySelect
+              label="Tipo test"
+              value={taskForm.template}
+              options={Object.entries(taskTemplates).map(([key, template]) => ({ value: key, label: template.label }))}
+              onChange={(value) => updateTaskForm("template", value)}
+            />
+            <PrettySelect
+              label="Priorita"
+              value={taskForm.priority}
+              options={priorityOptions}
+              onChange={(value) => updateTaskForm("priority", value)}
+            />
             <label className="span-2">
               Titolo
               <input value={taskForm.title} onChange={(event) => updateTaskForm("title", event.target.value)} maxLength={120} />
@@ -3469,7 +3736,14 @@ function TasksView({ data, session, patientId, onChanged }) {
             </label>
             <label className="span-2">
               Scadenza facoltativa
-              <input type="datetime-local" value={taskForm.expiresAt} onChange={(event) => updateTaskForm("expiresAt", event.target.value)} />
+              <span className="date-input-shell">
+                <CalendarClock size={17} />
+                <input
+                  type="datetime-local"
+                  value={taskForm.expiresAt}
+                  onChange={(event) => updateTaskForm("expiresAt", event.target.value)}
+                />
+              </span>
             </label>
             <label className="span-2">
               Nota medico facoltativa
@@ -3486,12 +3760,13 @@ function TasksView({ data, session, patientId, onChanged }) {
             </button>
           </div>
         </section>
-        </div>
+        </div>,
+        document.body
       )}
       {data.tasks.length === 0 ? (
-        <ViewEmptyState icon={<ClipboardList size={24} />} title="Nessuna attività assegnata" text="Crea un check-in o un follow-up per iniziare." />
+        <ViewEmptyState icon={<ClipboardList size={24} />} title="Nessuna attivita assegnata" text="Crea un check-in o un follow-up per iniziare." />
       ) : visibleTasks.length === 0 ? (
-        <ViewEmptyState icon={<Search size={24} />} title="Nessun risultato" text="Non ci sono attività con lo stato selezionato." />
+        <ViewEmptyState icon={<Search size={24} />} title="Nessun risultato" text="Non ci sono attivita con lo stato selezionato." />
       ) : (
         <div className="task-list">
           {visibleTasks.map((task) => (
@@ -3520,23 +3795,57 @@ function TasksView({ data, session, patientId, onChanged }) {
                   {task.result?.completed_at && <span><CheckCircle2 size={14} /> Completata {formatDateTime(task.result.completed_at)}</span>}
                 </div>
               </div>
+              <div className="task-card-actions" aria-label="Azioni rapide attivita">
+                {!["completed", "cancelled", "expired"].includes(task.status) && (
+                  <button
+                    className="task-card-action danger"
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setCancelDialog(task);
+                    }}
+                    disabled={Boolean(busy)}
+                  >
+                    <X size={14} />
+                    Annulla
+                  </button>
+                )}
+                <button
+                  className="task-card-action danger"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDeleteTaskDialog(task);
+                  }}
+                  disabled={Boolean(busy)}
+                >
+                  <Trash2 size={14} />
+                  Elimina
+                </button>
+              </div>
               <ChevronRight className="task-chevron" size={18} />
             </article>
           ))}
         </div>
       )}
-      {selectedTask && (
-        <TaskDetailPanel
-          task={selectedTask}
-          noteDraft={noteDrafts[selectedTask.task_id] ?? selectedTask.medical_note ?? ""}
-          cancelNote={noteDrafts[`cancel:${selectedTask.task_id}`] ?? ""}
-          busy={busy}
-          onNoteChange={(value) => updateNoteDraft(selectedTask.task_id, value)}
-          onCancelNoteChange={(value) => updateNoteDraft(`cancel:${selectedTask.task_id}`, value)}
-          onSaveNote={() => saveMedicalNote(selectedTask)}
-          onAskCancel={() => setCancelDialog(selectedTask)}
-          onAskDelete={() => setDeleteTaskDialog(selectedTask)}
-        />
+      {selectedTask && createPortal(
+        <div
+          className="task-detail-backdrop"
+          role="presentation"
+          onMouseDown={(event) => event.target === event.currentTarget && !busy && setSelectedTaskId(null)}
+        >
+          <section className="task-detail-dialog" role="dialog" aria-modal="true" aria-label={`Dettaglio attivita ${selectedTask.title}`}>
+            <TaskDetailPanel
+              task={selectedTask}
+              noteDraft={noteDrafts[selectedTask.task_id] ?? selectedTask.medical_note ?? ""}
+              busy={busy}
+              onClose={() => setSelectedTaskId(null)}
+              onNoteChange={(value) => updateNoteDraft(selectedTask.task_id, value)}
+              onSaveNote={() => saveMedicalNote(selectedTask)}
+            />
+          </section>
+        </div>,
+        document.body
       )}
       <ActionDialog
         open={Boolean(cancelDialog)}
@@ -3582,10 +3891,9 @@ function TasksView({ data, session, patientId, onChanged }) {
   );
 }
 
-function TaskDetailPanel({ task, noteDraft, cancelNote, busy, onNoteChange, onCancelNoteChange, onSaveNote, onAskCancel, onAskDelete }) {
+function TaskDetailPanel({ task, noteDraft, busy, onClose, onNoteChange, onSaveNote }) {
   const result = task.result ?? task.latest_result ?? task.task_result ?? null;
   const answers = taskResultAnswers(result);
-  const canCancel = !["completed", "cancelled", "expired"].includes(task.status);
   return (
     <div className="task-detail-panel">
       <div className="task-detail-header">
@@ -3593,7 +3901,14 @@ function TaskDetailPanel({ task, noteDraft, cancelNote, busy, onNoteChange, onCa
           <span className="detail-eyebrow">{taskDisplayType(task)}</span>
           <h4>{task.title}</h4>
         </div>
-        <span className={`status-pill ${task.status}`}>{taskStatusLabel(task.status)}</span>
+        <div className="task-detail-header-actions">
+          <span className={`status-pill ${task.status}`}>{taskStatusLabel(task.status)}</span>
+          {onClose && (
+            <button className="dialog-close inline-close" type="button" onClick={onClose} disabled={Boolean(busy)} aria-label="Chiudi dettaglio attivita">
+              <X size={19} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="task-detail-grid">
@@ -3640,22 +3955,6 @@ function TaskDetailPanel({ task, noteDraft, cancelNote, busy, onNoteChange, onCa
         <button className="secondary-button" type="button" onClick={onSaveNote} disabled={Boolean(busy)}>
           <CheckCircle2 size={16} />
           Salva nota
-        </button>
-        {canCancel && (
-          <>
-            <label className="cancel-note-inline">
-              Motivo annullamento
-              <input value={cancelNote} onChange={(event) => onCancelNoteChange(event.target.value)} placeholder="Facoltativo" />
-            </label>
-            <button className="text-button danger" type="button" onClick={onAskCancel} disabled={Boolean(busy)}>
-              <X size={16} />
-              Annulla task
-            </button>
-          </>
-        )}
-        <button className="secondary-button danger-soft" type="button" onClick={onAskDelete} disabled={Boolean(busy)}>
-          <Trash2 size={16} />
-          Elimina definitivamente
         </button>
       </div>
     </div>
@@ -3783,7 +4082,6 @@ function SystemView({ data, events, wsStatus }) {
       <section className="panel span-2">
         <div className="panel-heading">
           <h3>Sensori e flussi dati</h3>
-          <span className="badge">E8</span>
         </div>
         <div className="sensor-status-grid">
           <SensorCard
@@ -4131,7 +4429,7 @@ function eventTypeLabel(eventType) {
     task_created: "Task creato",
     task_completed: "Task completato",
     task_cancelled: "Task annullato",
-    caregiver_message_created: "Messaggio caregiver inviato",
+    caregiver_message_created: "Caregiver inviato",
     patient_window_updated: "Finestra dati aggiornata",
     edge_cycle_completed: "Ciclo Edge completato",
     pong: "Heartbeat realtime",
@@ -4231,6 +4529,11 @@ function alertReasonList(alert) {
   return [...new Set(reasons.map((reason) => decisionReasonLabel(reason)))];
 }
 
+function alertResolutionNote(alert) {
+  const note = alert.resolution_note ?? alert.resolved_note ?? alert.payload?.resolution_note ?? alert.payload?.resolved_note;
+  return typeof note === "string" && note.trim() ? note.trim() : "";
+}
+
 function alertTitleLabel(alert) {
   const score = alertScore(alert);
   const band = aiScoreBand(score);
@@ -4263,7 +4566,7 @@ function categoryLabel(category) {
     clinical: "Clinica",
     technical: "Tecnica",
     wandering: "Spostamenti notturni",
-    inactivity: "Riduzione dell'attività",
+    inactivity: "Riduzione dell'attivita",
     wearable: "Parametri wearable",
     spatial: "Routine spaziale",
   };
@@ -4302,7 +4605,7 @@ function isPatientMessageTask(task) {
 }
 
 function taskDisplayType(task) {
-  if (isPatientMessageTask(task)) return "Messaggio paziente";
+  if (isPatientMessageTask(task)) return "Paziente";
   return taskTypeLabel(task?.type ?? task?.task_type);
 }
 
@@ -4430,6 +4733,7 @@ function filterPatients(patients, filterMode) {
 }
 
 function signalKind(patient) {
+  if (!patient) return "routine";
   if (patient.signal_type === "behavioral") return "clinical";
   if (patient.signal_type) return patient.signal_type;
   if (patient.level === "technical" || patient.edge_online === false || patient.watch_present === false) return "technical";
@@ -4453,3 +4757,7 @@ function patientInitials(name) {
     .map((part) => part[0]?.toUpperCase())
     .join("") || "P";
 }
+
+
+
+
