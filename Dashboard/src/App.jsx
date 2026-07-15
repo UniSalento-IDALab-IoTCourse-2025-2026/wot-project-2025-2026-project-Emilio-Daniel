@@ -1722,7 +1722,7 @@ function DecisionScoreTrendPanel({ decisions, windows, onExpandChart }) {
           feature="anomaly_score"
           unit=""
           windows={windows}
-          color="#147776"
+          color="#c83532"
           onExpand={onExpandChart}
           large
         />
