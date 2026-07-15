@@ -16,6 +16,7 @@ dati di prova condivisi fino al momento dell'integrazione.
 7. Ordine di lavoro parallelo
 8. Criteri di completamento
 9. Attivita' successive alla prima versione
+10. Nuovi miglioramenti funzionali da pianificare
 
 ## Come usare questa checklist
 
@@ -649,3 +650,393 @@ Queste attivita' non devono bloccare il prototipo iniziale:
 La regola operativa rimane semplice: Emilio sviluppa le applicazioni e il collegamento
 con l'Edge usando mock stabili; Daniel sviluppa Cloud e backend usando publisher e client
 di test. I due rami si incontrano soltanto ai punti di integrazione definiti sopra.
+
+## 10. Nuovi miglioramenti funzionali da pianificare
+
+Queste funzionalita' sono sensate e aumentano molto il valore della dashboard, perche'
+spostano il sistema da semplice visualizzazione di dati a vero supporto operativo per il
+medico. Non sostituiscono la valutazione clinica: devono sempre essere presentate come
+strumenti di triage, orientamento e revisione.
+
+I punti proposti sono validi. In piu', prima della demo finale, conviene considerare anche:
+
+- [ ] gestione dell'aderenza terapeutica, almeno come promemoria e risposta manuale del paziente;
+- [ ] generazione di un report sintetico esportabile per visita o discussione con il docente;
+- [ ] indicatore di affidabilita' del dato, basato su completezza di BLE, Google Health, app e MQTT;
+- [ ] logica anti-rumore per evitare troppe segnalazioni simili nella dashboard;
+- [ ] registro delle modifiche medico, cosi' ogni nota, cancellazione o presa in carico resta tracciabile.
+
+La divisione sotto permette a Emilio e Daniel di lavorare in parallelo. Emilio prepara
+esperienza utente, visualizzazioni, app e interazioni. Daniel prepara dati aggregati,
+endpoint, persistenza, regole e contratti.
+
+### E13. Riepilogo automatico ultime 24 ore nella dashboard medico
+
+Responsabile: Emilio.
+
+Obiettivo: creare una scheda leggibile per il medico che riassuma cosa e' successo nelle
+ultime 24 ore senza costringerlo a leggere tutti i grafici.
+
+- [ ] Creare una sezione "Riepilogo 24 ore" nella pagina paziente.
+- [ ] Mostrare indice AI medio, massimo e ultimo valore delle ultime 24 ore.
+- [ ] Mostrare tempo totale rilevato per stanza e stanza prevalente.
+- [ ] Mostrare numero di cambi stanza e cambi notturni.
+- [ ] Mostrare media battito, SpO2, passi, sonno e sedentarieta' quando disponibili.
+- [ ] Evidenziare dati mancanti senza trasformarli in zero.
+- [ ] Mostrare confronto testuale rispetto alla baseline personale quando disponibile.
+- [ ] Usare linguaggio semplice: "piu' alto del solito", "simile alla routine", "dato non disponibile".
+- [ ] Inserire badge di affidabilita' del riepilogo: alta, media, bassa.
+
+Dipendenze da Daniel:
+
+- endpoint o campi aggregati per ultime 24 ore;
+- baseline personale esposta in modo sintetico;
+- informazione sulla completezza dei dati.
+
+Output atteso: il medico apre il paziente e capisce subito se le ultime 24 ore sono
+compatibili con la routine o se meritano revisione.
+
+### D13. Aggregazioni backend per riepilogo 24 ore e baseline
+
+Responsabile: Daniel.
+
+Obiettivo: fornire alla dashboard dati gia' aggregati, evitando che il frontend debba
+calcolare tutto da centinaia di finestre.
+
+- [ ] Creare endpoint `GET /api/v1/patients/{patient_id}/summary/24h`.
+- [ ] Calcolare score AI medio, massimo, ultimo e variazione rispetto al giorno precedente.
+- [ ] Calcolare permanenza per stanza, stanza prevalente e numero transizioni.
+- [ ] Calcolare statistiche wearable essenziali: heart rate, SpO2, passi, sonno, sedentarieta'.
+- [ ] Calcolare completezza dei dati per BLE, Google Health, app paziente e MQTT.
+- [ ] Restituire confronto con baseline personale quando il modello personale esiste.
+- [ ] Restituire `baseline_available: false` e motivazione quando la baseline non e' pronta.
+- [ ] Aggiungere test con paziente normale, dati mancanti e giornata anomala.
+
+Output atteso: un unico payload backend permette di costruire il riepilogo 24 ore in modo
+stabile e verificabile.
+
+### E14. Timeline unificata del paziente
+
+Responsabile: Emilio.
+
+Obiettivo: creare una timeline unica che metta insieme finestre dati, anomalie, messaggi,
+attivita', note e cambi di stato. Serve al medico per ricostruire cosa e' successo in
+ordine cronologico.
+
+- [ ] Creare schermata o sezione "Timeline".
+- [ ] Mostrare eventi ordinati per tempo: finestre AI, alert, task, messaggi, note medico.
+- [ ] Usare icone e colori diversi per dato, anomalia, messaggio, attivita', nota e problema tecnico.
+- [ ] Aggiungere filtri: tutti, AI, alert, task, messaggi, note, tecnico.
+- [ ] Aggiungere filtro intervallo temporale con data e ora.
+- [ ] Collegare ogni evento al dettaglio corrispondente: alert, task, grafico o decisione AI.
+- [ ] Evitare duplicati visivi quando alert e decisione derivano dallo stesso ciclo.
+- [ ] Rendere la timeline leggibile su desktop e tablet.
+
+Dipendenze da Daniel:
+
+- endpoint timeline oppure eventi normalizzati da API esistenti;
+- identificatori comuni tra decisioni, alert, task e messaggi;
+- timestamp coerenti in UTC.
+
+Output atteso: il medico non deve passare da cinque schermate diverse per capire la
+sequenza degli eventi.
+
+### D14. Endpoint timeline normalizzata
+
+Responsabile: Daniel.
+
+Obiettivo: aggregare in backend gli eventi principali in un formato unico.
+
+- [ ] Creare endpoint `GET /api/v1/patients/{patient_id}/timeline`.
+- [ ] Supportare filtri per tipo evento, data inizio, data fine, pagina e dimensione pagina.
+- [ ] Restituire eventi con campi comuni: `event_id`, `event_type`, `timestamp`, `title`, `summary`, `severity`, `source`, `linked_resource`.
+- [ ] Includere decisioni AI, alert, task, risultati task, messaggi medico, note e stati tecnici rilevanti.
+- [ ] Deduplicare eventi generati dallo stesso `message_id` o ciclo Edge.
+- [ ] Aggiungere test di ordinamento e autorizzazione per medico, paziente e caregiver.
+
+Output atteso: il frontend riceve una lista gia' pronta e non deve unire manualmente
+tabelle diverse.
+
+### E15. Centro valutazioni e questionari programmabili
+
+Responsabile: Emilio.
+
+Obiettivo: trasformare i task/test in un centro valutazioni ordinato, con storico dei
+punteggi e invio programmabile.
+
+- [ ] Creare schermata "Valutazioni" separata dalla lista generica delle attivita'.
+- [ ] Mostrare questionari disponibili: check-in quotidiano, PHQ-2, test dimostrativo, MMSE/MoCA solo come somministrazione ufficiale supervisionata.
+- [ ] Mostrare stato di ogni valutazione: programmata, inviata, vista, iniziata, completata, scaduta.
+- [ ] Aggiungere andamento dei punteggi nel tempo per i test ripetibili.
+- [ ] Consentire al medico di programmare un questionario giornaliero o settimanale.
+- [ ] Consentire al medico di interrompere una programmazione.
+- [ ] Mostrare chiaramente note di licenza per test clinici non riproducibili liberamente.
+- [ ] Preparare nell'app paziente una UI semplice per check-in brevi ripetibili.
+
+Dipendenze da Daniel:
+
+- supporto backend per template questionari;
+- pianificazione ricorrente;
+- storico risultati con score e durata.
+
+Output atteso: il medico puo' inviare e monitorare valutazioni ripetibili senza creare
+ogni volta un task manuale da zero.
+
+### D15. Backend per questionari programmabili e storico punteggi
+
+Responsabile: Daniel.
+
+Obiettivo: rendere i questionari una risorsa stabile del sistema, non solo payload liberi
+dentro un task.
+
+- [ ] Creare tabella o modello `questionnaire_templates`.
+- [ ] Creare tabella o modello `questionnaire_schedules` per programmazioni ricorrenti.
+- [ ] Associare ogni invio generato a un task concreto.
+- [ ] Salvare versione del template usato, cosi' lo storico resta interpretabile.
+- [ ] Esporre endpoint per lista template, creazione programmazione, sospensione programmazione e storico risultati.
+- [ ] Gestire scadenze automatiche e generazione task pianificati.
+- [ ] Aggiungere test su invio giornaliero, scadenza, completamento e duplicati.
+
+Output atteso: la dashboard puo' mostrare valutazioni e trend senza usare logica fragile
+solo lato frontend.
+
+### E16. Segnalazioni composte con workflow clinico
+
+Responsabile: Emilio.
+
+Obiettivo: rendere le segnalazioni piu' utili di una lista eventi. Una segnalazione deve
+mostrare contesto, azioni, stato e storico.
+
+- [ ] Riorganizzare il dettaglio alert in blocchi: contesto, evidenze, azioni, storico.
+- [ ] Mostrare evento principale e segnali collegati nella stessa segnalazione.
+- [ ] Mostrare se l'alert nasce da AI, problema tecnico, messaggio manuale o escalation.
+- [ ] Consentire azioni guidate: prendi in carico, invia task, invia messaggio, risolvi con nota.
+- [ ] Mostrare storico delle azioni: creato, preso in carico, messaggio inviato, task creato, risolto.
+- [ ] Nascondere le azioni quando l'alert e' risolto, lasciando lo storico leggibile.
+- [ ] Consentire cancellazione definitiva solo per alert risolti e solo con conferma.
+
+Dipendenze da Daniel:
+
+- alert collegabili a decisioni, task, messaggi e note;
+- audit eventi alert;
+- cancellazione server-side sicura.
+
+Output atteso: il medico gestisce un caso clinico-operativo, non una semplice riga di log.
+
+### D16. Modello alert composto e workflow lato backend
+
+Responsabile: Daniel.
+
+Obiettivo: supportare segnalazioni che raggruppano piu' eventi e mantengono un workflow
+tracciabile.
+
+- [ ] Collegare alert a decisioni, finestre, task, messaggi e note tramite riferimenti.
+- [ ] Esporre dettaglio alert con `related_events`.
+- [ ] Registrare ogni azione medico/caregiver in `alert_events`.
+- [ ] Gestire cancellazione logica o definitiva secondo regole concordate.
+- [ ] Evitare duplicati quando piu' decisioni simili arrivano in poco tempo.
+- [ ] Implementare escalation se un alert resta aperto troppo a lungo.
+- [ ] Testare transizioni non valide e autorizzazioni.
+
+Output atteso: la dashboard puo' mostrare una segnalazione come workflow completo e non
+come evento isolato.
+
+### E17. Analisi routine ambientale avanzata
+
+Responsabile: Emilio.
+
+Obiettivo: valorizzare i beacon e la parte spaziale con visualizzazioni piu' chiare su
+permanenze, transizioni e anomalie notturne.
+
+- [ ] Creare sezione "Routine ambientale".
+- [ ] Mostrare permanenza per stanza nel giorno selezionato e nella settimana.
+- [ ] Mostrare transizioni stanza-stanza con una vista semplice, ad esempio matrice o flusso.
+- [ ] Evidenziare permanenze insolite rispetto alla baseline.
+- [ ] Evidenziare transizioni notturne e wandering potenziale.
+- [ ] Mostrare differenza tra dato assente e stanza non rilevata.
+- [ ] Permettere confronto tra oggi, ieri e media baseline.
+- [ ] Usare testi prudenti: "movimento notturno da verificare", non "wandering certo".
+
+Dipendenze da Daniel:
+
+- aggregazioni spaziali giornaliere e settimanali;
+- confronto con baseline personale;
+- classificazione eventi notturni.
+
+Output atteso: il medico capisce subito se il comportamento spaziale e' compatibile con
+la routine domestica del paziente.
+
+### D17. Aggregazioni spaziali e confronto baseline
+
+Responsabile: Daniel.
+
+Obiettivo: preparare dati spaziali gia' aggregati per evitare calcoli complessi nel
+browser.
+
+- [ ] Creare endpoint `GET /api/v1/patients/{patient_id}/spatial-summary`.
+- [ ] Restituire minuti per stanza, transizioni, cambi notturni e permanenza massima.
+- [ ] Restituire confronto con baseline: differenza assoluta e percentuale.
+- [ ] Restituire eventi notturni rilevanti con orario e stanza.
+- [ ] Segnalare qualita' del dato BLE e finestre mancanti.
+- [ ] Aggiungere test con paziente fermo, paziente in movimento e dati BLE assenti.
+
+Output atteso: la dashboard puo' mostrare routine ambientale senza scaricare tutte le
+finestre grezze.
+
+### E18. Spiegazione avanzata dell'indice AI
+
+Responsabile: Emilio.
+
+Obiettivo: rendere l'indice AI piu' comprensibile al medico, mostrando perche' e' salito
+o sceso e quanto e' affidabile.
+
+- [ ] Mostrare fattori che aumentano il punteggio.
+- [ ] Mostrare fattori che diminuiscono il punteggio.
+- [ ] Mostrare dati mancanti o imputati che riducono l'affidabilita'.
+- [ ] Mostrare confronto con punteggio precedente.
+- [ ] Mostrare ultimo aggiornamento della decisione.
+- [ ] Mostrare intervallo o classe di affidabilita': alta, media, bassa.
+- [ ] Separare contributo spaziale, wearable e modello personale.
+- [ ] Usare nomi leggibili al medico, non nomi tecnici come `kitchen_minutes`.
+- [ ] Mantenere sempre il messaggio: supporto al triage, decisione finale al medico.
+
+Dipendenze da Daniel:
+
+- payload decisione con spiegazioni normalizzate;
+- punteggio precedente;
+- qualita' dati e missingness;
+- eventuale confidence score.
+
+Output atteso: il medico capisce il motivo dell'indice senza leggere JSON o feature
+tecniche.
+
+### D18. Spiegazioni AI normalizzate nel backend
+
+Responsabile: Daniel.
+
+Obiettivo: rendere la spiegazione AI stabile per il frontend, anche se cambia la forma
+del payload prodotto dall'Edge.
+
+- [ ] Salvare o calcolare `previous_score` per ogni decisione.
+- [ ] Restituire `score_delta` e direzione: aumento, diminuzione, stabile.
+- [ ] Normalizzare feature explanation in campi leggibili: label, valore, unita', direzione, impatto.
+- [ ] Restituire elenco `positive_factors` e `negative_factors`.
+- [ ] Restituire elenco `missing_or_imputed_features`.
+- [ ] Calcolare `data_reliability` da completezza sensori e qualita' finestra.
+- [ ] Aggiornare endpoint decisioni e current senza rompere compatibilita'.
+- [ ] Aggiungere esempi nel contratto API.
+
+Output atteso: il frontend riceve dati gia' pronti per una spiegazione clinicamente
+comprensibile.
+
+### E19. Check-in brevi ripetibili nell'app paziente
+
+Responsabile: Emilio.
+
+Obiettivo: aggiungere nell'app paziente una modalita' semplice per rispondere a domande
+brevi inviate dal medico o programmate dal sistema.
+
+Domande da supportare nella prima versione:
+
+```text
+Come ti senti oggi?
+Hai avuto capogiri?
+Hai assunto la terapia?
+Hai dormito bene?
+Hai avuto una caduta o quasi-caduta?
+Hai dolore? Da 0 a 10 quanto?
+Hai bisogno di essere contattato?
+```
+
+- [ ] Creare UI paziente accessibile, con pulsanti grandi e testo leggibile.
+- [ ] Supportare risposte si/no, scala 0-10, scelta singola e testo breve opzionale.
+- [ ] Salvare localmente risposte non inviate.
+- [ ] Inviare risposta, durata, timestamp e device_id al backend.
+- [ ] Mostrare conferma chiara al paziente dopo l'invio.
+- [ ] Evitare linguaggio allarmante.
+- [ ] Gestire task scaduti o gia' completati.
+- [ ] Aggiungere notifica push con testo personalizzato del medico.
+
+Dipendenze da Daniel:
+
+- template questionari;
+- endpoint risultati;
+- notifiche push;
+- stato task aggiornato.
+
+Output atteso: il paziente puo' inviare micro-feedback quotidiani utili al medico senza
+interfacce complicate.
+
+### D19. Contratto backend per check-in brevi
+
+Responsabile: Daniel.
+
+Obiettivo: definire e validare i questionari brevi ripetibili.
+
+- [ ] Definire schema JSON per domande e risposte.
+- [ ] Validare tipi di risposta: yes_no, scale, single_choice, text.
+- [ ] Salvare durata compilazione e device_id.
+- [ ] Calcolare score semplice quando previsto, ad esempio dolore 0-10 o benessere.
+- [ ] Esporre risultati al medico nella timeline e nel centro valutazioni.
+- [ ] Inviare WebSocket `task_completed` o `questionnaire_completed`.
+- [ ] Aggiungere test di validazione payload e autorizzazione paziente.
+
+Output atteso: le risposte brevi sono dati strutturati, non messaggi liberi difficili da
+analizzare.
+
+### E20. Report sintetico esportabile per demo e visita
+
+Responsabile: Emilio.
+
+Obiettivo: permettere al medico di esportare un riepilogo leggibile del paziente per una
+visita o per la discussione del progetto.
+
+- [ ] Creare pulsante "Esporta riepilogo" nella dashboard.
+- [ ] Generare una vista stampabile con dati principali, grafici essenziali e note.
+- [ ] Includere riepilogo 24 ore, indice AI, routine ambientale, task recenti e alert.
+- [ ] Escludere token, dettagli tecnici sensibili e dati non necessari.
+- [ ] Aggiungere data generazione e dicitura "supporto al triage".
+- [ ] Preparare esportazione PDF tramite stampa browser o libreria dedicata.
+
+Dipendenze da Daniel:
+
+- endpoint riepilogo;
+- dati timeline;
+- eventuali note medico salvate.
+
+Output atteso: la demo puo' produrre un documento comprensibile e professionale.
+
+### D20. Supporto dati per report e audit leggero
+
+Responsabile: Daniel.
+
+Obiettivo: rendere disponibili al frontend i dati necessari per un report senza query
+multiple fragili.
+
+- [ ] Creare endpoint `GET /api/v1/patients/{patient_id}/report-data`.
+- [ ] Restituire riepilogo, decisioni recenti, alert recenti, task e note.
+- [ ] Applicare autorizzazioni doctor-only.
+- [ ] Registrare audit dell'esportazione report.
+- [ ] Evitare dati sensibili non necessari nel payload.
+- [ ] Aggiungere test di autorizzazione e completezza payload.
+
+Output atteso: il report usa dati coerenti e tracciabili.
+
+### Integrazione dei nuovi miglioramenti
+
+Questi miglioramenti vanno integrati in questo ordine:
+
+```text
+1. Riepilogo 24 ore + endpoint aggregato
+2. Timeline unificata
+3. Spiegazione AI avanzata
+4. Centro valutazioni + check-in brevi
+5. Routine ambientale avanzata
+6. Segnalazioni composte
+7. Report esportabile
+```
+
+Motivo dell'ordine: il riepilogo e la timeline riusano quasi tutti i dati gia' presenti;
+spiegazione AI e valutazioni migliorano la parte clinica; routine ambientale e workflow
+alert richiedono piu' rifinitura; il report va fatto quando le sezioni principali sono
+abbastanza stabili.
