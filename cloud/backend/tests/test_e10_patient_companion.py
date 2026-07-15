@@ -70,6 +70,16 @@ def client() -> Generator[TestClient, None, None]:
             },
         )
         db.add(message_task)
+        expired_task = Task(
+            patient_id="patient-001",
+            task_type="check_in",
+            status="created",
+            title="Attivita' scaduta",
+            instructions="Questa attivita' non e' piu' disponibile.",
+            due_at=datetime(2026, 7, 14, 9, 0, tzinfo=timezone.utc),
+            payload={"assigned_to": "patient", "content": {}},
+        )
+        db.add(expired_task)
         db.flush()
         db.add(
             Notification(
@@ -101,6 +111,17 @@ def client() -> Generator[TestClient, None, None]:
                 title="Nuovo messaggio",
                 body="Hai ricevuto un messaggio dal team di cura.",
                 payload={"type": "task_created", "task_id": f"task-{message_task.id}", "task_type": "custom"},
+                sent_at=datetime.now(timezone.utc),
+            )
+        )
+        db.add(
+            Notification(
+                patient_id="patient-001",
+                channel="push",
+                status="sent",
+                title="Attivita' scaduta",
+                body="Questa attivita' puo' essere rimossa dall'app.",
+                payload={"type": "task_created", "task_id": f"task-{expired_task.id}", "task_type": "check_in"},
                 sent_at=datetime.now(timezone.utc),
             )
         )
@@ -147,7 +168,7 @@ def test_device_is_bound_to_authenticated_patient_and_token_is_hidden(client: Te
 def test_task_seen_started_and_completed_keep_device_identity(client: TestClient) -> None:
     headers = auth_headers(client)
     tasks = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
-    task_id = next(item for item in tasks if item["type"] == "check_in")["task_id"]
+    task_id = next(item for item in tasks if item["title"] == "Come ti senti?")["task_id"]
 
     seen = client.patch(
         f"/api/v1/tasks/{task_id}/state",
@@ -206,7 +227,7 @@ def test_patient_can_read_and_acknowledge_only_own_notification(client: TestClie
 def test_patient_can_delete_task_notification_only_after_completion(client: TestClient) -> None:
     headers = auth_headers(client)
     tasks = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
-    task = next(item for item in tasks if item["type"] == "check_in")
+    task = next(item for item in tasks if item["title"] == "Come ti senti?")
     notifications = client.get("/api/v1/notifications?patient_id=patient-001", headers=headers).json()["items"]
     notification = next(item for item in notifications if item["payload"].get("task_id") == task["task_id"])
 
@@ -245,6 +266,34 @@ def test_patient_can_delete_free_message_from_companion(client: TestClient) -> N
 
     remaining = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
     assert message["task_id"] not in {item["task_id"] for item in remaining}
+
+
+def test_patient_can_delete_expired_activity_from_companion(client: TestClient) -> None:
+    headers = auth_headers(client)
+    tasks = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
+    expired = next(item for item in tasks if item["status"] == "expired")
+
+    dismissed = client.delete(f"/api/v1/tasks/{expired['task_id']}", headers=headers)
+    assert dismissed.status_code == 200
+    assert dismissed.json()["status"] == "dismissed"
+
+    remaining = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
+    assert expired["task_id"] not in {item["task_id"] for item in remaining}
+
+
+def test_patient_can_delete_expired_activity_notification(client: TestClient) -> None:
+    headers = auth_headers(client)
+    tasks = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
+    expired = next(item for item in tasks if item["status"] == "expired")
+    notifications = client.get("/api/v1/notifications?patient_id=patient-001", headers=headers).json()["items"]
+    notification = next(item for item in notifications if item["payload"].get("task_id") == expired["task_id"])
+
+    dismissed = client.delete(f"/api/v1/notifications/{notification['notification_id']}", headers=headers)
+    assert dismissed.status_code == 200
+    assert dismissed.json()["status"] == "dismissed"
+
+    remaining_tasks = client.get("/api/v1/patients/patient-001/tasks", headers=headers).json()["items"]
+    assert expired["task_id"] not in {item["task_id"] for item in remaining_tasks}
 
 
 def auth_headers(client: TestClient) -> dict[str, str]:

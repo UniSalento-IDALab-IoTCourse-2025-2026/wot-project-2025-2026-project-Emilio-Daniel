@@ -82,6 +82,7 @@ final class AppPreferences {
                 .remove("patientDisplayName")
                 .remove("userRole")
                 .remove("cachedCaregiverOverview")
+                .remove("cachedCaregiverMessages")
                 .remove("cachedCurrent")
                 .remove("cachedTasks")
                 .remove("cachedNotifications")
@@ -126,6 +127,14 @@ final class AppPreferences {
 
     String cachedCaregiverOverview() {
         return preferences.getString("cachedCaregiverOverview", "{\"items\":[]}");
+    }
+
+    void cacheCaregiverMessages(String messages) {
+        preferences.edit().putString("cachedCaregiverMessages", messages).apply();
+    }
+
+    String cachedCaregiverMessages() {
+        return preferences.getString("cachedCaregiverMessages", "{\"items\":[]}");
     }
 
     long lastBackendSyncAt() {

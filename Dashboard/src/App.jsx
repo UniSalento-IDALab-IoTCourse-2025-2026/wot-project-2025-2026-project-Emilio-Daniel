@@ -226,6 +226,33 @@ const patientMessageSuggestions = [
   },
 ];
 
+const caregiverMessageSuggestions = [
+  {
+    id: "wearable_help",
+    title: "Verifica wearable",
+    priority: "high",
+    body: "Puoi verificare con calma se il dispositivo indossabile e' al polso, acceso e con batteria sufficiente? In caso di difficolta, avvisa il team di cura.",
+  },
+  {
+    id: "gentle_contact",
+    title: "Contatto di supporto",
+    priority: "normal",
+    body: "Ti chiediamo di contattare il paziente appena possibile per una breve verifica di benessere generale. Non e' una diagnosi automatica, ma una richiesta di supporto.",
+  },
+  {
+    id: "routine_check",
+    title: "Controllo routine",
+    priority: "normal",
+    body: "Puoi verificare se il paziente ha svolto le normali attivita' quotidiane e se ha bisogno di aiuto pratico?",
+  },
+  {
+    id: "urgent_presence",
+    title: "Affiancamento richiesto",
+    priority: "urgent",
+    body: "Quando possibile, resta vicino al paziente o contattalo telefonicamente. Il team di cura desidera un riscontro familiare tempestivo.",
+  },
+];
+
 export function App() {
   const [session, setSession] = useState(() => loadSession());
 
@@ -462,6 +489,7 @@ function Dashboard({ session, onLogout }) {
             "task_completed",
             "task_cancelled",
             "task_updated",
+            "caregiver_message_created",
             "system_status_updated",
           ].includes(event.event_type)
         ) {
@@ -2466,6 +2494,7 @@ function TasksView({ data, session, patientId, onChanged }) {
   const [success, setSuccess] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [messageComposerOpen, setMessageComposerOpen] = useState(false);
+  const [caregiverMessageComposerOpen, setCaregiverMessageComposerOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [hideCancelledTasks, setHideCancelledTasks] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -2484,6 +2513,12 @@ function TasksView({ data, session, patientId, onChanged }) {
     body: "",
     priority: "normal",
     note: "",
+    suggestionId: "",
+  });
+  const [caregiverMessageForm, setCaregiverMessageForm] = useState({
+    title: "Messaggio dal medico",
+    body: "",
+    priority: "normal",
     suggestionId: "",
   });
 
@@ -2519,6 +2554,15 @@ function TasksView({ data, session, patientId, onChanged }) {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [messageComposerOpen, busy]);
 
+  useEffect(() => {
+    if (!caregiverMessageComposerOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape" && !busy) setCaregiverMessageComposerOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [caregiverMessageComposerOpen, busy]);
+
   function updateTaskForm(field, value) {
     if (field === "template") {
       const template = taskTemplates[value] ?? taskTemplates.wellbeing;
@@ -2543,6 +2587,21 @@ function TasksView({ data, session, patientId, onChanged }) {
 
   function applyMessageSuggestion(suggestion) {
     setMessageForm((previous) => ({
+      ...previous,
+      title: suggestion.title,
+      body: suggestion.body,
+      priority: suggestion.priority,
+      suggestionId: suggestion.id,
+    }));
+    setError("");
+  }
+
+  function updateCaregiverMessageForm(field, value) {
+    setCaregiverMessageForm((previous) => ({ ...previous, [field]: value }));
+  }
+
+  function applyCaregiverMessageSuggestion(suggestion) {
+    setCaregiverMessageForm((previous) => ({
       ...previous,
       title: suggestion.title,
       body: suggestion.body,
@@ -2596,6 +2655,39 @@ function TasksView({ data, session, patientId, onChanged }) {
         suggestionId: "",
       });
       setSuccess("Messaggio inviato al paziente. L'app companion potra mostrarlo come notifica o banner in-app.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function sendCaregiverMessage() {
+    const title = caregiverMessageForm.title.trim() || "Messaggio dal medico";
+    const body = caregiverMessageForm.body.trim();
+    if (!body) {
+      setError("Scrivi il testo del messaggio prima di inviarlo al caregiver.");
+      return;
+    }
+    setBusy("caregiver-message");
+    setError("");
+    setSuccess("");
+    try {
+      await api.createCaregiverMessage(patientId, {
+        title,
+        body,
+        priority: caregiverMessageForm.priority,
+        suggestion_id: caregiverMessageForm.suggestionId || null,
+      }, session);
+      setCaregiverMessageComposerOpen(false);
+      setCaregiverMessageForm({
+        title: "Messaggio dal medico",
+        body: "",
+        priority: "normal",
+        suggestionId: "",
+      });
+      setSuccess("Messaggio inviato al caregiver associato al profilo.");
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -2686,6 +2778,10 @@ function TasksView({ data, session, patientId, onChanged }) {
           </div>
         </div>
         <div className="view-heading-actions">
+        <button className="secondary-button" type="button" onClick={() => setCaregiverMessageComposerOpen(true)} disabled={Boolean(busy)}>
+          <MessageSquare size={17} />
+          Messaggio caregiver
+        </button>
         <button className="secondary-button" type="button" onClick={() => setMessageComposerOpen(true)} disabled={Boolean(busy)}>
           <MessageSquare size={17} />
           Messaggio paziente
@@ -2800,6 +2896,73 @@ function TasksView({ data, session, patientId, onChanged }) {
               <button className="primary-button" type="button" onClick={sendPatientMessage} disabled={busy === "message"}>
                 {busy === "message" ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />}
                 {busy === "message" ? "Invio" : "Invia messaggio"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {caregiverMessageComposerOpen && (
+        <div
+          className="task-composer-backdrop"
+          role="presentation"
+          onMouseDown={(event) => event.target === event.currentTarget && !busy && setCaregiverMessageComposerOpen(false)}
+        >
+          <section className="task-composer-panel patient-message-composer" aria-label="Messaggio caregiver">
+            <div className="task-composer-header">
+              <span className="dialog-icon"><MessageSquare size={20} /></span>
+              <div>
+                <h3>Messaggio al caregiver</h3>
+                <p>Invia una richiesta operativa al familiare associato, senza mostrare dati clinici grezzi.</p>
+              </div>
+              <button className="dialog-close" type="button" onClick={() => !busy && setCaregiverMessageComposerOpen(false)} disabled={Boolean(busy)} aria-label="Chiudi">
+                <X size={19} />
+              </button>
+            </div>
+            <div className="patient-message-body">
+              <div className="message-suggestion-grid" aria-label="Messaggi consigliati per caregiver">
+                {caregiverMessageSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    className={caregiverMessageForm.suggestionId === suggestion.id ? "active" : ""}
+                    type="button"
+                    onClick={() => applyCaregiverMessageSuggestion(suggestion)}
+                  >
+                    <strong>{suggestion.title}</strong>
+                    <span>{suggestion.body}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="task-form-grid patient-message-form">
+                <label>
+                  Priorita
+                  <select value={caregiverMessageForm.priority} onChange={(event) => updateCaregiverMessageForm("priority", event.target.value)}>
+                    <option value="normal">Ordinaria</option>
+                    <option value="high">Alta</option>
+                    <option value="urgent">Urgente</option>
+                  </select>
+                </label>
+                <label>
+                  Titolo notifica
+                  <input value={caregiverMessageForm.title} onChange={(event) => updateCaregiverMessageForm("title", event.target.value)} maxLength={90} />
+                </label>
+                <label className="span-2">
+                  Testo per il caregiver
+                  <textarea
+                    value={caregiverMessageForm.body}
+                    onChange={(event) => updateCaregiverMessageForm("body", event.target.value)}
+                    placeholder="Scrivi una richiesta chiara e pratica per il caregiver."
+                    maxLength={1000}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="task-composer-actions">
+              <button className="secondary-button" type="button" onClick={() => !busy && setCaregiverMessageComposerOpen(false)} disabled={Boolean(busy)}>
+                Annulla
+              </button>
+              <button className="primary-button" type="button" onClick={sendCaregiverMessage} disabled={busy === "caregiver-message"}>
+                {busy === "caregiver-message" ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />}
+                {busy === "caregiver-message" ? "Invio" : "Invia al caregiver"}
               </button>
             </div>
           </section>
@@ -3482,6 +3645,7 @@ function eventTypeLabel(eventType) {
     task_created: "Task creato",
     task_completed: "Task completato",
     task_cancelled: "Task annullato",
+    caregiver_message_created: "Messaggio caregiver inviato",
     patient_window_updated: "Finestra dati aggiornata",
     edge_cycle_completed: "Ciclo Edge completato",
     pong: "Heartbeat realtime",

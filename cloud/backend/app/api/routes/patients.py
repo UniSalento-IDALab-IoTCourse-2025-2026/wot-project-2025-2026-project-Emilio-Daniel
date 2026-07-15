@@ -21,7 +21,7 @@ from app.core.config import get_settings
 from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Patient, PatientAppStatus, SensorStatus, Task, TaskResult
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
-from app.services.push_notifications import notify_task_created
+from app.services.push_notifications import notify_caregiver_message, notify_task_created
 
 router = APIRouter()
 ALERT_ESCALATION_MINUTES = 30
@@ -211,6 +211,68 @@ def create_patient_task(
         )
     )
     return task_payload(task, db)
+
+
+@router.post("/{patient_id}/caregiver-messages", summary="Send caregiver message")
+def create_caregiver_message(
+    patient_id: str,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Invia una comunicazione operativa ai caregiver associati al paziente."""
+    if current_user.role not in {"doctor", "admin"}:
+        raise HTTPException(status_code=403, detail="Only doctor or admin can send caregiver messages.")
+    get_patient_or_404(db, patient_id)
+    title = str(payload.get("title") or "Messaggio dal medico").strip()[:120]
+    body = str(payload.get("body") or payload.get("message") or "").strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="Message body is required.")
+    priority = str(payload.get("priority") or "normal").strip().lower()
+    if priority not in {"normal", "high", "urgent"}:
+        priority = "normal"
+    notification = notify_caregiver_message(
+        db,
+        patient_id=patient_id,
+        title=title or "Messaggio dal medico",
+        body=body[:1000],
+        payload={
+            "priority": priority,
+            "message": {
+                "title": title or "Messaggio dal medico",
+                "body": body[:1000],
+                "priority": priority,
+            },
+        },
+    )
+    write_audit(
+        db,
+        actor=current_user,
+        action="caregiver_message.created",
+        patient_id=patient_id,
+        target_type="notification",
+        target_id=f"notification-{notification.id}",
+        details={"priority": priority, "title": title or "Messaggio dal medico"},
+    )
+    db.commit()
+    db.refresh(notification)
+    event_bus.publish(
+        InternalEvent(
+            event_type="caregiver_message_created",
+            patient_id=patient_id,
+            timestamp=notification.created_at,
+            payload={"notification_id": f"notification-{notification.id}", "priority": priority},
+        )
+    )
+    return {
+        "notification_id": f"notification-{notification.id}",
+        "patient_id": notification.patient_id,
+        "title": notification.title,
+        "body": notification.body,
+        "status": notification.status,
+        "priority": priority,
+        "created_at": utc_iso(notification.created_at),
+    }
 
 
 @router.get("/{patient_id}/system-status", summary="Current technical status")

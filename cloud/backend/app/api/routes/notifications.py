@@ -40,6 +40,30 @@ def list_notifications(
     return paginated([notification_payload(row) for row in rows], page=page, page_size=page_size)
 
 
+@router.get("/caregiver", summary="List caregiver messages")
+def list_caregiver_notifications(
+    patient_id: str = Query(...),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Restituisce solo messaggi operativi destinati al caregiver."""
+    if current_user.role not in {"caregiver", "admin"}:
+        raise HTTPException(status_code=403, detail="Only caregiver or admin can read caregiver messages.")
+    ensure_patient_access(db, current_user, patient_id)
+    rows = db.execute(
+        select(Notification)
+        .where(
+            Notification.patient_id == patient_id,
+            Notification.status != "dismissed",
+        )
+        .order_by(desc(Notification.created_at), desc(Notification.id))
+    ).scalars().all()
+    rows = [row for row in rows if (row.payload or {}).get("kind") == "caregiver_message"]
+    return paginated([notification_payload(row) for row in rows], page=page, page_size=page_size)
+
+
 @router.patch("/{notification_id}/seen", summary="Mark notification as seen")
 def mark_notification_seen(
     notification_id: str,
@@ -82,13 +106,14 @@ def dismiss_notification(
 
     linked_task = linked_task_from_notification(db, row)
     if linked_task is not None:
-        if is_patient_message_task(linked_task.task_type, linked_task.payload or {}):
+        task_status = effective_task_status(linked_task.status, linked_task.due_at)
+        if is_patient_message_task(linked_task.task_type, linked_task.payload or {}) or task_status == "expired":
             linked_task.status = "dismissed"
             task_payload = dict(linked_task.payload or {})
             task_payload["dismissed_at"] = datetime.now(timezone.utc).isoformat()
             task_payload["dismissed_by"] = current_user.display_name or current_user.email
             linked_task.payload = task_payload
-        elif effective_task_status(linked_task.status, linked_task.due_at) != "completed":
+        elif task_status != "completed":
             raise HTTPException(status_code=409, detail="Complete the activity before deleting this notification.")
 
     row.status = "dismissed"

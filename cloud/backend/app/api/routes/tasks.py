@@ -8,7 +8,12 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.routes.task_rules import ensure_task_can_be_completed, is_patient_message_task, score_task_result_details
+from app.api.routes.task_rules import (
+    effective_task_status,
+    ensure_task_can_be_completed,
+    is_patient_message_task,
+    score_task_result_details,
+)
 from app.api.routes.utils import utc_iso
 from app.auth.dependencies import CurrentUser, can_access_patient, get_current_user, write_audit
 from app.db.models import Notification, Task, TaskResult
@@ -163,20 +168,25 @@ def update_task_state(
     return task_state_payload(task)
 
 
-@router.delete("/{task_id}", summary="Dismiss patient message task")
+@router.delete("/{task_id}", summary="Dismiss patient message or expired task")
 def dismiss_patient_message_task(
     task_id: str,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Archivia dall'app paziente solo i messaggi liberi del team di cura."""
+    """Archivia dall'app paziente i messaggi liberi e le attivita' scadute."""
     task = get_task_or_404(db, task_id)
     if current_user.role not in {"patient", "admin"}:
         raise HTTPException(status_code=403, detail="Only patient or admin can dismiss patient messages.")
     if not can_access_patient(db, current_user, task.patient_id):
         raise HTTPException(status_code=403, detail="Patient not authorized.")
-    if not is_patient_message_task(task.task_type, task.payload or {}):
-        raise HTTPException(status_code=409, detail="Only patient messages can be dismissed from the companion app.")
+    is_message = is_patient_message_task(task.task_type, task.payload or {})
+    is_expired = effective_task_status(task.status, task.due_at) == "expired"
+    if not is_message and not is_expired:
+        raise HTTPException(
+            status_code=409,
+            detail="Only patient messages or expired activities can be dismissed from the companion app.",
+        )
     if task.status == "dismissed":
         return task_state_payload(task)
 

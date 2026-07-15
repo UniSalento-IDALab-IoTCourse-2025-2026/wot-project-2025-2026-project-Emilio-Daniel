@@ -20,6 +20,7 @@ public class PatientFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onMessageReceived(RemoteMessage message) {
         super.onMessageReceived(message);
+        PatientNotificationHelper.markPushAnnounced(this, message.getData());
         String title = message.getNotification() == null
                 ? "Nuovo aggiornamento disponibile"
                 : message.getNotification().getTitle();

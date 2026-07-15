@@ -13,6 +13,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 /** Crea notifiche discrete senza dati clinici visibili sul blocco schermo. */
@@ -48,6 +49,25 @@ final class PatientNotificationHelper {
         String safeTitle = title == null || title.isEmpty() ? titleForType(type) : title;
         String safeBody = body == null || body.isEmpty() ? bodyForType(type) : body;
         show(context, safeTitle, safeBody, type);
+    }
+
+    static void markPushAnnounced(Context context, Map<String, String> data) {
+        if (data == null || data.isEmpty()) {
+            return;
+        }
+        AppPreferences preferences = AppPreferences.get(context);
+        Set<String> announced = new HashSet<>(
+                preferences.raw().getStringSet("announcedItems", new HashSet<>())
+        );
+        String taskId = data.get("task_id");
+        String notificationId = data.get("notification_id");
+        if (taskId != null && !taskId.isEmpty()) {
+            announced.add("task:" + taskId);
+        }
+        if (notificationId != null && !notificationId.isEmpty()) {
+            announced.add("notification:" + notificationId);
+        }
+        preferences.raw().edit().putStringSet("announcedItems", announced).apply();
     }
 
     static boolean notificationsEnabled(Context context) {

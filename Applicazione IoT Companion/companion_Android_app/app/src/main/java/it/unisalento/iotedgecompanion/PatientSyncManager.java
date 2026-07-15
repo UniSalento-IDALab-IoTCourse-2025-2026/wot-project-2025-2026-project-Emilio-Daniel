@@ -34,7 +34,7 @@ final class PatientSyncManager {
             }
             boolean notificationsEnabled = PatientNotificationHelper.notificationsEnabled(context);
             String fcmToken = preferences.fcmToken();
-            if (!preferences.fcmTokenRegistered()) {
+            if (!preferences.fcmTokenRegistered() && !fcmToken.isEmpty()) {
                 client.registerDevice(fcmToken, notificationsEnabled);
                 preferences.markFcmTokenRegistered();
             }
@@ -48,7 +48,9 @@ final class PatientSyncManager {
                     notifications.toString(),
                     windows.toString()
             );
-            PatientNotificationHelper.notifyNewItems(context, tasks, notifications);
+            if (!preferences.fcmTokenRegistered()) {
+                PatientNotificationHelper.notifyNewItems(context, tasks, notifications);
+            }
         } catch (Exception exception) {
             preferences.setBackendError("connessione non disponibile");
         } finally {

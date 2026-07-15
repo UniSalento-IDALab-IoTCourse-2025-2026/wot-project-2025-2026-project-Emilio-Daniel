@@ -103,8 +103,34 @@ def notify_task_created(db: Session, task: Task) -> Notification:
     return notification
 
 
+def notify_caregiver_message(
+    db: Session,
+    *,
+    patient_id: str,
+    title: str,
+    body: str,
+    payload: dict[str, Any],
+) -> Notification:
+    """Crea una notifica operativa destinata solo ai device caregiver autorizzati."""
+    notification = create_notification(
+        db,
+        patient_id=patient_id,
+        title=title,
+        body=body,
+        payload={
+            **payload,
+            "type": "caregiver_message",
+            "kind": "caregiver_message",
+        },
+    )
+    send_notification_to_patient_devices(db, notification, allowed_platforms={"android_caregiver"})
+    return notification
+
+
 def task_notification_content(task: Task) -> tuple[str, str, dict[str, Any]]:
     """Prepara testo e payload push distinguendo task operativi e messaggi medico-paziente."""
+    title = str(task.title or "").strip() or "Nuova attivita'"
+    instructions = str(task.instructions or "").strip()
     base_payload = {
         "type": "task_created",
         "task_id": f"task-{task.id}",
@@ -124,8 +150,8 @@ def task_notification_content(task: Task) -> tuple[str, str, dict[str, Any]]:
             },
         )
     return (
-        "Nuova attivita'",
-        "Hai una nuova attivita' da completare nell'app.",
+        title[:255],
+        instructions[:180] if instructions else "Apri l'app per vedere i dettagli dell'attivita'.",
         base_payload,
     )
 
@@ -153,7 +179,7 @@ def notify_alert_created(db: Session, alert: Alert) -> Notification | None:
             "source": alert.source,
         },
     )
-    send_notification_to_patient_devices(db, notification)
+    send_notification_to_patient_devices(db, notification, allowed_platforms={"android_caregiver"})
     return notification
 
 

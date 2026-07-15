@@ -84,6 +84,10 @@ final class BackendApiClient {
         return request("GET", "/alerts/caregiver", null, true, true);
     }
 
+    JSONObject fetchCaregiverMessages(String patientId) throws Exception {
+        return request("GET", "/notifications/caregiver?patient_id=" + patientId + "&page_size=50", null, true, true);
+    }
+
     JSONObject fetchWindows() throws Exception {
         return request("GET", "/telemetry/patients/" + patientId() + "/windows?limit=90", null, true, true);
     }

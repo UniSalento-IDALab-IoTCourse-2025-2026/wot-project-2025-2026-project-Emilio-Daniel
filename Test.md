@@ -1788,6 +1788,10 @@ Le credenziali di accesso del paziente demo sono:
  - paziente.demo@localhost.invalid
  - provaprova
 
+Le credenziali di accesso del caregiver demo sono:
+ - caregiver.demo@localhost.invalid
+ - provaprova
+
 Receiver
 http://IP_PC:8000/ble/sample
 

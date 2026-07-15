@@ -83,6 +83,12 @@ export const api = {
       token: session?.access_token,
       body: task,
     }),
+  createCaregiverMessage: (patientId, message, session) =>
+    request(`/patients/${patientId}/caregiver-messages`, {
+      method: "POST",
+      token: session?.access_token,
+      body: message,
+    }),
   cancelTask: (taskId, note, session) =>
     request(`/tasks/${taskId}/cancel`, {
       method: "PATCH",

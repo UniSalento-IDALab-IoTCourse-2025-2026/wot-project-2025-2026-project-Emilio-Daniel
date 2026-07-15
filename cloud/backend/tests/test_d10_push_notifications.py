@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.models import Notification, Patient, PatientAppStatus, Task
+from app.db.models import Alert, Notification, Patient, PatientAppStatus, Task
 from app.core.config import get_settings
-from app.services.push_notifications import PushSendResult, notify_task_created, send_notification_to_patient_devices
+from app.services import push_notifications
+from app.services.push_notifications import PushSendResult, notify_alert_created, notify_task_created, send_notification_to_patient_devices
 
 
 class RecordingSender:
@@ -99,13 +102,15 @@ def test_invalid_fcm_token_is_disabled() -> None:
 
 def test_notification_without_registered_device_stays_in_app_visible() -> None:
     with make_session() as session:
-        task = Task(patient_id="patient-001", task_type="check_in", title="Controllo", payload={})
+        task = Task(patient_id="patient-001", task_type="check_in", title="Controllo benessere", instructions="Compila il check-in di oggi.", payload={})
         session.add(task)
         session.flush()
 
         notification = notify_task_created(session, task)
         session.commit()
 
+        assert notification.title == "Controllo benessere"
+        assert notification.body == "Compila il check-in di oggi."
         assert notification.status == "no_device"
         assert notification.payload["type"] == "task_created"
         assert notification.payload["delivery"]["attempted"] == 0
@@ -182,3 +187,49 @@ def test_fake_mode_marks_delivery_without_firebase_credentials(monkeypatch) -> N
             assert "fake-token" not in str(notification.payload)
     finally:
         get_settings.cache_clear()
+
+
+def test_important_alert_push_is_sent_only_to_caregiver_devices(monkeypatch) -> None:
+    with make_session() as session:
+        sender = RecordingSender(PushSendResult(success=True, provider_message_id="firebase-alert"))
+        monkeypatch.setattr(push_notifications, "_firebase_sender", sender)
+        session.add_all(
+            [
+                PatientAppStatus(
+                    patient_id="patient-001",
+                    device_id="android-patient-001",
+                    status="online",
+                    platform="android",
+                    fcm_token="patient-token",
+                    notifications_enabled=True,
+                ),
+                PatientAppStatus(
+                    patient_id="patient-001",
+                    device_id="caregiver-android-001",
+                    status="online",
+                    platform="android_caregiver",
+                    fcm_token="caregiver-token",
+                    notifications_enabled=True,
+                ),
+            ]
+        )
+        alert = Alert(
+            patient_id="patient-001",
+            message_id="alert-caregiver-only",
+            level="red",
+            status="new",
+            category="behavioral",
+            title="Alert importante",
+            description="Solo caregiver.",
+            opened_at=datetime.now(timezone.utc),
+        )
+        session.add(alert)
+        session.flush()
+
+        notification = notify_alert_created(session, alert)
+        session.commit()
+
+        assert notification is not None
+        assert notification.status != "no_device"
+        assert notification.payload["delivery"]["attempted"] == 1
+        assert [call["token"] for call in sender.calls] == ["caregiver-token"]

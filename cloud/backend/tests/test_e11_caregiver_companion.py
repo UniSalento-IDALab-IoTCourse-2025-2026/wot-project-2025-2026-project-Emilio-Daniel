@@ -12,12 +12,13 @@ from sqlalchemy.pool import StaticPool
 from app.auth.security import hash_password
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.models import Alert, AlertEvent, Caregiver, CaregiverPatient, Patient, PatientAppStatus, User
+from app.db.models import Alert, AlertEvent, Caregiver, CaregiverPatient, Doctor, DoctorPatient, Notification, Patient, PatientAppStatus, User
 from app.db.session import get_db
 from app.main import app
 
 PASSWORD = "caregiver-test-password"
 CAREGIVER_EMAIL = "caregiver.companion@example.invalid"
+DOCTOR_EMAIL = "doctor.caregiver-message@example.invalid"
 
 
 @pytest.fixture()
@@ -41,12 +42,20 @@ def client() -> Generator[TestClient, None, None]:
             role="caregiver",
             display_name="Caregiver Uno",
         )
-        db.add(user)
+        doctor_user = User(
+            email=DOCTOR_EMAIL,
+            password_hash=hash_password(PASSWORD),
+            role="doctor",
+            display_name="Medico Uno",
+        )
+        db.add_all([user, doctor_user])
         db.flush()
         caregiver = Caregiver(user_id=user.id, relationship="familiare")
-        db.add(caregiver)
+        doctor = Doctor(user_id=doctor_user.id, license_number="DOC-E11")
+        db.add_all([caregiver, doctor])
         db.flush()
         db.add(CaregiverPatient(caregiver_id=caregiver.id, patient_id="patient-001"))
+        db.add(DoctorPatient(doctor_id=doctor.id, patient_id="patient-001"))
         db.add_all(
             [
                 Alert(
@@ -200,10 +209,63 @@ def test_acknowledge_event_is_written_without_exposing_token(client: TestClient)
         assert "token" not in (event.note or "").lower()
 
 
-def auth_headers(client: TestClient) -> dict[str, str]:
+def test_doctor_can_send_custom_message_to_authorized_caregiver(client: TestClient) -> None:
+    doctor_headers = auth_headers(client, DOCTOR_EMAIL)
+    caregiver_headers = auth_headers(client)
+
+    created = client.post(
+        "/api/v1/patients/patient-001/caregiver-messages",
+        headers=doctor_headers,
+        json={
+            "title": "Controllo pratico",
+            "body": "Puoi verificare se il paziente ha indossato il wearable?",
+            "priority": "high",
+        },
+    )
+    listed = client.get("/api/v1/notifications/caregiver?patient_id=patient-001", headers=caregiver_headers)
+    denied = client.get("/api/v1/notifications/caregiver?patient_id=patient-002", headers=caregiver_headers)
+
+    assert created.status_code == 200
+    assert created.json()["priority"] == "high"
+    assert listed.status_code == 200
+    message = listed.json()["items"][0]
+    assert message["title"] == "Controllo pratico"
+    assert message["payload"]["kind"] == "caregiver_message"
+    assert message["payload"]["priority"] == "high"
+    assert denied.status_code == 403
+
+    with Session(app.state.e11_engine) as db:
+        stored = next(
+            item
+            for item in db.execute(select(Notification)).scalars()
+            if (item.payload or {}).get("kind") == "caregiver_message"
+        )
+        assert "wearable" in (stored.body or "")
+        assert "token" not in str(stored.payload).lower()
+
+
+def test_caregiver_can_dismiss_custom_messages(client: TestClient) -> None:
+    doctor_headers = auth_headers(client, DOCTOR_EMAIL)
+    caregiver_headers = auth_headers(client)
+    client.post(
+        "/api/v1/patients/patient-001/caregiver-messages",
+        headers=doctor_headers,
+        json={"title": "Verifica", "body": "Puoi verificare il wearable?", "priority": "normal"},
+    )
+    message = client.get("/api/v1/notifications/caregiver?patient_id=patient-001", headers=caregiver_headers).json()["items"][0]
+
+    dismissed = client.delete(f"/api/v1/notifications/{message['notification_id']}", headers=caregiver_headers)
+    listed = client.get("/api/v1/notifications/caregiver?patient_id=patient-001", headers=caregiver_headers)
+
+    assert dismissed.status_code == 200
+    assert dismissed.json()["status"] == "dismissed"
+    assert listed.json()["items"] == []
+
+
+def auth_headers(client: TestClient, email: str = CAREGIVER_EMAIL) -> dict[str, str]:
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": CAREGIVER_EMAIL, "password": PASSWORD},
+        json={"email": email, "password": PASSWORD},
     )
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}

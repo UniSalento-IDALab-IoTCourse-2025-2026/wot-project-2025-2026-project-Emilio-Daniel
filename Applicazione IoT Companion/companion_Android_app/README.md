@@ -16,6 +16,7 @@ La schermata caregiver mostra:
 - stato generale del paziente;
 - ultimo aggiornamento;
 - problemi tecnici semplici, come Raspberry offline o wearable non presente;
+- messaggi operativi personalizzati inviati dal medico;
 - solo alert importanti pubblicabili (`orange` e `red`);
 - stato di presa in carico dell'alert;
 - pulsante `Prendi in carico` con conferma.
@@ -24,6 +25,10 @@ Non vengono mostrati score AI dettagliati, feature cliniche grezze, z-score, tok
 configurazioni tecniche. Le notifiche push degli alert importanti possono arrivare anche
 al caregiver quando l'app e' chiusa; i task e i messaggi personali restano invece
 destinati al telefono del paziente.
+
+Il medico puo' inviare dalla Dashboard anche un messaggio specifico al caregiver. Il
+backend lo salva come `caregiver_message`, lo invia solo ai device `android_caregiver`
+e l'app lo mostra nella sezione `Messaggi dal team`.
 
 ## Versione 0.3: esperienza quotidiana e andamento personale
 

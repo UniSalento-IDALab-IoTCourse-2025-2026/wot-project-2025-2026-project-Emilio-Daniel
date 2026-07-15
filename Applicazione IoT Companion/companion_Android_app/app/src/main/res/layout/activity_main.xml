@@ -211,11 +211,33 @@
                     android:lineSpacingExtra="2dp"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
-            </LinearLayout>
+              </LinearLayout>
 
-            <LinearLayout
-                style="@style/Panel"
-                android:layout_marginTop="12dp">
+              <LinearLayout
+                  style="@style/Panel"
+                  android:layout_marginTop="12dp">
+
+                  <TextView style="@style/SectionTitle" android:text="Messaggi dal team" />
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="4dp"
+                      android:text="Comunicazioni pratiche inviate dal medico al caregiver."
+                      android:textColor="@color/text_secondary"
+                      android:textSize="12sp" />
+
+                  <LinearLayout
+                      android:id="@+id/caregiverMessagesContainer"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="11dp"
+                      android:orientation="vertical" />
+              </LinearLayout>
+
+              <LinearLayout
+                  style="@style/Panel"
+                  android:layout_marginTop="12dp">
 
                 <TextView style="@style/SectionTitle" android:text="Segnalazioni importanti" />
 

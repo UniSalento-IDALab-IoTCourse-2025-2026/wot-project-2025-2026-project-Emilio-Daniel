@@ -76,6 +76,7 @@ public class MainActivity extends Activity {
     private TextView caregiverUpdateText;
     private TextView caregiverTechnicalText;
     private LinearLayout caregiverAlertsContainer;
+    private LinearLayout caregiverMessagesContainer;
     private HealthTrendView heartRateChart;
     private HealthTrendView spo2Chart;
 
@@ -162,6 +163,7 @@ public class MainActivity extends Activity {
         caregiverUpdateText = findViewById(R.id.caregiverUpdateText);
         caregiverTechnicalText = findViewById(R.id.caregiverTechnicalText);
         caregiverAlertsContainer = findViewById(R.id.caregiverAlertsContainer);
+        caregiverMessagesContainer = findViewById(R.id.caregiverMessagesContainer);
         heartRateChart = findViewById(R.id.heartRateChart);
         spo2Chart = findViewById(R.id.spo2Chart);
     }
@@ -214,8 +216,10 @@ public class MainActivity extends Activity {
             try {
                 BackendApiClient client = new BackendApiClient(this);
                 JSONObject overview = client.fetchCaregiverOverview();
+                JSONObject messages = fetchCaregiverMessages(client, overview);
                 registerCaregiverDevices(client, overview);
                 preferences.cacheCaregiverOverview(overview.toString());
+                preferences.cacheCaregiverMessages(messages.toString());
                 runOnUiThread(this::renderScreen);
             } catch (Exception exception) {
                 preferences.setBackendError(userMessage(exception));
@@ -275,7 +279,104 @@ public class MainActivity extends Activity {
 
         JSONObject technical = patient.optJSONObject("technical_status");
         caregiverTechnicalText.setText(caregiverTechnicalLabel(technical));
+        renderCaregiverMessages(cachedItems(preferences.cachedCaregiverMessages()));
         renderCaregiverAlerts(patient.optJSONArray("alerts"));
+    }
+
+    private JSONObject fetchCaregiverMessages(BackendApiClient client, JSONObject overview) throws Exception {
+        JSONArray patients = overview.optJSONArray("items");
+        JSONArray allMessages = new JSONArray();
+        if (patients == null) {
+            return new JSONObject().put("items", allMessages);
+        }
+        for (int index = 0; index < patients.length(); index++) {
+            JSONObject patient = patients.optJSONObject(index);
+            if (patient == null) {
+                continue;
+            }
+            String patientId = patient.optString("patient_id");
+            if (patientId.isEmpty()) {
+                continue;
+            }
+            JSONArray messages = client.fetchCaregiverMessages(patientId).optJSONArray("items");
+            if (messages == null) {
+                continue;
+            }
+            for (int messageIndex = 0; messageIndex < messages.length(); messageIndex++) {
+                JSONObject message = messages.optJSONObject(messageIndex);
+                if (message != null) {
+                    allMessages.put(message);
+                }
+            }
+        }
+        return new JSONObject().put("items", allMessages);
+    }
+
+    private void renderCaregiverMessages(JSONArray messages) {
+        caregiverMessagesContainer.removeAllViews();
+        if (messages == null || messages.length() == 0) {
+            caregiverMessagesContainer.addView(emptyText("Nessun messaggio operativo ricevuto."));
+            return;
+        }
+        for (int index = 0; index < messages.length(); index++) {
+            JSONObject message = messages.optJSONObject(index);
+            if (message == null) {
+                continue;
+            }
+            caregiverMessagesContainer.addView(caregiverMessageRow(message));
+        }
+    }
+
+    private View caregiverMessageRow(JSONObject message) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setBackgroundResource(R.drawable.bg_task_card);
+        int padding = dp(14);
+        row.setPadding(padding, padding, padding, padding);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        row.setLayoutParams(params);
+
+        JSONObject payload = message.optJSONObject("payload");
+        String priority = payload == null ? "normal" : payload.optString("priority", "normal");
+        TextView badge = new TextView(this);
+        badge.setText(caregiverMessagePriorityLabel(priority) + "  •  " + formatTimestamp(message.optString("created_at", null)));
+        badge.setTextColor(getColor(R.color.primary));
+        badge.setTextSize(11);
+        badge.setTypeface(null, android.graphics.Typeface.BOLD);
+        row.addView(badge);
+
+        TextView title = new TextView(this);
+        title.setText(message.optString("title", "Messaggio dal medico"));
+        title.setTextColor(getColor(R.color.text_primary));
+        title.setTextSize(16);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setPadding(0, dp(7), 0, 0);
+        row.addView(title);
+
+        TextView body = new TextView(this);
+        body.setText(message.optString("body", "Apri la dashboard o contatta il team se richiesto."));
+        body.setTextColor(getColor(R.color.text_secondary));
+        body.setTextSize(13);
+        body.setPadding(0, dp(5), 0, 0);
+        row.addView(body);
+        addInlineAction(row, "Elimina messaggio", view -> dismissCaregiverMessage(message));
+        return row;
+    }
+
+    private void dismissCaregiverMessage(JSONObject message) {
+        executor.execute(() -> {
+            try {
+                new BackendApiClient(this).dismissNotification(message.getString("notification_id"));
+                synchronizeCaregiverNow();
+                runOnUiThread(() -> Toast.makeText(this, "Messaggio eliminato.", Toast.LENGTH_SHORT).show());
+            } catch (Exception exception) {
+                runOnUiThread(() -> Toast.makeText(this, userMessage(exception), Toast.LENGTH_SHORT).show());
+            }
+        });
     }
 
     private void renderCaregiverAlerts(JSONArray alerts) {
@@ -434,6 +535,16 @@ public class MainActivity extends Activity {
         return "operatore";
     }
 
+    private String caregiverMessagePriorityLabel(String priority) {
+        if ("urgent".equals(priority)) {
+            return "Urgente";
+        }
+        if ("high".equals(priority)) {
+            return "Priorita alta";
+        }
+        return "Messaggio";
+    }
+
     private String caregiverTechnicalLabel(JSONObject technical) {
         if (technical == null) {
             return "Stato tecnico in aggiornamento.";
@@ -575,8 +686,7 @@ public class MainActivity extends Activity {
                         addPatientMessage(task);
                         messageCount++;
                     } else if (!"completed".equals(task.optString("status"))
-                            && !"cancelled".equals(task.optString("status"))
-                            && !"expired".equals(task.optString("status"))) {
+                            && !"cancelled".equals(task.optString("status"))) {
                         addTask(task);
                         taskCount++;
                     }
@@ -585,7 +695,11 @@ public class MainActivity extends Activity {
             JSONArray notifications = new JSONObject(preferences.cachedNotifications()).optJSONArray("items");
             if (notifications != null) {
                 for (int index = 0; index < notifications.length(); index++) {
-                    addNotification(notifications.getJSONObject(index));
+                    JSONObject notification = notifications.getJSONObject(index);
+                    if (isNotificationForPatientMessage(notification)) {
+                        continue;
+                    }
+                    addNotification(notification);
                     messageCount++;
                 }
             }
@@ -602,9 +716,18 @@ public class MainActivity extends Activity {
 
     private void addTask(JSONObject task) {
         String title = task.optString("title", "Nuova attività");
-        String subtitle = task.optString("instructions", "Apri per visualizzare i dettagli.");
+        boolean expired = isExpiredTask(task);
+        String subtitle = expired
+                ? "Questa attivita' e' scaduta. Puoi eliminarla dall'app."
+                : task.optString("instructions", "Apri per visualizzare i dettagli.");
         View row = taskRow(task, title, subtitle);
-        row.setOnClickListener(view -> openTask(task));
+        row.setOnClickListener(view -> {
+            if (expired) {
+                confirmDismissTask(task);
+            } else {
+                openTask(task);
+            }
+        });
         tasksContainer.addView(row);
         markTaskSeenOnce(task);
     }
@@ -690,13 +813,14 @@ public class MainActivity extends Activity {
         dueView.setTextSize(11);
         footer.addView(dueView);
         TextView actionView = new TextView(this);
-        actionView.setText("Inizia attività");
+        boolean expired = isExpiredTask(task);
+        actionView.setText(expired ? "Elimina" : "Inizia attivita'");
         actionView.setTextColor(getColor(R.color.primary));
         actionView.setTextSize(12);
         actionView.setTypeface(null, android.graphics.Typeface.BOLD);
         footer.addView(actionView);
         row.addView(footer);
-        row.setContentDescription(title + ". " + taskDueLabel(task) + ". Inizia attività.");
+        row.setContentDescription(title + ". " + taskDueLabel(task) + ". " + (expired ? "Elimina." : "Inizia attivita'."));
         return row;
     }
 
@@ -828,13 +952,28 @@ public class MainActivity extends Activity {
         return payload != null && !payload.optString("task_id", "").isEmpty();
     }
 
+    private boolean isNotificationForPatientMessage(JSONObject notification) {
+        JSONObject payload = notification.optJSONObject("payload");
+        if (payload == null || payload.optString("task_id", "").isEmpty()) {
+            return false;
+        }
+        JSONObject task = findCachedTask(payload.optString("task_id"));
+        return task != null && isPatientMessage(task);
+    }
+
     private boolean canDismissNotification(JSONObject notification) {
         JSONObject payload = notification.optJSONObject("payload");
         if (payload == null || payload.optString("task_id", "").isEmpty()) {
             return true;
         }
         JSONObject task = findCachedTask(payload.optString("task_id"));
-        return task != null && (isPatientMessage(task) || "completed".equals(task.optString("status")));
+        return task != null && (isPatientMessage(task)
+                || "completed".equals(task.optString("status"))
+                || isExpiredTask(task));
+    }
+
+    private boolean isExpiredTask(JSONObject task) {
+        return "expired".equals(task.optString("status"));
     }
 
     private JSONObject findCachedTask(String taskId) {
@@ -859,9 +998,12 @@ public class MainActivity extends Activity {
     }
 
     private void confirmDismissTask(JSONObject task) {
+        boolean expired = isExpiredTask(task);
         new AlertDialog.Builder(this)
-                .setTitle("Eliminare il messaggio?")
-                .setMessage("Il messaggio sparira' da questa app, ma restera' tracciato nei sistemi clinici.")
+                .setTitle(expired ? "Eliminare l'attivita' scaduta?" : "Eliminare il messaggio?")
+                .setMessage(expired
+                        ? "L'attivita' scaduta sparira' da questa app, ma restera' tracciata nei sistemi clinici."
+                        : "Il messaggio sparira' da questa app, ma restera' tracciato nei sistemi clinici.")
                 .setNegativeButton("Annulla", null)
                 .setPositiveButton("Elimina", (dialog, which) -> dismissTask(task))
                 .show();
@@ -872,7 +1014,11 @@ public class MainActivity extends Activity {
             try {
                 new BackendApiClient(this).dismissTask(task.getString("task_id"));
                 PatientSyncManager.synchronize(this);
-                runOnUiThread(() -> Toast.makeText(this, "Messaggio eliminato.", Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> Toast.makeText(
+                        this,
+                        isExpiredTask(task) ? "Attivita' scaduta eliminata." : "Messaggio eliminato.",
+                        Toast.LENGTH_SHORT
+                ).show());
             } catch (Exception exception) {
                 runOnUiThread(() -> Toast.makeText(this, userMessage(exception), Toast.LENGTH_SHORT).show());
             }
