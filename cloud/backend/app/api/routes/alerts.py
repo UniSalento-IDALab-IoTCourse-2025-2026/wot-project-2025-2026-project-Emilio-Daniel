@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session
 
 from app.api.routes.patients import current_payload, get_patient_or_404
@@ -140,6 +140,45 @@ def resolve_alert(
     db.commit()
     publish_alert_event("alert_resolved", alert, now)
     return alert_payload(db, alert)
+
+
+@router.delete("/{alert_id}", summary="Delete alert permanently")
+def delete_alert(
+    alert_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Elimina definitivamente un alert dal backend su richiesta del medico."""
+    alert = get_alert_or_404(db, alert_id)
+    if current_user.role not in {"doctor", "admin"}:
+        raise HTTPException(status_code=403, detail="Only doctor or admin can delete alerts.")
+    if not can_access_patient(db, current_user, alert.patient_id):
+        raise HTTPException(status_code=403, detail="Patient not authorized.")
+
+    patient_id = alert.patient_id
+    public_alert_id = f"alert-{alert.id}"
+    now = datetime.now(timezone.utc)
+    write_audit(
+        db,
+        actor=current_user,
+        action="alert.deleted",
+        patient_id=patient_id,
+        target_type="alert",
+        target_id=public_alert_id,
+        details={"status": alert.status, "level": alert.level},
+    )
+    db.execute(delete(AlertEvent).where(AlertEvent.alert_id == alert.id))
+    db.delete(alert)
+    db.commit()
+    event_bus.publish(
+        InternalEvent(
+            event_type="alert_deleted",
+            patient_id=patient_id,
+            timestamp=now,
+            payload={"alert_id": public_alert_id},
+        )
+    )
+    return {"status": "deleted", "alert_id": public_alert_id, "patient_id": patient_id}
 
 
 def get_alert_or_404(db: Session, alert_id: str) -> Alert:

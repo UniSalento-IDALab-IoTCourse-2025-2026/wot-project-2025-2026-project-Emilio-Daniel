@@ -61,7 +61,10 @@ export const api = {
     if (options.date_to) params.set("date_to", options.date_to);
     return request(`/patients/${patientId}/windows?${params.toString()}`, { token: session?.access_token });
   },
-  decisions: (patientId, session) => request(`/patients/${patientId}/decisions?limit=8`, { token: session?.access_token }),
+  decisions: (patientId, session, options = {}) =>
+    request(`/patients/${patientId}/decisions?limit=${encodeURIComponent(String(options.limit ?? 200))}`, {
+      token: session?.access_token,
+    }),
   alerts: (patientId, session) => request(`/patients/${patientId}/alerts`, { token: session?.access_token }),
   tasks: (patientId, session) => request(`/patients/${patientId}/tasks`, { token: session?.access_token }),
   systemStatus: (patientId, session) => request(`/patients/${patientId}/system-status`, { token: session?.access_token }),
@@ -76,6 +79,11 @@ export const api = {
       method: "PATCH",
       token: session?.access_token,
       body: { user_id: session?.user?.user_id, note },
+    }),
+  deleteAlert: (alertId, session) =>
+    request(`/alerts/${alertId}`, {
+      method: "DELETE",
+      token: session?.access_token,
     }),
   createTask: (patientId, task, session) =>
     request(`/patients/${patientId}/tasks`, {
@@ -94,6 +102,11 @@ export const api = {
       method: "PATCH",
       token: session?.access_token,
       body: { note },
+    }),
+  deleteTask: (taskId, session) =>
+    request(`/tasks/${taskId}`, {
+      method: "DELETE",
+      token: session?.access_token,
     }),
   updateTaskMedicalNote: (taskId, medicalNote, session) =>
     request(`/tasks/${taskId}/medical-note`, {

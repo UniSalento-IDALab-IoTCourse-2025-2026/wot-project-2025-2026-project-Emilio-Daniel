@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.routes.task_rules import (
@@ -168,14 +168,44 @@ def update_task_state(
     return task_state_payload(task)
 
 
-@router.delete("/{task_id}", summary="Dismiss patient message or expired task")
+@router.delete("/{task_id}", summary="Delete task or dismiss patient message")
 def dismiss_patient_message_task(
     task_id: str,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Archivia dall'app paziente i messaggi liberi e le attivita' scadute."""
+    """Archivia lato paziente oppure elimina definitivamente lato medico/admin."""
     task = get_task_or_404(db, task_id)
+    if current_user.role in {"doctor", "admin"}:
+        if not can_access_patient(db, current_user, task.patient_id):
+            raise HTTPException(status_code=403, detail="Patient not authorized.")
+        patient_id = task.patient_id
+        public_task_id = f"task-{task.id}"
+        title = task.title
+        status = task.status
+        dismiss_task_notifications(db, task)
+        write_audit(
+            db,
+            actor=current_user,
+            action="task.deleted",
+            patient_id=patient_id,
+            target_type="task",
+            target_id=public_task_id,
+            details={"title": title, "status": status},
+        )
+        db.execute(delete(TaskResult).where(TaskResult.task_id == task.id))
+        db.delete(task)
+        db.commit()
+        event_bus.publish(
+            InternalEvent(
+                event_type="task_deleted",
+                patient_id=patient_id,
+                timestamp=datetime.now(timezone.utc),
+                payload={"task_id": public_task_id},
+            )
+        )
+        return {"status": "deleted", "task_id": public_task_id, "patient_id": patient_id}
+
     if current_user.role not in {"patient", "admin"}:
         raise HTTPException(status_code=403, detail="Only patient or admin can dismiss patient messages.")
     if not can_access_patient(db, current_user, task.patient_id):

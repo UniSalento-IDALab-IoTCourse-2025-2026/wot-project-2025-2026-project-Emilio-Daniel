@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Clock3,
   ClipboardList,
+  DatabaseZap,
   Eye,
   EyeOff,
   Gauge,
@@ -24,12 +25,14 @@ import {
   Menu,
   MessageSquare,
   MonitorCog,
+  Maximize2,
   Plus,
   RefreshCcw,
   Search,
   Send,
   Server,
   ShieldCheck,
+  Trash2,
   UserRound,
   UserRoundCheck,
   Users,
@@ -37,7 +40,8 @@ import {
   Wifi,
   X,
 } from "lucide-react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, clearSession, loadSession, saveSession } from "./api/client.js";
 import { readableApiError } from "./api/errors.js";
 import { openPatientSocket } from "./api/realtime.js";
@@ -405,6 +409,10 @@ function Dashboard({ session, onLogout }) {
   const [patientSearch, setPatientSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [patientIdentityOpen, setPatientIdentityOpen] = useState(false);
+  const [clearAllOpen, setClearAllOpen] = useState(false);
+  const [clearAllPassword, setClearAllPassword] = useState("");
+  const [clearAllError, setClearAllError] = useState("");
+  const [clearAllBusy, setClearAllBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [state, setState] = useState({ loading: true, error: "", data: null });
   const [wsStatus, setWsStatus] = useState("idle");
@@ -485,9 +493,11 @@ function Dashboard({ session, onLogout }) {
             "alert_created",
             "alert_acknowledged",
             "alert_resolved",
+            "alert_deleted",
             "task_created",
             "task_completed",
             "task_cancelled",
+            "task_deleted",
             "task_updated",
             "caregiver_message_created",
             "system_status_updated",
@@ -528,6 +538,44 @@ function Dashboard({ session, onLogout }) {
   function selectTab(tabId) {
     setActiveTab(tabId);
     setSidebarOpen(false);
+  }
+
+  function clearCurrentPatientView() {
+    setState((previous) => {
+      if (!previous.data) return previous;
+      return {
+        ...previous,
+        data: {
+          ...previous.data,
+          windows: [],
+          decisions: [],
+          alerts: [],
+          tasks: [],
+        },
+      };
+    });
+    setEvents([]);
+  }
+
+  async function confirmClearAllDashboardData() {
+    const email = session?.user?.email;
+    if (!email || !clearAllPassword.trim()) {
+      setClearAllError("Inserisci la password del profilo medico.");
+      return;
+    }
+    setClearAllBusy(true);
+    setClearAllError("");
+    try {
+      await api.login({ email, password: clearAllPassword });
+      clearCurrentPatientView();
+      localStorage.removeItem(PATIENT_PROFILE_STORAGE_KEY);
+      setClearAllPassword("");
+      setClearAllOpen(false);
+    } catch (error) {
+      setClearAllError("Password non valida oppure backend non raggiungibile.");
+    } finally {
+      setClearAllBusy(false);
+    }
   }
 
   return (
@@ -638,7 +686,7 @@ function Dashboard({ session, onLogout }) {
 
         <div className="sidebar-user">
           <span className="user-avatar"><UserRound size={18} /></span>
-          <span><strong>{userLabel}</strong><small>Sessione protetta</small></span>
+          <span><strong>{userLabel}</strong></span>
           <button type="button" onClick={onLogout} title="Esci" aria-label="Esci"><LogOut size={17} /></button>
         </div>
       </aside>
@@ -660,6 +708,9 @@ function Dashboard({ session, onLogout }) {
               <UserRound size={17} />
               Anagrafica
             </button>
+            <button className="icon-button" type="button" onClick={() => setClearAllOpen(true)} title="Pulisci dati app" aria-label="Pulisci dati app">
+              <DatabaseZap size={18} />
+            </button>
             <button className="notification-button" type="button" onClick={() => selectTab("alerts")} title="Apri segnalazioni" aria-label="Apri segnalazioni">
               <Bell size={18} />
               {activeAlertCount > 0 && <span>{activeAlertCount}</span>}
@@ -676,9 +727,8 @@ function Dashboard({ session, onLogout }) {
         {!state.loading && !state.error && state.data && (
           <div className="workspace-content">
             <OverviewStrip patients={patients} selectedPatientId={selectedPatientId} />
-            <TriageNotice />
             <div className="view-stage" key={`${activeTab}-${selectedPatientId}`}>
-              {activeTab === "patient" && <PatientView data={state.data} />}
+              {activeTab === "patient" && <PatientView data={state.data} onClearPatientData={clearCurrentPatientView} />}
               {activeTab === "alerts" && (
                 <AlertsView
                   data={state.data}
@@ -699,16 +749,35 @@ function Dashboard({ session, onLogout }) {
         patient={selectedPatient}
         current={state.data?.current}
       />
+      <ActionDialog
+        open={clearAllOpen}
+        icon={<DatabaseZap size={22} />}
+        title="Pulire i dati visualizzati?"
+        description="La pulizia riguarda la vista locale della dashboard: il database clinico non viene cancellato."
+        confirmLabel="Pulisci dashboard"
+        busy={clearAllBusy}
+        onClose={() => {
+          if (clearAllBusy) return;
+          setClearAllOpen(false);
+          setClearAllPassword("");
+          setClearAllError("");
+        }}
+        onConfirm={confirmClearAllDashboardData}
+      >
+        <label className="dialog-field">
+          Password medico
+          <input
+            value={clearAllPassword}
+            onChange={(event) => setClearAllPassword(event.target.value)}
+            type="password"
+            autoComplete="current-password"
+            placeholder="Conferma con la password del profilo"
+          />
+          <small>Serve solo per confermare l'operazione locale.</small>
+        </label>
+        {clearAllError && <p className="inline-feedback error"><AlertTriangle size={16} />{clearAllError}</p>}
+      </ActionDialog>
     </main>
-  );
-}
-
-function TriageNotice() {
-  return (
-    <div className="notice">
-      <span className="notice-icon"><ShieldCheck size={17} /></span>
-      <span><strong>Supporto al triage</strong> Gli indicatori orientano la priorita di revisione; la valutazione resta al medico.</span>
-    </div>
   );
 }
 
@@ -841,18 +910,25 @@ function SortableHeader({ label, sortKey, sort, onSort }) {
   );
 }
 
-function PatientView({ data }) {
+function PatientView({ data, onClearPatientData }) {
   const { current, windows, decisions } = data;
   const stale = isStale(current.last_update);
   const latestDecision = decisions.at(-1);
   const [rangeMode, setRangeMode] = useState("day");
   const [recentWindowsHidden, setRecentWindowsHidden] = useState(false);
+  const [chartsHidden, setChartsHidden] = useState(false);
+  const [expandedChart, setExpandedChart] = useState(null);
   const [recentSort, setRecentSort] = useState({ key: "window_end", direction: "desc" });
-  const visibleWindows = useMemo(() => filterWindowsByRange(windows, rangeMode), [windows, rangeMode]);
+  const [windowInterval, setWindowInterval] = useState({ date: "", from: "", to: "" });
+  const decisionTrendWindows = useMemo(() => decisionScoreWindows(decisions), [decisions]);
+  const visibleWindows = useMemo(() => {
+    const ranged = filterWindowsByRange(windows, rangeMode);
+    return filterWindowsByCustomInterval(ranged, windowInterval);
+  }, [windows, rangeMode, windowInterval]);
   const chartWindows = visibleWindows.length > 0 ? visibleWindows : windows;
   const recentRows = useMemo(
-    () => sortRecentWindows(windows, recentSort),
-    [windows, recentSort]
+    () => sortRecentWindows(visibleWindows.length || hasWindowInterval(windowInterval) ? visibleWindows : windows, recentSort),
+    [windows, visibleWindows, recentSort, windowInterval]
   );
 
   function changeRecentSort(key) {
@@ -889,6 +965,14 @@ function PatientView({ data }) {
       </section>
 
       <section className="panel span-2">
+        <DecisionScoreTrendPanel
+          decisions={decisions}
+          windows={decisionTrendWindows}
+          onExpandChart={setExpandedChart}
+        />
+      </section>
+
+      <section className="panel span-2">
         <div className="panel-heading">
           <div>
             <h3>Dati wearable e spaziali</h3>
@@ -911,41 +995,21 @@ function PatientView({ data }) {
             </button>
           </div>
         </div>
-        <WearableSpatialDashboard windows={chartWindows} current={current} />
-      </section>
-
-      <section className="panel acquisition-panel">
-        <div className="panel-heading compact-heading">
-          <div className="section-heading-group">
-            <span className="section-heading-icon soft"><Watch size={19} /></span>
-            <h3>Wearable</h3>
-          </div>
-          <span className={`technical-status-chip ${current.watch?.present ? "good" : "warning"}`}>
-            {current.watch?.present ? "Rilevato" : "Non rilevato"}
-          </span>
+        <div className="panel-toolbar-inline">
+          <button className="secondary-button" type="button" onClick={() => setChartsHidden((previous) => !previous)}>
+            <Trash2 size={16} />
+            {chartsHidden ? "Ripristina grafici" : "Pulisci grafici"}
+          </button>
         </div>
-        <dl className="detail-list">
-          <Detail label="Presenza" value={current.watch?.present ? "Si" : "No"} />
-          <Detail label="Batteria" value={current.watch?.battery_pct ?? "n/d"} suffix={current.watch?.battery_pct !== null && current.watch?.battery_pct !== undefined ? "%" : ""} />
-          <Detail label="Dati disponibili" value={(current.watch?.available_features ?? []).map(clinicalFeatureName).join(", ") || "n/d"} />
-        </dl>
-      </section>
-
-      <section className="panel acquisition-panel">
-        <div className="panel-heading compact-heading">
-          <div className="section-heading-group">
-            <span className="section-heading-icon soft"><Server size={19} /></span>
-            <h3>Continuita acquisizione</h3>
-          </div>
-          <span className={`technical-status-chip ${data.system?.edge?.online ? "good" : "warning"}`}>
-            {data.system?.edge?.online ? "Operativa" : "Da verificare"}
-          </span>
-        </div>
-        <dl className="detail-list">
-          <Detail label="Raspberry" value={data.system?.edge?.online ? "Online" : "Offline"} />
-          <Detail label="Qualita dati" value={qualityStatusLabel(data.system?.edge?.quality_status)} />
-          <Detail label="Ultimo ciclo" value={formatDateTime(data.system?.edge?.last_cycle_at)} />
-        </dl>
+        {chartsHidden ? (
+          <ViewEmptyState
+            icon={<Trash2 size={24} />}
+            title="Grafici puliti"
+            text="La vista dei grafici e' stata svuotata in questa sessione. I dati originali restano disponibili sul backend."
+          />
+        ) : (
+          <WearableSpatialDashboard windows={chartWindows} current={current} onExpandChart={setExpandedChart} />
+        )}
       </section>
 
       <section className="panel span-2">
@@ -968,6 +1032,11 @@ function PatientView({ data }) {
             </button>
           </div>
         </div>
+        <WindowIntervalFilters
+          value={windowInterval}
+          onChange={setWindowInterval}
+          onClear={() => setWindowInterval({ date: "", from: "", to: "" })}
+        />
         {recentWindowsHidden ? (
           <ViewEmptyState
             icon={<CalendarClock size={24} />}
@@ -1001,6 +1070,7 @@ function PatientView({ data }) {
         </div>
         )}
       </section>
+      <ChartDialog chart={expandedChart} windows={chartWindows} onClose={() => setExpandedChart(null)} />
     </div>
   );
 }
@@ -1224,6 +1294,33 @@ function PatientIdentityPanel({ patient, current }) {
   );
 }
 
+function WindowIntervalFilters({ value, onChange, onClear }) {
+  const hasFilter = hasWindowInterval(value);
+  function update(field, nextValue) {
+    onChange({ ...value, [field]: nextValue });
+  }
+  return (
+    <div className="window-interval-filter" aria-label="Filtro intervallo finestre">
+      <label>
+        Giorno
+        <input type="date" value={value.date} onChange={(event) => update("date", event.target.value)} />
+      </label>
+      <label>
+        Da
+        <input type="time" value={value.from} onChange={(event) => update("from", event.target.value)} />
+      </label>
+      <label>
+        A
+        <input type="time" value={value.to} onChange={(event) => update("to", event.target.value)} />
+      </label>
+      <button className="secondary-button" type="button" onClick={onClear} disabled={!hasFilter}>
+        <X size={16} />
+        Pulisci filtro
+      </button>
+    </div>
+  );
+}
+
 function AiExplanationPanel({ decision, system, current }) {
   const fusion = fusionFromDecision(decision);
   const models = modelSummaries(fusion);
@@ -1239,7 +1336,6 @@ function AiExplanationPanel({ decision, system, current }) {
       <div>
         <div className="panel-heading">
           <h3>Valutazione comportamentale</h3>
-          <span className="badge">Supporto al triage</span>
         </div>
         <p className="empty-text">La valutazione non e' ancora disponibile per questo paziente.</p>
       </div>
@@ -1554,7 +1650,7 @@ function ClinicalFactors({ models }) {
   );
 }
 
-function WearableSpatialDashboard({ windows, current }) {
+function WearableSpatialDashboard({ windows, current, onExpandChart }) {
   const latestFeatures = latestFeaturesFromWindows(windows);
 
   return (
@@ -1571,6 +1667,7 @@ function WearableSpatialDashboard({ windows, current }) {
             unit="bpm"
             windows={windows}
             color="#c83532"
+            onExpand={onExpandChart}
           />
           <FeatureTrendCard
             title="Deviazione frequenza cardiaca"
@@ -1578,14 +1675,13 @@ function WearableSpatialDashboard({ windows, current }) {
             unit="bpm"
             windows={windows}
             color="#c05621"
+            onExpand={onExpandChart}
           />
-          <FeatureTrendCard title="SpO2 media" feature="spo2_mean" unit="%" windows={windows} color="#17686c" />
-          <FeatureTrendCard title="Passi" feature="steps" unit="" windows={windows} color="#4452ba" />
-          <FeatureTrendCard title="Sonno" feature="sleep_minutes" unit="min" windows={windows} color="#6271d9" />
-          <FeatureTrendCard title="Sedentarieta" feature="sedentary_minutes" unit="min" windows={windows} color="#744d00" />
-          <FeatureTrendCard title="HRV RMSSD" feature="hrv_rmssd" unit="ms" windows={windows} color="#6f4bb8" />
+          <FeatureTrendCard title="SpO2 media" feature="spo2_mean" unit="%" windows={windows} color="#17686c" onExpand={onExpandChart} />
+          <FeatureTrendCard title="Passi" feature="steps" unit="" windows={windows} color="#4452ba" onExpand={onExpandChart} />
+          <FeatureTrendCard title="Sonno" feature="sleep_minutes" unit="min" windows={windows} color="#6271d9" onExpand={onExpandChart} />
+          <FeatureTrendCard title="Sedentarieta" feature="sedentary_minutes" unit="min" windows={windows} color="#744d00" onExpand={onExpandChart} />
         </div>
-        <HrvPanel windows={windows} current={current} latestFeatures={latestFeatures} />
       </section>
 
       <section className="sensor-block">
@@ -1601,61 +1697,161 @@ function WearableSpatialDashboard({ windows, current }) {
   );
 }
 
-function FeatureTrendCard({ title, feature, unit, windows, color }) {
+function DecisionScoreTrendPanel({ decisions, windows, onExpandChart }) {
+  const latest = latestFeatureValue(windows, "anomaly_score");
+
+  return (
+    <div className="decision-trend-panel">
+      <div className="panel-heading compact-heading">
+        <div>
+          <h3>Andamento indice AI</h3>
+          <p className="panel-subtitle">
+            Ultimo valore {scoreBandText(latest)} su {decisions.length} decisioni salvate.
+          </p>
+        </div>
+      </div>
+      {windows.length === 0 ? (
+        <ViewEmptyState
+          icon={<BrainCircuit size={24} />}
+          title="Nessuno storico AI disponibile"
+          text="Quando il Raspberry pubblica le decisioni, lo score viene salvato dal backend e comparira' qui come serie temporale."
+        />
+      ) : (
+        <FeatureTrendCard
+          title="Indice AI nel tempo"
+          feature="anomaly_score"
+          unit=""
+          windows={windows}
+          color="#147776"
+          onExpand={onExpandChart}
+          large
+        />
+      )}
+    </div>
+  );
+}
+
+function FeatureTrendCard({ title, feature, unit, windows, color, onExpand, large = false, minimal = false }) {
   const status = featureStatus(windows, feature);
   const latest = latestFeatureValue(windows, feature);
+  const chartPayload = { title, feature, unit, color, windows, large, minimal };
+  function openChart(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    onExpand?.(chartPayload);
+  }
 
   return (
-    <article className={`chart-card ${status.kind}`}>
-      <div className="chart-card-header">
-        <div>
-          <span>{title}</span>
-          <strong>{formatFeatureValue(latest, unit)}</strong>
+    <article
+      className={`chart-card ${status.kind} ${onExpand ? "is-clickable" : ""} ${large ? "large-chart-card" : ""} ${minimal ? "chart-card-graph-only" : ""}`}
+      title={onExpand ? `Apri ${title} in finestra grande` : undefined}
+    >
+      {!minimal && (
+        <div className="chart-card-header">
+          <div>
+            <span>{title}</span>
+            <strong>{formatFeatureValue(latest, unit)}</strong>
+          </div>
+          <div className="chart-card-actions">
+            <FeatureStatusBadge status={status} />
+            {onExpand && (
+              <button
+                className="chart-expand-button"
+                type="button"
+                onMouseDown={openChart}
+                onClick={openChart}
+                title="Ingrandisci grafico"
+                aria-label={`Ingrandisci ${title}`}
+              >
+                <Maximize2 size={15} />
+                <span>Apri</span>
+              </button>
+            )}
+          </div>
         </div>
-        <FeatureStatusBadge status={status} />
-      </div>
-      <TrendChart windows={windows} feature={feature} color={color} unit={unit} title={title} />
+      )}
+      {minimal && onExpand && (
+        <button
+          className="chart-expand-button floating-expand-button"
+          type="button"
+          onMouseDown={openChart}
+          onClick={openChart}
+          title="Ingrandisci grafico"
+          aria-label={`Ingrandisci ${title}`}
+        >
+          <Maximize2 size={16} />
+        </button>
+      )}
+      <TrendChart windows={windows} feature={feature} color={color} unit={unit} title={title} large={large} minimal={minimal} />
     </article>
   );
 }
 
-function HrvPanel({ windows, current, latestFeatures }) {
-  const status = featureStatus(windows, "hrv_rmssd");
-  const latest = latestFeatureValue(windows, "hrv_rmssd");
-  const hrvDeclared = (current.watch.available_features ?? []).includes("hrv_rmssd");
-  const source = status.kind === "missing"
-    ? "Google Health / Fitbit: non acquisito nelle finestre caricate"
-    : hrvDeclared
-      ? "Google Health / Fitbit: feature dichiarata disponibile dal wearable"
-      : "Google Health / Fitbit: valore presente nelle finestre Edge";
+function ChartDialog({ chart, windows, onClose }) {
+  const dialogWindows = chart?.windows ?? windows;
 
-  return (
-    <article className={`hrv-panel ${status.kind}`}>
-      <div>
-        <div className="sensor-block-heading compact-heading">
-          <Watch size={17} />
-          <h4>HRV RMSSD</h4>
+  useEffect(() => {
+    if (!chart) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.body.classList.add("dialog-open");
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.classList.remove("dialog-open");
+    };
+  }, [chart, onClose]);
+
+  if (!chart) return null;
+  return createPortal(
+    <div className="chart-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section
+        className={`chart-dialog-panel ${chart.minimal ? "minimal-chart-dialog" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chart-dialog-title"
+      >
+        <div className="chart-dialog-header">
+          <span className="dialog-icon"><Maximize2 size={22} /></span>
+          <div>
+            <h3 id="chart-dialog-title">{chart.title}</h3>
+            <p>Lettura ingrandita della serie temporale selezionata.</p>
+          </div>
+          <button className="dialog-close" type="button" onClick={onClose} aria-label="Chiudi grafico">
+            <X size={19} />
+          </button>
         </div>
-        <p>{source}</p>
-      </div>
-      <div className="hrv-value">
-        <strong>{formatFeatureValue(latest, "ms")}</strong>
-        <FeatureStatusBadge status={status} />
-      </div>
-      <dl className="mini-detail-list">
-        <Detail label="Batteria watch" value={formatFeatureValue(latestFeatures.wearable_battery_pct, "%")} />
-        <Detail label="Wearable presente" value={latestFeatures.wearable_present === true ? "Si" : latestFeatures.wearable_present === false ? "No" : "n/d"} />
-      </dl>
-    </article>
+        <div className="expanded-chart-panel">
+        <TrendChart
+          windows={dialogWindows}
+          feature={chart.feature}
+          color={chart.color}
+          unit={chart.unit}
+          title={chart.title}
+          expanded
+          large={false}
+          minimal={chart.minimal}
+        />
+        </div>
+      </section>
+    </div>,
+    document.body
   );
 }
 
-function TrendChart({ windows, feature, color, unit, title }) {
+function TrendChart({ windows, feature, color, unit, title, expanded = false, large = false, minimal = false }) {
   const [hoverPoint, setHoverPoint] = useState(null);
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const scrollAreaRef = useRef(null);
+  const panStateRef = useRef(null);
   const values = windows.map((window, index) => ({
     index,
     value: numericFeature(window.features, feature),
     label: formatDateTime(window.window_end),
+    startLabel: formatDateTime(window.window_start),
+    endLabel: formatDateTime(window.window_end),
     shortLabel: formatShortDateTime(window.window_end),
     status: featureStatusForWindow(window.features, feature),
   }));
@@ -1664,9 +1860,17 @@ function TrendChart({ windows, feature, color, unit, title }) {
     return <div className="chart-empty">Dato non acquisito</div>;
   }
 
-  const width = 360;
-  const height = 154;
-  const padding = { top: 16, right: 14, bottom: 34, left: 46 };
+  const width = expanded
+    ? Math.max(minimal ? 1180 : 1040, Math.min(5000, 140 + Math.max(values.length - 1, 1) * 86))
+    : large
+      ? 920
+      : 360;
+  const height = expanded ? (minimal ? 430 : 320) : large ? 310 : 154;
+  const padding = expanded
+    ? { top: minimal ? 36 : 30, right: 40, bottom: 78, left: 84 }
+    : large
+      ? { top: 24, right: 28, bottom: 60, left: 68 }
+      : { top: 16, right: 14, bottom: 34, left: 46 };
   const min = Math.min(...numericValues.map((point) => point.value));
   const max = Math.max(...numericValues.map((point) => point.value));
   const spread = max - min || 1;
@@ -1683,34 +1887,130 @@ function TrendChart({ windows, feature, color, unit, title }) {
     { label: formatAxisValue((min + max) / 2), value: (min + max) / 2 },
     { label: formatAxisValue(min), value: min },
   ];
-  const firstLabel = values[0]?.shortLabel ?? "";
-  const lastLabel = values.at(-1)?.shortLabel ?? "";
+  const selectedPoint = selectedIndex !== null ? points.find((point) => point.index === selectedIndex && point.value !== null) : null;
+  const activePoint = hoverPoint ?? selectedPoint ?? points[numericValues.at(-1)?.index] ?? null;
+  const xTickEvery = expanded ? Math.max(1, Math.ceil(values.length / 9)) : Math.max(1, values.length - 1);
+  const xTicks = points.filter((point) => point.index === 0 || point.index === values.length - 1 || point.index % xTickEvery === 0);
 
   function yForValue(value) {
     return height - padding.bottom - ((value - min) / spread) * (height - padding.top - padding.bottom);
   }
 
-  function updateHover(event) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const svgX = ((event.clientX - rect.left) / rect.width) * width;
-    const nearest = numericValues
+  function nearestPointFromEvent(event) {
+    const svg = event.currentTarget;
+    const screenMatrix = svg.getScreenCTM?.();
+    let svgX = null;
+    if (screenMatrix) {
+      const point = svg.createSVGPoint();
+      point.x = event.clientX;
+      point.y = event.clientY;
+      svgX = point.matrixTransform(screenMatrix.inverse()).x;
+    }
+    if (svgX === null) {
+      const rect = svg.getBoundingClientRect();
+      svgX = ((event.clientX - rect.left) / rect.width) * width;
+    }
+    return numericValues
       .map((point) => points[point.index])
       .filter((point) => point?.value !== null)
       .reduce((best, point) => (Math.abs(point.x - svgX) < Math.abs(best.x - svgX) ? point : best));
+  }
+
+  function updateHover(event) {
+    if (isPanning) return;
+    const nearest = nearestPointFromEvent(event);
     setHoverPoint(nearest);
   }
 
+  function selectPoint(point) {
+    if (!point || point.value === null) return;
+    setSelectedIndex(point.index);
+    setHoverPoint(point);
+  }
+
+  function selectNearestPoint(event) {
+    event.preventDefault();
+    selectPoint(nearestPointFromEvent(event));
+  }
+
+  function moveSelection(direction) {
+    const availableIndexes = numericValues.map((point) => point.index);
+    const currentIndex = selectedIndex ?? activePoint?.index ?? availableIndexes.at(-1);
+    const position = Math.max(0, availableIndexes.indexOf(currentIndex));
+    const nextPosition = Math.min(availableIndexes.length - 1, Math.max(0, position + direction));
+    setSelectedIndex(availableIndexes[nextPosition]);
+    setHoverPoint(null);
+  }
+
+  function beginChartPan(event) {
+    if (!expanded) return;
+    if (event.button !== undefined && event.button !== 0) return;
+    if (event.target?.closest?.("button")) return;
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea || scrollArea.scrollWidth <= scrollArea.clientWidth) return;
+    panStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      scrollLeft: scrollArea.scrollLeft,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setIsPanning(true);
+  }
+
+  function moveChartPan(event) {
+    const panState = panStateRef.current;
+    const scrollArea = scrollAreaRef.current;
+    if (!panState || !scrollArea) return;
+    scrollArea.scrollLeft = panState.scrollLeft - (event.clientX - panState.startX);
+    event.preventDefault();
+  }
+
+  function endChartPan(event) {
+    const panState = panStateRef.current;
+    if (!panState) return;
+    event.currentTarget.releasePointerCapture?.(panState.pointerId);
+    panStateRef.current = null;
+    setIsPanning(false);
+  }
+
+  function scrollChartWithWheel(event) {
+    if (!expanded) return;
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea || scrollArea.scrollWidth <= scrollArea.clientWidth) return;
+    const horizontalDelta = Math.abs(event.deltaX) >= Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    scrollArea.scrollLeft += horizontalDelta;
+    event.preventDefault();
+  }
+
   return (
-    <div className="chart-shell">
+    <div
+      className={`chart-shell ${expanded ? "expanded" : ""} ${isPanning ? "is-panning" : ""}`}
+      onPointerDown={beginChartPan}
+      onPointerMove={moveChartPan}
+      onPointerUp={endChartPan}
+      onPointerCancel={endChartPan}
+      onWheel={scrollChartWithWheel}
+    >
+      {expanded && !minimal && (
+        <div className="expanded-chart-toolbar">
+          <div>
+            <strong>{title}</strong>
+            <span>{numericValues.length} valori acquisiti su {values.length} finestre</span>
+          </div>
+        </div>
+      )}
+      <div ref={scrollAreaRef} className={`chart-scroll-area ${expanded ? "expanded-scroll" : ""}`}>
       <svg
         className="trend-chart"
         viewBox={`0 0 ${width} ${height}`}
+        style={expanded ? { width: `${width}px`, minWidth: `${width}px` } : large ? { width: "100%" } : undefined}
         role="img"
         aria-label={`Andamento ${title}`}
         tabIndex={0}
         onMouseMove={updateHover}
         onMouseLeave={() => setHoverPoint(null)}
-        onFocus={() => setHoverPoint(points[numericValues.at(-1)?.index] ?? null)}
+        onClick={selectNearestPoint}
+        onFocus={() => setSelectedIndex((previous) => previous ?? numericValues.at(-1)?.index ?? null)}
         onBlur={() => setHoverPoint(null)}
       >
         {yTicks.map((tick) => {
@@ -1726,8 +2026,20 @@ function TrendChart({ windows, feature, color, unit, title }) {
         <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} className="chart-axis" />
         <text x={(padding.left + width - padding.right) / 2} y={height - 4} className="chart-axis-title" textAnchor="middle">tempo</text>
         <text x={12} y={height / 2} className="chart-axis-title y-title" textAnchor="middle">valore</text>
-        <text x={padding.left} y={height - 18} className="chart-tick-label" textAnchor="start">{firstLabel}</text>
-        <text x={width - padding.right} y={height - 18} className="chart-tick-label" textAnchor="end">{lastLabel}</text>
+        {xTicks.map((point) => (
+          <g key={`${feature}-x-${point.index}`}>
+            <line x1={point.x} y1={height - padding.bottom} x2={point.x} y2={height - padding.bottom + 6} className="chart-axis" />
+            <text
+              x={point.x}
+              y={height - (expanded ? 34 : 18)}
+              className="chart-tick-label"
+              textAnchor={expanded ? "end" : point.index === 0 ? "start" : "end"}
+              transform={expanded ? `rotate(-38 ${point.x} ${height - 34})` : undefined}
+            >
+              {expanded ? point.label : point.shortLabel}
+            </text>
+          </g>
+        ))}
         {segments.map((segment, index) => (
           <polyline
             key={`${feature}-${index}`}
@@ -1739,11 +2051,11 @@ function TrendChart({ windows, feature, color, unit, title }) {
             strokeLinejoin="round"
           />
         ))}
-        {hoverPoint && (
+        {activePoint && (
           <line
-            x1={hoverPoint.x}
+            x1={activePoint.x}
             y1={padding.top}
-            x2={hoverPoint.x}
+            x2={activePoint.x}
             y2={height - padding.bottom}
             className="chart-hover-line"
           />
@@ -1753,10 +2065,16 @@ function TrendChart({ windows, feature, color, unit, title }) {
             key={`${feature}-${point.index}`}
             cx={point.x}
             cy={point.y}
-            r={hoverPoint?.index === point.index ? 6 : point.status === "imputed" ? 5 : 3.8}
+            r={activePoint?.index === point.index ? (expanded ? 7 : 6) : point.status === "imputed" ? 5 : 3.8}
             fill={point.status === "imputed" ? "#ffffff" : color}
             stroke={color}
             strokeWidth="2"
+            className="chart-point"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              selectPoint(point);
+            }}
           />
         ))}
         <rect
@@ -1767,14 +2085,31 @@ function TrendChart({ windows, feature, color, unit, title }) {
           fill="transparent"
         />
       </svg>
-      {hoverPoint && (
+      </div>
+      {activePoint && !expanded && (
         <div
-          className={`chart-tooltip ${hoverPoint.x > width / 2 ? "left" : "right"}`}
-          style={{ left: `${(hoverPoint.x / width) * 100}%` }}
+          className={`chart-tooltip ${activePoint.x > width / 2 ? "left" : "right"}`}
+          style={{ left: `${(activePoint.x / width) * 100}%` }}
         >
-          <strong>{formatFeatureValue(hoverPoint.value, unit)}</strong>
-          <span>{hoverPoint.label}</span>
-          <small>{hoverPoint.status === "imputed" ? "dato imputato" : "dato acquisito"}</small>
+          <strong>{formatFeatureValue(activePoint.value, unit)}</strong>
+          <span>{activePoint.label}</span>
+          <small>{activePoint.status === "imputed" ? "dato imputato" : "dato acquisito"}</small>
+        </div>
+      )}
+      {activePoint && (
+        <div className="expanded-chart-detail">
+          <div>
+            <span>{feature === "anomaly_score" ? "Score" : "Valore selezionato"}</span>
+            <strong>{formatFeatureValue(activePoint.value, unit)}</strong>
+          </div>
+          <div>
+            <span>{feature === "anomaly_score" ? "Finestra di raccolta" : "Istante temporale"}</span>
+            <strong>{feature === "anomaly_score" ? `${activePoint.startLabel} - ${activePoint.endLabel}` : activePoint.label}</strong>
+          </div>
+          <div>
+            <span>Origine dato</span>
+            <strong>{activePoint.status === "imputed" ? "Dato imputato" : "Dato acquisito"}</strong>
+          </div>
         </div>
       )}
     </div>
@@ -2061,12 +2396,61 @@ function filterWindowsByRange(windows, rangeMode) {
   });
 }
 
+function hasWindowInterval(interval) {
+  return Boolean(interval?.date || interval?.from || interval?.to);
+}
+
+function filterWindowsByCustomInterval(windows, interval) {
+  if (!hasWindowInterval(interval)) return windows;
+  return windows.filter((window) => {
+    const timestamp = new Date(window.window_end);
+    if (Number.isNaN(timestamp.getTime())) return false;
+    const localDate = toLocalDateInputValue(timestamp);
+    const localTime = toLocalTimeInputValue(timestamp);
+    if (interval.date && localDate !== interval.date) return false;
+    if (interval.from && localTime < interval.from) return false;
+    if (interval.to && localTime > interval.to) return false;
+    return true;
+  });
+}
+
+function toLocalDateInputValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function toLocalTimeInputValue(date) {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
 function rangeLabel(rangeMode) {
   return rangeMode === "week" ? "ultimi 7 giorni" : "ultimo giorno";
 }
 
 function latestFeaturesFromWindows(windows) {
   return [...windows].reverse().find((window) => window.features)?.features ?? {};
+}
+
+function decisionScoreWindows(decisions) {
+  return decisions
+    .map((decision, index) => {
+      const score = numericFeature({ anomaly_score: decision.anomaly_score }, "anomaly_score");
+      const timestamp = decision.window_end ?? decision.timestamp ?? decision.created_at;
+      if (score === null || !timestamp) return null;
+      return {
+        window_id: decision.decision_id ?? `decision-score-${index}`,
+        window_start: decision.window_start ?? timestamp,
+        window_end: timestamp,
+        features: {
+          anomaly_score: score,
+        },
+      };
+    })
+    .filter(Boolean);
 }
 
 function latestFeatureValue(windows, feature) {
@@ -2239,15 +2623,18 @@ function AlertsView({ data, session, patientId, onChanged }) {
   const [levelFilter, setLevelFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [rangeFilter, setRangeFilter] = useState("all");
+  const [hiddenResolvedAlerts, setHiddenResolvedAlerts] = useState(() => new Set());
   const [notes, setNotes] = useState({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [dialog, setDialog] = useState(null);
+  const [deleteDialog, setDeleteDialog] = useState(null);
 
   const filteredAlerts = useMemo(
-    () => filterAlerts(data.alerts, { levelFilter, statusFilter, rangeFilter }),
-    [data.alerts, levelFilter, statusFilter, rangeFilter]
+    () => filterAlerts(data.alerts, { levelFilter, statusFilter, rangeFilter })
+      .filter((alert) => !hiddenResolvedAlerts.has(String(alert.alert_id))),
+    [data.alerts, levelFilter, statusFilter, rangeFilter, hiddenResolvedAlerts]
   );
   const activeAlerts = data.alerts.filter((alert) => alert.status !== "resolved").length;
 
@@ -2325,6 +2712,23 @@ function AlertsView({ data, session, patientId, onChanged }) {
     }
   }
 
+  async function deleteAlertPermanently(alert) {
+    setBusy(`${alert.alert_id}:delete`);
+    setError("");
+    setSuccess("");
+    try {
+      await api.deleteAlert(alert.alert_id, session);
+      setHiddenResolvedAlerts((previous) => new Set([...previous, String(alert.alert_id)]));
+      setDeleteDialog(null);
+      setSuccess("Segnalazione eliminata definitivamente dal backend.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <section className="panel page-panel alerts-page">
       <div className="view-heading">
@@ -2386,7 +2790,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
             const score = alertScore(alert);
             const band = aiScoreBand(score);
             return (
-            <article key={alert.alert_id} className={`alert-item ${alert.level} ${resolved ? "is-resolved" : ""}`}>
+            <article key={alert.alert_id} className={`alert-item ${alert.level} ${resolved ? "is-resolved compact-resolved" : ""}`}>
               <div className="alert-content">
                 <div className="alert-card-header">
                   <div className="alert-title-row">
@@ -2396,8 +2800,8 @@ function AlertsView({ data, session, patientId, onChanged }) {
                   </div>
                   <time>{formatDateTime(alertTimestamp(alert))}</time>
                 </div>
-                <h4>{alert.title}</h4>
-                <p>{alert.description}</p>
+                <h4>{alertTitleLabel(alert)}</h4>
+                <p>{alertDescriptionLabel(alert)}</p>
                 <div className="alert-data-grid">
                   <div className={`alert-score-card ${band.key}`}>
                     <span>Indice AI</span>
@@ -2420,7 +2824,7 @@ function AlertsView({ data, session, patientId, onChanged }) {
                 {reasons.length > 0 && (
                   <ul className="reason-list" aria-label="Motivi alert">
                     {reasons.map((reason) => (
-                      <li key={`${alert.alert_id}-${reason}`}>{reason}</li>
+                      <li key={`${alert.alert_id}-${reason}`}>{decisionReasonLabel(reason)}</li>
                     ))}
                   </ul>
                 )}
@@ -2436,16 +2840,17 @@ function AlertsView({ data, session, patientId, onChanged }) {
                 </div>
                 <small>{formatDateTime(alert.opened_at)} · stato {alert.status}</small>
               </div>
-              <div className="alert-actions">
+              {!resolved ? (
+                <div className="alert-actions">
                 <div className="alert-actions-title">
                   <strong>Azioni medico</strong>
-                  <span>{resolved ? "Segnalazione chiusa" : "Revisione richiesta"}</span>
+                  <span>Revisione richiesta</span>
                 </div>
-                <button className="secondary-button" type="button" disabled={resolved || busyForAlert || alert.status === "acknowledged"} onClick={() => setDialog({ type: "acknowledge", alert })}>
+                <button className="secondary-button" type="button" disabled={busyForAlert || alert.status === "acknowledged"} onClick={() => setDialog({ type: "acknowledge", alert })}>
                   <CheckCircle2 size={16} />
                   Prendi in carico
                 </button>
-                <button className="primary-button" type="button" disabled={resolved || busyForAlert} onClick={() => setDialog({ type: "resolve", alert })}>
+                <button className="primary-button" type="button" disabled={busyForAlert} onClick={() => setDialog({ type: "resolve", alert })}>
                   <CheckCircle2 size={16} />
                   Risolvi
                 </button>
@@ -2453,7 +2858,19 @@ function AlertsView({ data, session, patientId, onChanged }) {
                   <ClipboardList size={16} />
                   Crea attività di follow-up
                 </button>
-              </div>
+                </div>
+              ) : (
+                <div className="alert-actions resolved-actions">
+                  <div className="alert-actions-title">
+                    <strong>Storico</strong>
+                    <span>Segnalazione chiusa</span>
+                  </div>
+                  <button className="secondary-button danger-soft" type="button" onClick={() => setDeleteDialog(alert)}>
+                    <Trash2 size={16} />
+                    Elimina definitivamente
+                  </button>
+                </div>
+              )}
             </article>
             );
           })}
@@ -2484,6 +2901,24 @@ function AlertsView({ data, session, patientId, onChanged }) {
           </label>
         )}
       </ActionDialog>
+      <ActionDialog
+        open={Boolean(deleteDialog)}
+        icon={<Trash2 size={22} />}
+        title="Eliminare definitivamente?"
+        description="La segnalazione verra cancellata dal backend e non tornera al refresh della dashboard."
+        confirmLabel="Elimina definitivamente"
+        busy={Boolean(deleteDialog && busy === `${deleteDialog.alert_id}:delete`)}
+        onClose={() => !busy && setDeleteDialog(null)}
+        onConfirm={() => deleteDialog && deleteAlertPermanently(deleteDialog)}
+      >
+        {deleteDialog && (
+          <div className="dialog-summary-card">
+            <span>{levelLabel(deleteDialog.level)}</span>
+            <strong>{alertTitleLabel(deleteDialog)}</strong>
+            <small>{formatDateTime(alertTimestamp(deleteDialog))}</small>
+          </div>
+        )}
+      </ActionDialog>
     </section>
   );
 }
@@ -2500,6 +2935,7 @@ function TasksView({ data, session, patientId, onChanged }) {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [noteDrafts, setNoteDrafts] = useState({});
   const [cancelDialog, setCancelDialog] = useState(null);
+  const [deleteTaskDialog, setDeleteTaskDialog] = useState(null);
   const [taskForm, setTaskForm] = useState({
     template: "wellbeing",
     priority: "normal",
@@ -2759,6 +3195,23 @@ function TasksView({ data, session, patientId, onChanged }) {
       await api.cancelTask(task.task_id, note, session);
       setCancelDialog(null);
       setSuccess("Task annullato.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function deleteTaskPermanently(task) {
+    setBusy(`delete:${task.task_id}`);
+    setError("");
+    setSuccess("");
+    try {
+      await api.deleteTask(task.task_id, session);
+      setDeleteTaskDialog(null);
+      setSelectedTaskId(null);
+      setSuccess("Attivita eliminata definitivamente dal backend.");
       onChanged();
     } catch (apiError) {
       setError(readableApiError(apiError));
@@ -3082,6 +3535,7 @@ function TasksView({ data, session, patientId, onChanged }) {
           onCancelNoteChange={(value) => updateNoteDraft(`cancel:${selectedTask.task_id}`, value)}
           onSaveNote={() => saveMedicalNote(selectedTask)}
           onAskCancel={() => setCancelDialog(selectedTask)}
+          onAskDelete={() => setDeleteTaskDialog(selectedTask)}
         />
       )}
       <ActionDialog
@@ -3106,11 +3560,29 @@ function TasksView({ data, session, patientId, onChanged }) {
           </label>
         )}
       </ActionDialog>
+      <ActionDialog
+        open={Boolean(deleteTaskDialog)}
+        icon={<Trash2 size={22} />}
+        title="Eliminare definitivamente?"
+        description="L'attivita, gli eventuali risultati collegati e le notifiche associate verranno rimossi dal backend."
+        confirmLabel="Elimina definitivamente"
+        busy={Boolean(deleteTaskDialog && busy === `delete:${deleteTaskDialog.task_id}`)}
+        onClose={() => !busy && setDeleteTaskDialog(null)}
+        onConfirm={() => deleteTaskDialog && deleteTaskPermanently(deleteTaskDialog)}
+      >
+        {deleteTaskDialog && (
+          <div className="dialog-summary-card">
+            <span>{taskStatusLabel(deleteTaskDialog.status)}</span>
+            <strong>{deleteTaskDialog.title}</strong>
+            <small>Creata {formatDateTime(deleteTaskDialog.created_at)}</small>
+          </div>
+        )}
+      </ActionDialog>
     </section>
   );
 }
 
-function TaskDetailPanel({ task, noteDraft, cancelNote, busy, onNoteChange, onCancelNoteChange, onSaveNote, onAskCancel }) {
+function TaskDetailPanel({ task, noteDraft, cancelNote, busy, onNoteChange, onCancelNoteChange, onSaveNote, onAskCancel, onAskDelete }) {
   const result = task.result ?? task.latest_result ?? task.task_result ?? null;
   const answers = taskResultAnswers(result);
   const canCancel = !["completed", "cancelled", "expired"].includes(task.status);
@@ -3125,12 +3597,12 @@ function TaskDetailPanel({ task, noteDraft, cancelNote, busy, onNoteChange, onCa
       </div>
 
       <div className="task-detail-grid">
-        <Detail label="Priorita" value={taskPriorityLabel(task.priority)} />
-        <Detail label="Destinatario" value={taskAssigneeLabel(task.assigned_to)} />
-        <Detail label="Scadenza" value={task.due_at ? formatDateTime(task.due_at) : "Non impostata"} />
-        <Detail label="Score previsto" value={expectedTaskScore(task)} />
-        <Detail label="Completamento" value={result?.completed_at ? formatDateTime(result.completed_at) : "Non completato"} />
-        <Detail label="Durata" value={formatTaskDuration(result?.duration_seconds)} />
+        <TaskDetailCard label="Priorita" value={taskPriorityLabel(task.priority)} />
+        <TaskDetailCard label="Destinatario" value={taskAssigneeLabel(task.assigned_to)} />
+        <TaskDetailCard label="Scadenza" value={task.due_at ? formatDateTime(task.due_at) : "Non impostata"} />
+        <TaskDetailCard label="Score previsto" value={expectedTaskScore(task)} />
+        <TaskDetailCard label="Completamento" value={result?.completed_at ? formatDateTime(result.completed_at) : "Non completato"} />
+        <TaskDetailCard label="Durata" value={formatTaskDuration(result?.duration_seconds)} />
       </div>
 
       <div className="task-result-card">
@@ -3181,7 +3653,20 @@ function TaskDetailPanel({ task, noteDraft, cancelNote, busy, onNoteChange, onCa
             </button>
           </>
         )}
+        <button className="secondary-button danger-soft" type="button" onClick={onAskDelete} disabled={Boolean(busy)}>
+          <Trash2 size={16} />
+          Elimina definitivamente
+        </button>
       </div>
+    </div>
+  );
+}
+
+function TaskDetailCard({ label, value }) {
+  return (
+    <div className="task-detail-card">
+      <span>{label}</span>
+      <strong>{value ?? "n/d"}</strong>
     </div>
   );
 }
@@ -3201,7 +3686,7 @@ function ActionDialog({ open, icon, title, description, confirmLabel, busy, wide
   }, [open, busy, onClose]);
 
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
       <section className={`action-dialog ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
         <div className="dialog-header">
@@ -3218,7 +3703,8 @@ function ActionDialog({ open, icon, title, description, confirmLabel, busy, wide
           </button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -3735,9 +4221,32 @@ function alertScore(alert) {
 
 function alertReasonList(alert) {
   const rawReasons = alert.reasons ?? alert.payload?.reasons;
-  if (Array.isArray(rawReasons)) return rawReasons.filter(Boolean);
-  if (typeof rawReasons === "string" && rawReasons.trim()) return [rawReasons.trim()];
-  return alert.description ? [alert.description] : [];
+  const reasons = Array.isArray(rawReasons)
+    ? rawReasons.filter(Boolean)
+    : typeof rawReasons === "string" && rawReasons.trim()
+      ? [rawReasons.trim()]
+      : alert.description
+        ? [alert.description]
+        : [];
+  return [...new Set(reasons.map((reason) => decisionReasonLabel(reason)))];
+}
+
+function alertTitleLabel(alert) {
+  const score = alertScore(alert);
+  const band = aiScoreBand(score);
+  if (String(alert.title ?? "").toLowerCase().startsWith("decision ai")) {
+    return `Segnalazione ${band.label.toLowerCase()} - indice ${scoreText(score)}`;
+  }
+  return alert.title ?? "Segnalazione";
+}
+
+function alertDescriptionLabel(alert) {
+  const description = String(alert.description ?? "").trim();
+  if (!description) return "Evento da revisionare nel contesto clinico del paziente.";
+  if (description.toLowerCase().startsWith("decision ai")) {
+    return decisionReasonLabel(description.split(" - ").at(-1));
+  }
+  return decisionReasonLabel(description);
 }
 
 function alertStatusLabel(status) {
