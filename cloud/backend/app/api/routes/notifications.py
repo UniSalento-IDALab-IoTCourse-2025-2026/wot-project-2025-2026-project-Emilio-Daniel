@@ -136,6 +136,35 @@ def register_device(
     return public_device_payload(row)
 
 
+@router.post("/caregiver/devices/register", summary="Register caregiver companion device")
+def register_caregiver_device(
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Associa il telefono caregiver a un paziente autorizzato senza esporre il token FCM."""
+    patient_id, device_id = validate_caregiver_device_payload(db, current_user, payload)
+    row = get_or_create_device(db, patient_id, device_id)
+    token = str(payload.get("fcm_token") or "").strip()
+    row.fcm_token = token or row.fcm_token
+    row.platform = "android_caregiver"
+    row.app_version = optional_text(payload.get("app_version"), 64)
+    row.notifications_enabled = bool(payload.get("notifications_enabled", bool(token)))
+    row.status = "online"
+    row.last_seen_at = datetime.now(timezone.utc)
+    write_audit(
+        db,
+        actor=current_user,
+        action="caregiver_app.device_registered",
+        patient_id=patient_id,
+        target_type="caregiver_device",
+        target_id=device_id,
+        details={"platform": row.platform, "fcm_configured": bool(row.fcm_token)},
+    )
+    db.commit()
+    return public_device_payload(row)
+
+
 @router.post("/devices/status", summary="Update patient companion status")
 def update_device_status(
     payload: dict[str, Any] = Body(default_factory=dict),
@@ -149,6 +178,30 @@ def update_device_status(
     row.last_seen_at = datetime.now(timezone.utc)
     row.app_version = optional_text(payload.get("app_version"), 64) or row.app_version
     row.platform = str(payload.get("platform") or row.platform or "android")[:32]
+    row.notifications_enabled = bool(payload.get("notifications_enabled", row.notifications_enabled))
+    battery = payload.get("battery_pct")
+    if battery is not None:
+        try:
+            row.battery_pct = max(0.0, min(100.0, float(battery)))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="battery_pct must be numeric.") from exc
+    db.commit()
+    return public_device_payload(row)
+
+
+@router.post("/caregiver/devices/status", summary="Update caregiver companion status")
+def update_caregiver_device_status(
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Aggiorna heartbeat e batteria dell'app caregiver associata al paziente."""
+    patient_id, device_id = validate_caregiver_device_payload(db, current_user, payload)
+    row = get_or_create_device(db, patient_id, device_id)
+    row.status = str(payload.get("status") or "online")[:32]
+    row.platform = "android_caregiver"
+    row.last_seen_at = datetime.now(timezone.utc)
+    row.app_version = optional_text(payload.get("app_version"), 64) or row.app_version
     row.notifications_enabled = bool(payload.get("notifications_enabled", row.notifications_enabled))
     battery = payload.get("battery_pct")
     if battery is not None:
@@ -174,6 +227,22 @@ def validate_device_payload(
         raise HTTPException(status_code=422, detail="patient_id and device_id are required.")
     ensure_patient_access(db, current_user, patient_id)
     return patient_id, device_id[:128]
+
+
+def validate_caregiver_device_payload(
+    db: Session,
+    current_user: CurrentUser,
+    payload: dict[str, Any],
+) -> tuple[str, str]:
+    """Valida il device caregiver e il paziente associato prima di salvarlo."""
+    if current_user.role not in {"caregiver", "admin"}:
+        raise HTTPException(status_code=403, detail="Only caregiver or admin can register caregiver devices.")
+    patient_id = str(payload.get("patient_id") or "").strip()
+    device_id = str(payload.get("device_id") or "").strip()
+    if not patient_id or not device_id:
+        raise HTTPException(status_code=422, detail="patient_id and device_id are required.")
+    ensure_patient_access(db, current_user, patient_id)
+    return patient_id, f"caregiver-{device_id}"[:128]
 
 
 def ensure_patient_access(db: Session, user: CurrentUser, patient_id: str) -> None:

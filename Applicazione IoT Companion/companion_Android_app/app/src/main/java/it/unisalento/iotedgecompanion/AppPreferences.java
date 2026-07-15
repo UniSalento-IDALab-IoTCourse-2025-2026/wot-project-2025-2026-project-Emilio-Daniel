@@ -59,6 +59,14 @@ final class AppPreferences {
                 .apply();
     }
 
+    void saveUserRole(String role) {
+        preferences.edit().putString("userRole", role == null ? "" : role).apply();
+    }
+
+    String userRole() {
+        return preferences.getString("userRole", "");
+    }
+
     String patientId() {
         return preferences.getString("patientId", null);
     }
@@ -72,6 +80,8 @@ final class AppPreferences {
         preferences.edit()
                 .remove("patientId")
                 .remove("patientDisplayName")
+                .remove("userRole")
+                .remove("cachedCaregiverOverview")
                 .remove("cachedCurrent")
                 .remove("cachedTasks")
                 .remove("cachedNotifications")
@@ -104,6 +114,18 @@ final class AppPreferences {
 
     String cachedWindows() {
         return preferences.getString("cachedWindows", "{\"items\":[]}");
+    }
+
+    void cacheCaregiverOverview(String overview) {
+        preferences.edit()
+                .putString("cachedCaregiverOverview", overview)
+                .putLong("lastBackendSyncAt", System.currentTimeMillis())
+                .putString("backendSyncStatus", "online")
+                .apply();
+    }
+
+    String cachedCaregiverOverview() {
+        return preferences.getString("cachedCaregiverOverview", "{\"items\":[]}");
     }
 
     long lastBackendSyncAt() {

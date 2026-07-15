@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
@@ -45,6 +46,7 @@ public class MainActivity extends Activity {
     private AppPreferences preferences;
     private LinearLayout loginPanel;
     private LinearLayout dailyPanel;
+    private LinearLayout caregiverPanel;
     private EditText emailInput;
     private EditText passwordInput;
     private TextView loginStatusText;
@@ -67,6 +69,13 @@ public class MainActivity extends Activity {
     private TextView offlineQueueText;
     private LinearLayout tasksContainer;
     private LinearLayout notificationsContainer;
+    private TextView caregiverWelcomeText;
+    private TextView caregiverPatientText;
+    private TextView caregiverStatusBadge;
+    private TextView caregiverStatusText;
+    private TextView caregiverUpdateText;
+    private TextView caregiverTechnicalText;
+    private LinearLayout caregiverAlertsContainer;
     private HealthTrendView heartRateChart;
     private HealthTrendView spo2Chart;
 
@@ -89,7 +98,9 @@ public class MainActivity extends Activity {
         requestBackgroundLocationSettingsIfNeeded();
         FcmRegistration.ensureToken(this);
         renderScreen();
-        if (preferences.isAuthenticated()) {
+        if ("caregiver".equals(preferences.userRole())) {
+            synchronizeCaregiverNow();
+        } else if (preferences.isAuthenticated()) {
             synchronizeNow();
         }
     }
@@ -121,6 +132,7 @@ public class MainActivity extends Activity {
     private void bindViews() {
         loginPanel = findViewById(R.id.loginPanel);
         dailyPanel = findViewById(R.id.dailyPanel);
+        caregiverPanel = findViewById(R.id.caregiverPanel);
         emailInput = findViewById(R.id.emailInput);
         passwordInput = findViewById(R.id.passwordInput);
         loginStatusText = findViewById(R.id.loginStatusText);
@@ -143,6 +155,13 @@ public class MainActivity extends Activity {
         offlineQueueText = findViewById(R.id.offlineQueueText);
         tasksContainer = findViewById(R.id.tasksContainer);
         notificationsContainer = findViewById(R.id.notificationsContainer);
+        caregiverWelcomeText = findViewById(R.id.caregiverWelcomeText);
+        caregiverPatientText = findViewById(R.id.caregiverPatientText);
+        caregiverStatusBadge = findViewById(R.id.caregiverStatusBadge);
+        caregiverStatusText = findViewById(R.id.caregiverStatusText);
+        caregiverUpdateText = findViewById(R.id.caregiverUpdateText);
+        caregiverTechnicalText = findViewById(R.id.caregiverTechnicalText);
+        caregiverAlertsContainer = findViewById(R.id.caregiverAlertsContainer);
         heartRateChart = findViewById(R.id.heartRateChart);
         spo2Chart = findViewById(R.id.spo2Chart);
     }
@@ -150,8 +169,11 @@ public class MainActivity extends Activity {
     private void configureActions() {
         findViewById(R.id.loginButton).setOnClickListener(view -> login());
         findViewById(R.id.refreshButton).setOnClickListener(view -> synchronizeNow());
+        findViewById(R.id.caregiverRefreshButton).setOnClickListener(view -> synchronizeCaregiverNow());
         findViewById(R.id.logoutButton).setOnClickListener(view -> confirmLogout());
+        findViewById(R.id.caregiverLogoutButton).setOnClickListener(view -> confirmLogout());
         findViewById(R.id.adminSettingsButton).setOnClickListener(view -> requestAdminAccess());
+        findViewById(R.id.caregiverAdminSettingsButton).setOnClickListener(view -> requestAdminAccess());
         findViewById(R.id.loginAdminButton).setOnClickListener(view -> requestAdminAccess());
     }
 
@@ -165,11 +187,15 @@ public class MainActivity extends Activity {
         loginStatusText.setText("Verifica del profilo in corso...");
         executor.execute(() -> {
             try {
-                new BackendApiClient(this).authenticatePatient(email, password);
+                JSONObject session = new BackendApiClient(this).authenticateCompanion(email, password);
                 runOnUiThread(() -> {
                     passwordInput.setText("");
                     renderScreen();
-                    synchronizeNow();
+                    if ("caregiver".equals(session.optString("role"))) {
+                        synchronizeCaregiverNow();
+                    } else {
+                        synchronizeNow();
+                    }
                 });
             } catch (Exception exception) {
                 runOnUiThread(() -> loginStatusText.setText(userMessage(exception)));
@@ -182,11 +208,37 @@ public class MainActivity extends Activity {
         executor.execute(() -> PatientSyncManager.synchronize(this));
     }
 
+    private void synchronizeCaregiverNow() {
+        caregiverStatusText.setText("Aggiornamento in corso");
+        executor.execute(() -> {
+            try {
+                BackendApiClient client = new BackendApiClient(this);
+                JSONObject overview = client.fetchCaregiverOverview();
+                registerCaregiverDevices(client, overview);
+                preferences.cacheCaregiverOverview(overview.toString());
+                runOnUiThread(this::renderScreen);
+            } catch (Exception exception) {
+                preferences.setBackendError(userMessage(exception));
+                runOnUiThread(() -> {
+                    caregiverStatusText.setText("Connessione non disponibile");
+                    caregiverUpdateText.setText(userMessage(exception));
+                    renderCaregiverScreen();
+                });
+            }
+        });
+    }
+
     private void renderScreen() {
         boolean authenticated = preferences.isAuthenticated();
+        boolean caregiver = authenticated && "caregiver".equals(preferences.userRole());
         loginPanel.setVisibility(authenticated ? View.GONE : View.VISIBLE);
-        dailyPanel.setVisibility(authenticated ? View.VISIBLE : View.GONE);
+        caregiverPanel.setVisibility(caregiver ? View.VISIBLE : View.GONE);
+        dailyPanel.setVisibility(authenticated && !caregiver ? View.VISIBLE : View.GONE);
         if (!authenticated) {
+            return;
+        }
+        if (caregiver) {
+            renderCaregiverScreen();
             return;
         }
         String patientName = firstName(preferences.patientDisplayName());
@@ -205,6 +257,199 @@ public class MainActivity extends Activity {
                         ? "Tutto sincronizzato. I risultati inviati sono al sicuro."
                         : pending + " risultati protetti sul telefono, in attesa di connessione."
         );
+    }
+
+    private void renderCaregiverScreen() {
+        JSONObject overview = cachedObject(preferences.cachedCaregiverOverview());
+        JSONArray patients = overview.optJSONArray("items");
+        JSONObject patient = patients == null || patients.length() == 0 ? new JSONObject() : patients.optJSONObject(0);
+        if (patient == null) {
+            patient = new JSONObject();
+        }
+        caregiverWelcomeText.setText("Area caregiver");
+        caregiverPatientText.setText(patient.optString("display_name", preferences.patientDisplayName()) + "  •  " + formatSyncTime());
+        String level = patient.optString("level", "green");
+        caregiverStatusBadge.setText(caregiverLevelLabel(level));
+        caregiverStatusText.setText(patient.optString("general_status", "Monitoraggio in aggiornamento."));
+        caregiverUpdateText.setText("Ultimo aggiornamento: " + formatTimestamp(patient.optString("last_update", null)));
+
+        JSONObject technical = patient.optJSONObject("technical_status");
+        caregiverTechnicalText.setText(caregiverTechnicalLabel(technical));
+        renderCaregiverAlerts(patient.optJSONArray("alerts"));
+    }
+
+    private void renderCaregiverAlerts(JSONArray alerts) {
+        caregiverAlertsContainer.removeAllViews();
+        if (alerts == null || alerts.length() == 0) {
+            caregiverAlertsContainer.addView(emptyText("Nessuna segnalazione importante pubblicata."));
+            return;
+        }
+        for (int index = 0; index < alerts.length(); index++) {
+            JSONObject alert = alerts.optJSONObject(index);
+            if (alert == null) {
+                continue;
+            }
+            caregiverAlertsContainer.addView(caregiverAlertRow(alert));
+        }
+    }
+
+    private View caregiverAlertRow(JSONObject alert) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setBackgroundResource(R.drawable.bg_task_card);
+        int padding = dp(14);
+        row.setPadding(padding, padding, padding, padding);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        row.setLayoutParams(params);
+
+        TextView badge = new TextView(this);
+        badge.setText(caregiverLevelLabel(alert.optString("level", "orange")) + "  •  " + caregiverAlertStatus(alert));
+        badge.setTextColor(getColor(R.color.primary));
+        badge.setTextSize(11);
+        badge.setTypeface(null, android.graphics.Typeface.BOLD);
+        row.addView(badge);
+
+        TextView title = new TextView(this);
+        title.setText(alert.optString("title", "Segnalazione importante"));
+        title.setTextColor(getColor(R.color.text_primary));
+        title.setTextSize(16);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setPadding(0, dp(7), 0, 0);
+        row.addView(title);
+
+        TextView description = new TextView(this);
+        description.setText(alert.optString("description", "Apri la dashboard o contatta il team se richiesto."));
+        description.setTextColor(getColor(R.color.text_secondary));
+        description.setTextSize(13);
+        description.setPadding(0, dp(5), 0, 0);
+        row.addView(description);
+
+        addInfoHint(row, "Aperta: " + formatTimestamp(alert.optString("opened_at", null)));
+        if (!alert.optString("acknowledged_by", "").isEmpty()) {
+            addInfoHint(row, "Gia' presa in carico da " + alert.optString("acknowledged_by")
+                    + " (" + caregiverRoleLabel(alert.optString("acknowledged_role", "")) + ").");
+        } else {
+            addInlineAction(row, "Prendi in carico", view -> confirmAcknowledgeAlert(alert));
+        }
+        return row;
+    }
+
+    private void registerCaregiverDevices(BackendApiClient client, JSONObject overview) throws Exception {
+        JSONArray patients = overview.optJSONArray("items");
+        if (patients == null) {
+            return;
+        }
+        boolean notificationsEnabled = PatientNotificationHelper.notificationsEnabled(this);
+        String fcmToken = preferences.fcmToken();
+        for (int index = 0; index < patients.length(); index++) {
+            JSONObject patient = patients.optJSONObject(index);
+            if (patient == null) {
+                continue;
+            }
+            String patientId = patient.optString("patient_id");
+            if (patientId.isEmpty()) {
+                continue;
+            }
+            if (!fcmToken.isEmpty()) {
+                client.registerCaregiverDevice(patientId, fcmToken, notificationsEnabled);
+            } else if (preferences.shouldSendHeartbeat()) {
+                client.sendCaregiverHeartbeat(patientId, readBatteryPercentageForCaregiver(), notificationsEnabled);
+            }
+        }
+        preferences.markHeartbeatSent();
+    }
+
+    private void confirmAcknowledgeAlert(JSONObject alert) {
+        new AlertDialog.Builder(this)
+                .setTitle("Prendere in carico?")
+                .setMessage("Il medico e gli altri caregiver vedranno che stai seguendo questa segnalazione.")
+                .setNegativeButton("Annulla", null)
+                .setPositiveButton("Conferma", (dialog, which) -> acknowledgeAlert(alert))
+                .show();
+    }
+
+    private void acknowledgeAlert(JSONObject alert) {
+        executor.execute(() -> {
+            try {
+                new BackendApiClient(this).acknowledgeAlert(alert.getString("alert_id"));
+                synchronizeCaregiverNow();
+                runOnUiThread(() -> Toast.makeText(this, "Segnalazione presa in carico.", Toast.LENGTH_SHORT).show());
+            } catch (Exception exception) {
+                runOnUiThread(() -> Toast.makeText(this, userMessage(exception), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private double readBatteryPercentageForCaregiver() {
+        Intent battery = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (battery == null) {
+            return -1.0;
+        }
+        int level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+        int scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+        if (level < 0 || scale <= 0) {
+            return -1.0;
+        }
+        return (level * 100.0) / scale;
+    }
+
+    private String caregiverLevelLabel(String level) {
+        if ("red".equals(level)) {
+            return "Massima allerta";
+        }
+        if ("orange".equals(level)) {
+            return "Rischio";
+        }
+        if ("technical".equals(level)) {
+            return "Problema tecnico";
+        }
+        return "Situazione stabile";
+    }
+
+    private String caregiverAlertStatus(JSONObject alert) {
+        String status = alert.optString("status", "new");
+        if ("acknowledged".equals(status)) {
+            return "Presa in carico";
+        }
+        if ("resolved".equals(status)) {
+            return "Risolta";
+        }
+        return "Da seguire";
+    }
+
+    private String caregiverRoleLabel(String role) {
+        if ("doctor".equals(role)) {
+            return "medico";
+        }
+        if ("caregiver".equals(role)) {
+            return "caregiver";
+        }
+        if ("admin".equals(role)) {
+            return "amministratore";
+        }
+        return "operatore";
+    }
+
+    private String caregiverTechnicalLabel(JSONObject technical) {
+        if (technical == null) {
+            return "Stato tecnico in aggiornamento.";
+        }
+        JSONArray issues = technical.optJSONArray("issues");
+        if (issues == null || issues.length() == 0) {
+            return "Raspberry e dispositivi risultano operativi.";
+        }
+        StringBuilder builder = new StringBuilder("Da verificare: ");
+        for (int index = 0; index < issues.length(); index++) {
+            if (index > 0) {
+                builder.append(" ");
+            }
+            builder.append(issues.optString(index));
+        }
+        return builder.toString();
     }
 
     private void renderWellnessAndMetrics() {

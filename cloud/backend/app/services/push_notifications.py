@@ -99,7 +99,7 @@ def notify_task_created(db: Session, task: Task) -> Notification:
         body=notification_body,
         payload=payload,
     )
-    send_notification_to_patient_devices(db, notification)
+    send_notification_to_patient_devices(db, notification, allowed_platforms={"android", "ios"})
     return notification
 
 
@@ -184,6 +184,7 @@ def send_notification_to_patient_devices(
     notification: Notification,
     *,
     sender: FirebasePushSender | None = None,
+    allowed_platforms: set[str] | None = None,
 ) -> None:
     """Invia la notifica ai device FCM abilitati e registra solo conteggi/esito."""
     if notification.patient_id is None:
@@ -191,13 +192,16 @@ def send_notification_to_patient_devices(
         notification.payload = with_delivery(notification.payload, {"error": "missing_patient_id"})
         return
 
-    devices = db.execute(
+    query = (
         select(PatientAppStatus).where(
             PatientAppStatus.patient_id == notification.patient_id,
             PatientAppStatus.notifications_enabled.is_(True),
             PatientAppStatus.fcm_token.is_not(None),
         )
-    ).scalars().all()
+    )
+    if allowed_platforms is not None:
+        query = query.where(PatientAppStatus.platform.in_(allowed_platforms))
+    devices = db.execute(query).scalars().all()
     if not devices:
         notification.status = "no_device"
         notification.payload = with_delivery(notification.payload, {"attempted": 0, "success": 0, "failed": 0})

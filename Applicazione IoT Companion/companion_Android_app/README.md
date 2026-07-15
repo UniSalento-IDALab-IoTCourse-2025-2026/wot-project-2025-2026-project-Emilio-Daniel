@@ -5,6 +5,26 @@ riceve messaggi e attivita' dal team di cura e invia i risultati al backend.
 
 Il receiver Python e il modello AI non sono in questa cartella: stanno in `../edge_node/`.
 
+## Versione 0.4: modalita caregiver
+
+L'app ora riconosce anche gli account con ruolo `caregiver`. Dopo il login il backend
+restituisce solo i pazienti associati a quell'account tramite `caregiver_patients`; il
+caregiver non sceglie manualmente il `patient_id`.
+
+La schermata caregiver mostra:
+
+- stato generale del paziente;
+- ultimo aggiornamento;
+- problemi tecnici semplici, come Raspberry offline o wearable non presente;
+- solo alert importanti pubblicabili (`orange` e `red`);
+- stato di presa in carico dell'alert;
+- pulsante `Prendi in carico` con conferma.
+
+Non vengono mostrati score AI dettagliati, feature cliniche grezze, z-score, token o
+configurazioni tecniche. Le notifiche push degli alert importanti possono arrivare anche
+al caregiver quando l'app e' chiusa; i task e i messaggi personali restano invece
+destinati al telefono del paziente.
+
 ## Versione 0.3: esperienza quotidiana e andamento personale
 
 La home paziente e' stata riprogettata come un cruscotto semplice da consultare. Dopo

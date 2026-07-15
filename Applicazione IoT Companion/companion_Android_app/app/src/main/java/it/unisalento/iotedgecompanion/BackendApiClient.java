@@ -22,30 +22,50 @@ final class BackendApiClient {
         preferences = AppPreferences.get(context);
     }
 
-    JSONObject authenticatePatient(String email, String password) throws Exception {
+    JSONObject authenticateCompanion(String email, String password) throws Exception {
         JSONObject credentials = new JSONObject()
                 .put("email", email.trim())
                 .put("password", password);
         JSONObject session = request("POST", "/auth/login", credentials, false, false);
         JSONObject user = session.optJSONObject("user");
-        if (user == null || !"patient".equals(user.optString("role"))) {
-            throw new ApiException(403, "Questo account non appartiene a un paziente.");
+        if (user == null) {
+            throw new ApiException(403, "Profilo non disponibile.");
+        }
+        String role = user.optString("role");
+        if (!"patient".equals(role) && !"caregiver".equals(role)) {
+            throw new ApiException(403, "Questo account non e' abilitato all'app companion.");
         }
         preferences.saveTokens(session.getString("access_token"), session.optString("refresh_token"));
+        preferences.saveUserRole(role);
         try {
-            JSONObject patients = request("GET", "/patients?page_size=10", null, true, true);
+            JSONObject patients = request("GET", "/patients?page_size=20", null, true, true);
             JSONArray items = patients.optJSONArray("items");
-            if (items == null || items.length() != 1) {
-                throw new ApiException(409, "L'account deve essere associato a un solo paziente.");
+            if (items == null || items.length() == 0) {
+                throw new ApiException(409, "Nessun paziente associato a questo account.");
+            }
+            if ("patient".equals(role) && items.length() != 1) {
+                throw new ApiException(409, "L'account paziente deve essere associato a un solo profilo.");
             }
             JSONObject patient = items.getJSONObject(0);
             String patientId = patient.getString("patient_id");
             preferences.savePatient(patientId, patient.optString("display_name", patientId));
-            return patient;
+            return new JSONObject()
+                    .put("role", role)
+                    .put("patient", patient)
+                    .put("patients", items);
         } catch (Exception exception) {
             preferences.clearSession();
             throw exception;
         }
+    }
+
+    JSONObject authenticatePatient(String email, String password) throws Exception {
+        JSONObject session = authenticateCompanion(email, password);
+        if (!"patient".equals(session.optString("role"))) {
+            preferences.clearSession();
+            throw new ApiException(403, "Questo account non appartiene a un paziente.");
+        }
+        return session.getJSONObject("patient");
     }
 
     JSONObject fetchCurrent() throws Exception {
@@ -58,6 +78,10 @@ final class BackendApiClient {
 
     JSONObject fetchNotifications() throws Exception {
         return request("GET", "/notifications?patient_id=" + patientId() + "&page_size=100", null, true, true);
+    }
+
+    JSONObject fetchCaregiverOverview() throws Exception {
+        return request("GET", "/alerts/caregiver", null, true, true);
     }
 
     JSONObject fetchWindows() throws Exception {
@@ -80,6 +104,10 @@ final class BackendApiClient {
         return request("PATCH", "/notifications/" + notificationId + "/seen", new JSONObject(), true, true);
     }
 
+    JSONObject acknowledgeAlert(String alertId) throws Exception {
+        return request("PATCH", "/alerts/" + alertId + "/acknowledge", new JSONObject(), true, true);
+    }
+
     JSONObject dismissNotification(String notificationId) throws Exception {
         return request("DELETE", "/notifications/" + notificationId, null, true, true);
     }
@@ -95,6 +123,13 @@ final class BackendApiClient {
         return request("POST", "/notifications/devices/register", payload, true, true);
     }
 
+    JSONObject registerCaregiverDevice(String patientId, String fcmToken, boolean notificationsEnabled) throws Exception {
+        JSONObject payload = baseCaregiverDevicePayload(patientId)
+                .put("fcm_token", fcmToken == null ? "" : fcmToken)
+                .put("notifications_enabled", notificationsEnabled);
+        return request("POST", "/notifications/caregiver/devices/register", payload, true, true);
+    }
+
     JSONObject sendHeartbeat(double batteryPct, boolean notificationsEnabled) throws Exception {
         JSONObject payload = baseDevicePayload()
                 .put("status", "online")
@@ -103,11 +138,30 @@ final class BackendApiClient {
         return request("POST", "/notifications/devices/status", payload, true, true);
     }
 
+    JSONObject sendCaregiverHeartbeat(String patientId, double batteryPct, boolean notificationsEnabled) throws Exception {
+        JSONObject payload = baseCaregiverDevicePayload(patientId)
+                .put("status", "online")
+                .put("battery_pct", batteryPct)
+                .put("notifications_enabled", notificationsEnabled);
+        return request("POST", "/notifications/caregiver/devices/status", payload, true, true);
+    }
+
     private JSONObject baseDevicePayload() throws JSONException, ApiException {
         return new JSONObject()
                 .put("patient_id", patientId())
                 .put("device_id", preferences.deviceId())
                 .put("platform", "android")
+                .put("app_version", BuildConfig.VERSION_NAME);
+    }
+
+    private JSONObject baseCaregiverDevicePayload(String patientId) throws JSONException, ApiException {
+        if (patientId == null || patientId.trim().isEmpty()) {
+            throw new ApiException(422, "Paziente caregiver non disponibile.");
+        }
+        return new JSONObject()
+                .put("patient_id", patientId)
+                .put("device_id", preferences.deviceId())
+                .put("platform", "android_caregiver")
                 .put("app_version", BuildConfig.VERSION_NAME);
     }
 

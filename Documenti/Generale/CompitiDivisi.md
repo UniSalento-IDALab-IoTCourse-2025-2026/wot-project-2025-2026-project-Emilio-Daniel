@@ -318,14 +318,14 @@ del backend.
 
 ### E11. Interfaccia caregiver
 
-- [ ] Realizzare una prima versione Android con login caregiver.
-- [ ] Mostrare stato generale, ultimo aggiornamento e problemi tecnici semplici.
-- [ ] Mostrare solo alert autorizzati e realmente pubblicabili.
-- [ ] Ricevere notifiche push quando l'app e' chiusa.
-- [ ] Consentire la presa in carico di un alert con conferma.
-- [ ] Mostrare quando medico o altro caregiver ha gia' preso in carico l'evento.
-- [ ] Non mostrare feature AI, dati clinici grezzi o token tecnici.
-- [ ] Rimandare la versione iOS a una fase successiva se non e' necessaria alla demo.
+- [x] Realizzare una prima versione Android con login caregiver.
+- [x] Mostrare stato generale, ultimo aggiornamento e problemi tecnici semplici.
+- [x] Mostrare solo alert autorizzati e realmente pubblicabili.
+- [x] Ricevere notifiche push quando l'app e' chiusa.
+- [x] Consentire la presa in carico di un alert con conferma.
+- [x] Mostrare quando medico o altro caregiver ha gia' preso in carico l'evento.
+- [x] Non mostrare feature AI, dati clinici grezzi o token tecnici.
+- [x] Rimandare la versione iOS a una fase successiva se non e' necessaria alla demo.
 
 ### E12. Test frontend, Android e documentazione
 

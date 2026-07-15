@@ -7,10 +7,10 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from app.api.routes.patients import get_patient_or_404
+from app.api.routes.patients import current_payload, get_patient_or_404
 from app.api.routes.utils import dump_event_note, event_note_payload, paginated, utc_iso
-from app.auth.dependencies import CurrentUser, can_access_patient, get_current_user, require_patient_access, write_audit
-from app.db.models import Alert, AlertEvent
+from app.auth.dependencies import CurrentUser, authorized_patient_ids, can_access_patient, get_current_user, require_patient_access, write_audit
+from app.db.models import Alert, AlertEvent, Patient
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 
@@ -22,6 +22,24 @@ ALERT_ESCALATION_MINUTES = 30
 def alerts_status() -> dict[str, str]:
     """Espone lo stato del modulo alert."""
     return {"status": "implemented", "module": "alerts"}
+
+
+@router.get("/caregiver", summary="Caregiver alert overview")
+def caregiver_alert_overview(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Restituisce solo stato sintetico e alert importanti visibili al caregiver."""
+    if current_user.role not in {"caregiver", "admin"}:
+        raise HTTPException(status_code=403, detail="Only caregiver or admin can access caregiver overview.")
+    allowed = authorized_patient_ids(db, current_user)
+    patient_query = select(Patient).where(Patient.is_active.is_(True))
+    if allowed is not None:
+        if not allowed:
+            return {"items": []}
+        patient_query = patient_query.where(Patient.patient_id.in_(allowed))
+    patients = db.execute(patient_query.order_by(Patient.patient_id)).scalars().all()
+    return {"items": [caregiver_patient_payload(db, patient) for patient in patients]}
 
 
 @router.get("/patients/{patient_id}/alerts", summary="Patient alerts")
@@ -165,6 +183,81 @@ def alert_payload(db: Session, alert: Alert) -> dict[str, Any]:
         "resolved_role": resolved_note.get("role") if resolved_note else None,
         "resolution_note": resolved_note.get("note") if resolved_note else None,
         "message_id": alert.message_id,
+    }
+
+
+def caregiver_patient_payload(db: Session, patient: Patient) -> dict[str, Any]:
+    """Crea il payload ridotto per l'app caregiver senza dati clinici grezzi."""
+    current = current_payload(db, patient)
+    alerts = db.execute(
+        select(Alert)
+        .where(
+            Alert.patient_id == patient.patient_id,
+            Alert.level.in_(["orange", "red"]),
+            Alert.status != "resolved",
+        )
+        .order_by(desc(Alert.opened_at), desc(Alert.id))
+    ).scalars().all()
+    return {
+        "patient_id": patient.patient_id,
+        "display_name": patient.display_name,
+        "level": caregiver_level(current, alerts),
+        "last_update": current["last_update"],
+        "general_status": caregiver_general_status(current, alerts),
+        "technical_status": caregiver_technical_status(current),
+        "alerts": [caregiver_alert_payload(db, alert) for alert in alerts],
+    }
+
+
+def caregiver_alert_payload(db: Session, alert: Alert) -> dict[str, Any]:
+    """Riduce l'alert ai soli campi utili al caregiver."""
+    payload = alert_payload(db, alert)
+    return {
+        "alert_id": payload["alert_id"],
+        "patient_id": payload["patient_id"],
+        "level": payload["level"],
+        "status": payload["status"],
+        "title": payload["title"],
+        "description": payload["description"],
+        "opened_at": payload["opened_at"],
+        "acknowledged_at": payload["acknowledged_at"],
+        "acknowledged_by": payload["acknowledged_by"],
+        "acknowledged_role": payload["acknowledged_role"],
+    }
+
+
+def caregiver_level(current: dict[str, Any], alerts: list[Alert]) -> str:
+    if any(alert.level == "red" for alert in alerts):
+        return "red"
+    if any(alert.level == "orange" for alert in alerts):
+        return "orange"
+    if current["signal_type"] == "technical":
+        return "technical"
+    return "green"
+
+
+def caregiver_general_status(current: dict[str, Any], alerts: list[Alert]) -> str:
+    if alerts:
+        return "Serve attenzione: il team ha pubblicato una segnalazione importante."
+    if current["signal_type"] == "technical":
+        return "Monitoraggio parziale: controllare lo stato tecnico."
+    return "Monitoraggio aggiornato, nessuna segnalazione importante."
+
+
+def caregiver_technical_status(current: dict[str, Any]) -> dict[str, Any]:
+    edge = current["edge"]
+    watch = current["watch"]
+    issues: list[str] = []
+    if not edge.get("online"):
+        issues.append("Raspberry non risulta online.")
+    if watch.get("present") is False:
+        issues.append("Wearable non rilevato nell'ultima finestra.")
+    return {
+        "edge_online": edge.get("online"),
+        "watch_present": watch.get("present"),
+        "quality_status": edge.get("quality_status"),
+        "last_seen_at": edge.get("last_seen_at"),
+        "issues": issues,
     }
 
 
