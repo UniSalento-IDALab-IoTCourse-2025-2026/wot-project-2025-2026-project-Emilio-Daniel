@@ -62,6 +62,9 @@ POST   /api/v1/auth/sessions/revoke
 
 GET    /api/v1/patients
 GET    /api/v1/patients/{patient_id}/current
+GET    /api/v1/patients/{patient_id}/summary/24h
+GET    /api/v1/patients/{patient_id}/timeline
+GET    /api/v1/patients/{patient_id}/spatial-summary
 GET    /api/v1/patients/{patient_id}/windows
 GET    /api/v1/patients/{patient_id}/decisions
 GET    /api/v1/patients/{patient_id}/alerts
@@ -69,8 +72,10 @@ GET    /api/v1/patients/{patient_id}/tasks
 POST   /api/v1/patients/{patient_id}/tasks
 GET    /api/v1/patients/{patient_id}/system-status
 
+GET    /api/v1/alerts/{alert_id}/details
 PATCH  /api/v1/alerts/{alert_id}/acknowledge
 PATCH  /api/v1/alerts/{alert_id}/resolve
+DELETE /api/v1/alerts/{alert_id}
 
 POST   /api/v1/tasks/{task_id}/results
 PATCH  /api/v1/tasks/{task_id}/cancel
@@ -370,6 +375,99 @@ I campi `edge.mqtt.errors` e `sensors.google_health.oauth_error` devono contener
 messaggi ripuliti. Non devono mai includere token OAuth, refresh token, password,
 `client_secret` o header `Authorization`.
 
+### Routine ambientale
+
+```text
+GET /api/v1/patients/{patient_id}/spatial-summary?days=7
+```
+
+Supporta anche:
+
+```text
+date_from=2026-07-16T00:00:00Z
+date_to=2026-07-17T00:00:00Z
+```
+
+Response minima:
+
+```json
+{
+  "patient_id": "patient-001",
+  "generated_at": "2026-07-16T10:00:00Z",
+  "range": {
+    "start": "2026-07-09T10:00:00Z",
+    "end": "2026-07-16T10:00:00Z",
+    "days": 7.0
+  },
+  "room_minutes": {
+    "bedroom": 120.0,
+    "kitchen": 45.0,
+    "bathroom": 12.0,
+    "living_room": 80.0
+  },
+  "prevalent_room": "bedroom",
+  "transitions": {
+    "total": 8.0,
+    "matrix": {
+      "bedroom": {
+        "kitchen": 2
+      }
+    },
+    "events": [],
+    "source": "room_transitions"
+  },
+  "night": {
+    "room_changes": 2.0,
+    "event_count": 1,
+    "events": [
+      {
+        "window_start": "2026-07-16T02:06:00Z",
+        "window_end": "2026-07-16T02:10:00Z",
+        "changes": 1.0,
+        "dominant_room": "bathroom",
+        "summary": "Movimento notturno da verificare"
+      }
+    ]
+  },
+  "longest_single_room_minutes": 42.0,
+  "baseline": {
+    "available": false,
+    "status": "collecting",
+    "source": "previous_period",
+    "reason": "personal_baseline_not_available",
+    "comparison": {
+      "room_minutes": {
+        "kitchen": {
+          "current": 45.0,
+          "reference": 30.0,
+          "absolute": 15.0,
+          "percent": 50.0
+        }
+      },
+      "room_changes": {
+        "current": 8.0,
+        "reference": 5.0,
+        "absolute": 3.0,
+        "percent": 60.0
+      }
+    }
+  },
+  "ble_quality": {
+    "level": "media",
+    "ratio": 0.62,
+    "available_windows": 224,
+    "total_windows": 240,
+    "expected_windows": 360,
+    "missing_windows_estimate": 136,
+    "sensor_status": "active"
+  }
+}
+```
+
+Se l'Edge non espone ancora una baseline spaziale personale, `baseline.source` puo'
+essere `previous_period`. La dashboard deve mostrarlo come confronto operativo, non come
+baseline clinica definitiva.
+
 ## Alert
 
 ### Lista alert paziente
@@ -439,6 +537,94 @@ Request:
 ```
 
 La nota e' obbligatoria. Response: payload alert aggiornato.
+
+### Dettaglio workflow alert
+
+```text
+GET /api/v1/alerts/{alert_id}/details
+```
+
+Response minima:
+
+```json
+{
+  "alert_id": "alert-1",
+  "patient_id": "patient-001",
+  "level": "orange",
+  "status": "new",
+  "context": {
+    "decision": {
+      "decision_id": "decision-3",
+      "timestamp": "2026-07-16T10:00:00Z",
+      "level": "orange",
+      "should_publish": true,
+      "anomaly_score": 76.5,
+      "model_label": "generic_wearable_anomaly_only",
+      "reasons": ["Wearable fuori routine"]
+    },
+    "feature_window": {
+      "window_id": "window-10",
+      "window_start": "2026-07-16T09:56:00Z",
+      "window_end": "2026-07-16T10:00:00Z",
+      "available_feature_count": 6,
+      "key_features": {
+        "heart_rate_mean": 83.0,
+        "spo2_mean": 94.0,
+        "room_changes": 1,
+        "night_room_changes": 0,
+        "prevalent_room": "kitchen"
+      }
+    },
+    "anti_noise": {
+      "enabled": true,
+      "policy": "similar_open_alerts_are_not_duplicated"
+    }
+  },
+  "related_events": [
+    {
+      "event_type": "alert_created",
+      "title": "Segnalazione creata",
+      "linked_resource": {
+        "type": "alert",
+        "id": "alert-1"
+      }
+    },
+    {
+      "event_type": "task_created",
+      "title": "Follow-up alert",
+      "linked_resource": {
+        "type": "task",
+        "id": "task-4"
+      }
+    }
+  ],
+  "workflow": {
+    "state": "new",
+    "available_actions": ["acknowledge", "create_task", "send_message", "resolve"],
+    "delete_policy": "permanent_delete_allowed_only_when_resolved"
+  },
+  "history": [
+    {
+      "event_type": "acknowledged",
+      "actor": "Medico Demo",
+      "actor_role": "doctor",
+      "note": "Verifico il caso."
+    }
+  ]
+}
+```
+
+Il backend collega task e messaggi all'alert quando il payload contiene `source_alert_id`,
+`related_alert_id` o `alert_id`.
+
+### Cancellazione definitiva alert
+
+```text
+DELETE /api/v1/alerts/{alert_id}
+```
+
+Regola: la cancellazione definitiva e' permessa solo se l'alert e' `resolved`. Gli alert
+aperti o presi in carico devono prima essere chiusi con nota di risoluzione.
 
 ## Task
 

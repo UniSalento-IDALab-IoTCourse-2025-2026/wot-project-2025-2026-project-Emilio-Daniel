@@ -107,6 +107,59 @@ def patient_summary_24h(
     }
 
 
+@router.get("/{patient_id}/spatial-summary", summary="Patient spatial routine summary")
+def patient_spatial_summary(
+    patient_id: str,
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    days: int = Query(default=7, ge=1, le=31),
+    _current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Aggrega routine ambientale, qualita' BLE e confronto con riferimento."""
+    patient = get_patient_or_404(db, patient_id)
+    now = datetime.now(timezone.utc)
+    period_end = normalize_aware(date_to) if date_to is not None else now
+    period_start = normalize_aware(date_from) if date_from is not None else period_end - timedelta(days=days)
+    if period_start >= period_end:
+        raise HTTPException(status_code=422, detail="date_from must be before date_to.")
+    period_duration = period_end - period_start
+    previous_start = period_start - period_duration
+    windows = feature_windows_between(db, patient.patient_id, period_start, period_end)
+    previous_windows = feature_windows_between(db, patient.patient_id, previous_start, period_start)
+    latest_cycle = latest_edge_cycle(db, patient.patient_id)
+    cycle_status = latest_edge_cycle_status_payload(latest_cycle)
+    baseline = baseline_status_from_cycle(cycle_status)
+    current = spatial_summary(windows)
+    reference = spatial_reference_summary(cycle_status, previous_windows)
+    return {
+        "patient_id": patient.patient_id,
+        "generated_at": utc_iso(now),
+        "range": {
+            "start": utc_iso(period_start),
+            "end": utc_iso(period_end),
+            "days": round(period_duration.total_seconds() / 86400, 3),
+        },
+        "counts": {
+            "windows": len(windows),
+            "reference_windows": len(previous_windows),
+        },
+        "room_minutes": current["room_minutes"],
+        "prevalent_room": current["prevalent_room"],
+        "transitions": spatial_transition_summary(windows),
+        "night": spatial_night_summary(windows),
+        "longest_single_room_minutes": current["longest_single_room_minutes"],
+        "baseline": {
+            "available": bool(baseline.get("trained") or baseline.get("status") in {"trained", "ready", "completed"}),
+            "status": baseline.get("status"),
+            "source": reference["source"],
+            "reason": reference["reason"],
+            "comparison": spatial_baseline_comparison(current, reference["summary"]),
+        },
+        "ble_quality": spatial_ble_quality(db, patient.patient_id, windows, period_start, period_end, now=now),
+    }
+
+
 @router.get("/{patient_id}/timeline", summary="Patient normalized timeline")
 def patient_timeline(
     patient_id: str,
@@ -594,6 +647,175 @@ def spatial_summary(windows: list[FeatureWindow]) -> dict[str, Any]:
         "night_room_changes": round(sum_feature_values(windows, "night_room_changes") or 0, 3) if windows else None,
         "longest_single_room_minutes": max_feature_value(windows, "longest_single_room_minutes"),
     }
+
+
+def spatial_transition_summary(windows: list[FeatureWindow]) -> dict[str, Any]:
+    """Aggrega cambi stanza e, se disponibili, transizioni stanza-stanza."""
+    matrix: dict[str, dict[str, int]] = {}
+    events: list[dict[str, Any]] = []
+    for window in windows:
+        transitions = window.features.get("room_transitions")
+        if isinstance(transitions, list):
+            for item in transitions:
+                if not isinstance(item, dict):
+                    continue
+                from_room = str(item.get("from") or item.get("from_room") or "unknown")
+                to_room = str(item.get("to") or item.get("to_room") or "unknown")
+                count = int(item.get("count") or 1)
+                matrix.setdefault(from_room, {})
+                matrix[from_room][to_room] = matrix[from_room].get(to_room, 0) + count
+                events.append(
+                    {
+                        "timestamp": utc_iso(window.window_end),
+                        "from_room": from_room,
+                        "to_room": to_room,
+                        "count": count,
+                    }
+                )
+    return {
+        "total": round(sum_feature_values(windows, "room_changes") or 0, 3) if windows else None,
+        "matrix": matrix,
+        "events": events,
+        "source": "room_transitions" if matrix else "room_changes",
+    }
+
+
+def spatial_night_summary(windows: list[FeatureWindow]) -> dict[str, Any]:
+    """Evidenzia movimenti notturni senza presentarli come diagnosi automatica."""
+    events: list[dict[str, Any]] = []
+    for window in windows:
+        night_changes = numeric_or_none(window.features.get("night_room_changes"))
+        room_changes = numeric_or_none(window.features.get("room_changes"))
+        window_end_utc = normalize_aware(window.window_end).astimezone(timezone.utc)
+        is_night = window_end_utc.hour >= 22 or window_end_utc.hour < 6
+        if night_changes is None and not is_night:
+            continue
+        event_count = night_changes if night_changes is not None else room_changes
+        if event_count is None or event_count <= 0:
+            continue
+        events.append(
+            {
+                "window_start": utc_iso(window.window_start),
+                "window_end": utc_iso(window.window_end),
+                "changes": round(event_count, 3),
+                "dominant_room": dominant_room_from_window(window),
+                "summary": "Movimento notturno da verificare",
+            }
+        )
+    return {
+        "room_changes": round(sum_feature_values(windows, "night_room_changes") or 0, 3) if windows else None,
+        "event_count": len(events),
+        "events": events,
+    }
+
+
+def spatial_reference_summary(cycle_status: dict[str, Any], previous_windows: list[FeatureWindow]) -> dict[str, Any]:
+    """Prepara il riferimento per il confronto: baseline Edge se disponibile, altrimenti periodo precedente."""
+    baseline_spatial = cycle_status.get("baseline_spatial")
+    if isinstance(baseline_spatial, dict):
+        return {
+            "source": "personal_baseline",
+            "reason": None,
+            "summary": {
+                "room_minutes": baseline_spatial.get("room_minutes") if isinstance(baseline_spatial.get("room_minutes"), dict) else {},
+                "room_changes": numeric_or_none(baseline_spatial.get("room_changes")),
+                "night_room_changes": numeric_or_none(baseline_spatial.get("night_room_changes")),
+                "longest_single_room_minutes": numeric_or_none(baseline_spatial.get("longest_single_room_minutes")),
+            },
+        }
+    if previous_windows:
+        return {"source": "previous_period", "reason": "personal_baseline_not_available", "summary": spatial_summary(previous_windows)}
+    return {"source": "none", "reason": "reference_not_available", "summary": {}}
+
+
+def spatial_baseline_comparison(current: dict[str, Any], reference: dict[str, Any]) -> dict[str, Any]:
+    """Calcola differenze assolute e percentuali tra periodo corrente e riferimento."""
+    reference_room_minutes = reference.get("room_minutes") if isinstance(reference.get("room_minutes"), dict) else {}
+    current_room_minutes = current.get("room_minutes") if isinstance(current.get("room_minutes"), dict) else {}
+    return {
+        "room_minutes": {
+            room: metric_delta(current_room_minutes.get(room), reference_room_minutes.get(room))
+            for room in sorted(set(current_room_minutes) | set(reference_room_minutes))
+        },
+        "room_changes": metric_delta(current.get("room_changes"), reference.get("room_changes")),
+        "night_room_changes": metric_delta(current.get("night_room_changes"), reference.get("night_room_changes")),
+        "longest_single_room_minutes": metric_delta(current.get("longest_single_room_minutes"), reference.get("longest_single_room_minutes")),
+    }
+
+
+def spatial_ble_quality(
+    db: Session,
+    patient_id: str,
+    windows: list[FeatureWindow],
+    start: datetime,
+    end: datetime,
+    *,
+    now: datetime,
+) -> dict[str, Any]:
+    """Stima completezza BLE e finestre mancanti nel periodo richiesto."""
+    ble_features = ["room_changes", "night_room_changes", "bedroom_minutes", "kitchen_minutes", "bathroom_minutes", "living_room_minutes", "longest_single_room_minutes"]
+    available = count_windows_with_any_feature(windows, ble_features)
+    expected = expected_window_count(start, end)
+    sensor = sensor_status(db, patient_id, "ble")
+    ratio = (available / expected) if expected else 0.0
+    return {
+        "level": reliability_level(ratio),
+        "ratio": round(ratio, 3),
+        "available_windows": available,
+        "total_windows": len(windows),
+        "expected_windows": expected,
+        "missing_windows_estimate": max(expected - available, 0),
+        "last_seen_at": utc_iso(sensor.last_seen_at) if sensor else None,
+        "sensor_status": status_from_last_seen(
+            sensor.last_seen_at if sensor else None,
+            now=now,
+            stale_minutes=get_settings().ble_stale_minutes,
+            missing_status="missing",
+        ),
+        "features_checked": ble_features,
+    }
+
+
+def metric_delta(current: Any, reference: Any) -> dict[str, float | None]:
+    """Restituisce differenza assoluta e percentuale per una metrica numerica."""
+    current_value = numeric_or_none(current)
+    reference_value = numeric_or_none(reference)
+    absolute = current_value - reference_value if current_value is not None and reference_value is not None else None
+    percent = None
+    if absolute is not None and reference_value not in {None, 0}:
+        percent = (absolute / reference_value) * 100
+    return {
+        "current": round(current_value, 3) if current_value is not None else None,
+        "reference": round(reference_value, 3) if reference_value is not None else None,
+        "absolute": round(absolute, 3) if absolute is not None else None,
+        "percent": round(percent, 3) if percent is not None else None,
+    }
+
+
+def dominant_room_from_window(window: FeatureWindow) -> str | None:
+    """Trova la stanza con piu' minuti nella singola finestra."""
+    room_values = {
+        "bedroom": numeric_or_none(window.features.get("bedroom_minutes")),
+        "kitchen": numeric_or_none(window.features.get("kitchen_minutes")),
+        "bathroom": numeric_or_none(window.features.get("bathroom_minutes")),
+        "living_room": numeric_or_none(window.features.get("living_room_minutes")),
+    }
+    known = {room: value for room, value in room_values.items() if value is not None}
+    if not known:
+        return None
+    room, minutes = max(known.items(), key=lambda item: item[1])
+    return room if minutes > 0 else None
+
+
+def expected_window_count(start: datetime, end: datetime, window_minutes: int = 4) -> int:
+    """Calcola quante finestre Edge ci si aspetta nel periodo."""
+    seconds = max((normalize_aware(end) - normalize_aware(start)).total_seconds(), 0)
+    return int(seconds // (window_minutes * 60))
+
+
+def numeric_or_none(value: Any) -> float | None:
+    """Converte numeri JSON in float ignorando booleani e valori mancanti."""
+    return float(value) if is_number(value) else None
 
 
 def wearable_summary(windows: list[FeatureWindow]) -> dict[str, Any]:

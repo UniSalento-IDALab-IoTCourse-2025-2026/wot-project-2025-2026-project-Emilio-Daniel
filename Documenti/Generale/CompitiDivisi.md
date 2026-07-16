@@ -830,13 +830,13 @@ Responsabile: Daniel.
 Obiettivo: supportare segnalazioni che raggruppano piu' eventi e mantengono un workflow
 tracciabile.
 
-- [ ] Collegare alert a decisioni, finestre, task, messaggi e note tramite riferimenti.
-- [ ] Esporre dettaglio alert con `related_events`.
-- [ ] Registrare ogni azione medico/caregiver in `alert_events`.
-- [ ] Gestire cancellazione logica o definitiva secondo regole concordate.
-- [ ] Evitare duplicati quando piu' decisioni simili arrivano in poco tempo.
-- [ ] Implementare escalation se un alert resta aperto troppo a lungo.
-- [ ] Testare transizioni non valide e autorizzazioni.
+- [x] Collegare alert a decisioni, finestre, task, messaggi e note tramite riferimenti.
+- [x] Esporre dettaglio alert con `related_events`.
+- [x] Registrare ogni azione medico/caregiver in `alert_events`.
+- [x] Gestire cancellazione logica o definitiva secondo regole concordate.
+- [x] Evitare duplicati quando piu' decisioni simili arrivano in poco tempo.
+- [x] Implementare escalation se un alert resta aperto troppo a lungo.
+- [x] Testare transizioni non valide e autorizzazioni.
 
 Output atteso: la dashboard puo' mostrare una segnalazione come workflow completo e non
 come evento isolato.
@@ -873,12 +873,12 @@ Responsabile: Daniel.
 Obiettivo: preparare dati spaziali gia' aggregati per evitare calcoli complessi nel
 browser.
 
-- [ ] Creare endpoint `GET /api/v1/patients/{patient_id}/spatial-summary`.
-- [ ] Restituire minuti per stanza, transizioni, cambi notturni e permanenza massima.
-- [ ] Restituire confronto con baseline: differenza assoluta e percentuale.
-- [ ] Restituire eventi notturni rilevanti con orario e stanza.
-- [ ] Segnalare qualita' del dato BLE e finestre mancanti.
-- [ ] Aggiungere test con paziente fermo, paziente in movimento e dati BLE assenti.
+- [x] Creare endpoint `GET /api/v1/patients/{patient_id}/spatial-summary`.
+- [x] Restituire minuti per stanza, transizioni, cambi notturni e permanenza massima.
+- [x] Restituire confronto con baseline: differenza assoluta e percentuale.
+- [x] Restituire eventi notturni rilevanti con orario e stanza.
+- [x] Segnalare qualita' del dato BLE e finestre mancanti.
+- [x] Aggiungere test con paziente fermo, paziente in movimento e dati BLE assenti.
 
 Output atteso: la dashboard puo' mostrare routine ambientale senza scaricare tutte le
 finestre grezze.

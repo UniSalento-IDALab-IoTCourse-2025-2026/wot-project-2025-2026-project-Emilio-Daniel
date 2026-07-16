@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.routes.patients import current_payload, get_patient_or_404
 from app.api.routes.utils import dump_event_note, event_note_payload, paginated, utc_iso
 from app.auth.dependencies import CurrentUser, authorized_patient_ids, can_access_patient, get_current_user, require_patient_access, write_audit
-from app.db.models import Alert, AlertEvent, Patient
+from app.db.models import Alert, AlertEvent, Decision, FeatureWindow, Notification, Patient, Task, TaskResult
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 
@@ -56,6 +56,21 @@ def patient_alerts(
         .order_by(desc(Alert.opened_at), desc(Alert.id))
     ).scalars().all()
     return paginated([alert_payload(db, row) for row in rows])
+
+
+@router.get("/{alert_id}/details", summary="Alert workflow details")
+def alert_details(
+    alert_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Restituisce l'alert come caso operativo con contesto, azioni e storico."""
+    alert = get_alert_or_404(db, alert_id)
+    if not can_access_patient(db, current_user, alert.patient_id):
+        raise HTTPException(status_code=403, detail="Patient not authorized.")
+    if current_user.role == "patient":
+        raise HTTPException(status_code=403, detail="Patients cannot read alert workflow details.")
+    return alert_detail_payload(db, alert, current_user)
 
 
 @router.patch("/{alert_id}/acknowledge", summary="Acknowledge alert")
@@ -154,6 +169,8 @@ def delete_alert(
         raise HTTPException(status_code=403, detail="Only doctor or admin can delete alerts.")
     if not can_access_patient(db, current_user, alert.patient_id):
         raise HTTPException(status_code=403, detail="Patient not authorized.")
+    if alert.status != "resolved":
+        raise HTTPException(status_code=409, detail="Only resolved alerts can be permanently deleted.")
 
     patient_id = alert.patient_id
     public_alert_id = f"alert-{alert.id}"
@@ -223,6 +240,247 @@ def alert_payload(db: Session, alert: Alert) -> dict[str, Any]:
         "resolution_note": resolved_note.get("note") if resolved_note else None,
         "message_id": alert.message_id,
     }
+
+
+def alert_detail_payload(db: Session, alert: Alert, current_user: CurrentUser) -> dict[str, Any]:
+    """Costruisce il dettaglio alert usato dalla dashboard per il workflow clinico."""
+    base = alert_payload(db, alert)
+    decision = db.get(Decision, alert.decision_id) if alert.decision_id else None
+    feature_window = feature_window_for_alert(db, alert, decision)
+    tasks = related_tasks(db, alert)
+    notifications = related_notifications(db, alert)
+    history = alert_history(db, alert)
+    return {
+        **base,
+        "context": {
+            "decision": decision_context(decision),
+            "feature_window": feature_window_context(feature_window),
+            "anti_noise": {
+                "enabled": True,
+                "window_minutes": ALERT_ESCALATION_MINUTES,
+                "policy": "similar_open_alerts_are_not_duplicated",
+            },
+        },
+        "related_events": related_alert_events(alert, decision, feature_window, tasks, notifications),
+        "workflow": {
+            "state": alert.status,
+            "available_actions": available_alert_actions(alert, current_user),
+            "delete_policy": "permanent_delete_allowed_only_when_resolved",
+        },
+        "history": history,
+    }
+
+
+def feature_window_for_alert(db: Session, alert: Alert, decision: Decision | None) -> FeatureWindow | None:
+    """Trova la finestra feature piu' vicina alla decisione collegata."""
+    query = select(FeatureWindow).where(FeatureWindow.patient_id == alert.patient_id)
+    if decision is not None:
+        if decision.window_end is not None:
+            query = query.where(FeatureWindow.window_end <= decision.window_end)
+        else:
+            query = query.where(FeatureWindow.window_end <= decision.timestamp)
+    else:
+        query = query.where(FeatureWindow.window_end <= alert.opened_at)
+    return db.execute(query.order_by(desc(FeatureWindow.window_end), desc(FeatureWindow.id)).limit(1)).scalar_one_or_none()
+
+
+def related_tasks(db: Session, alert: Alert) -> list[Task]:
+    """Trova task creati come follow-up dell'alert."""
+    rows = db.execute(select(Task).where(Task.patient_id == alert.patient_id).order_by(Task.created_at, Task.id)).scalars().all()
+    public_id = f"alert-{alert.id}"
+    identifiers = {public_id, alert.message_id}
+    return [task for task in rows if payload_references_alert(task.payload or {}, identifiers)]
+
+
+def related_notifications(db: Session, alert: Alert) -> list[Notification]:
+    """Trova messaggi/notifiche collegati all'alert quando il payload lo dichiara."""
+    rows = db.execute(
+        select(Notification)
+        .where(Notification.patient_id == alert.patient_id)
+        .order_by(Notification.created_at, Notification.id)
+    ).scalars().all()
+    identifiers = {f"alert-{alert.id}", alert.message_id}
+    return [notification for notification in rows if payload_references_alert(notification.payload or {}, identifiers)]
+
+
+def payload_references_alert(payload: dict[str, Any], identifiers: set[str]) -> bool:
+    """Cerca riferimenti alert in payload annidati senza assumere una forma unica."""
+    stack: list[Any] = [payload]
+    keys = {"alert_id", "source_alert_id", "related_alert_id"}
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            for key, value in current.items():
+                if key in keys and str(value) in identifiers:
+                    return True
+                if isinstance(value, dict | list):
+                    stack.append(value)
+        elif isinstance(current, list):
+            stack.extend(current)
+    return False
+
+
+def related_alert_events(
+    alert: Alert,
+    decision: Decision | None,
+    feature_window: FeatureWindow | None,
+    tasks: list[Task],
+    notifications: list[Notification],
+) -> list[dict[str, Any]]:
+    """Normalizza gli eventi collegati all'alert in ordine cronologico."""
+    events: list[dict[str, Any]] = [
+        {
+            "event_id": f"alert-{alert.id}-created",
+            "event_type": "alert_created",
+            "timestamp": utc_iso(alert.opened_at),
+            "title": "Segnalazione creata",
+            "summary": alert.description,
+            "linked_resource": {"type": "alert", "id": f"alert-{alert.id}"},
+        }
+    ]
+    if decision is not None:
+        events.append(
+            {
+                "event_id": f"decision-{decision.id}",
+                "event_type": "decision_updated",
+                "timestamp": utc_iso(decision.timestamp),
+                "title": "Decisione AI collegata",
+                "summary": f"Livello {decision.level}, score {decision.anomaly_score}",
+                "linked_resource": {"type": "decision", "id": f"decision-{decision.id}"},
+            }
+        )
+    if feature_window is not None:
+        events.append(
+            {
+                "event_id": f"window-{feature_window.id}",
+                "event_type": "patient_window_updated",
+                "timestamp": utc_iso(feature_window.window_end),
+                "title": "Finestra dati collegata",
+                "summary": f"{len(feature_window.features or {})} feature disponibili",
+                "linked_resource": {"type": "feature_window", "id": f"window-{feature_window.id}"},
+            }
+        )
+    for task in tasks:
+        events.append(
+            {
+                "event_id": f"task-{task.id}",
+                "event_type": "task_created",
+                "timestamp": utc_iso(task.created_at),
+                "title": task.title,
+                "summary": f"Task {task.task_type} - stato {task.status}",
+                "linked_resource": {"type": "task", "id": f"task-{task.id}"},
+            }
+        )
+    for notification in notifications:
+        events.append(
+            {
+                "event_id": f"notification-{notification.id}",
+                "event_type": notification_event_type(notification),
+                "timestamp": utc_iso(notification.sent_at or notification.created_at),
+                "title": notification.title,
+                "summary": notification.body,
+                "linked_resource": {"type": "notification", "id": f"notification-{notification.id}"},
+            }
+        )
+    events.sort(key=lambda event: event.get("timestamp") or "")
+    return events
+
+
+def alert_history(db: Session, alert: Alert) -> list[dict[str, Any]]:
+    """Restituisce lo storico umano delle azioni fatte sull'alert."""
+    rows = db.execute(
+        select(AlertEvent)
+        .where(AlertEvent.alert_id == alert.id)
+        .order_by(AlertEvent.timestamp, AlertEvent.id)
+    ).scalars().all()
+    return [
+        {
+            "event_id": f"alert-event-{row.id}",
+            "event_type": row.event_type,
+            "timestamp": utc_iso(row.timestamp),
+            "actor": event_note_payload(row.note).get("user_id"),
+            "actor_role": event_note_payload(row.note).get("role"),
+            "note": event_note_payload(row.note).get("note"),
+        }
+        for row in rows
+    ]
+
+
+def decision_context(decision: Decision | None) -> dict[str, Any] | None:
+    if decision is None:
+        return None
+    return {
+        "decision_id": f"decision-{decision.id}",
+        "timestamp": utc_iso(decision.timestamp),
+        "window_start": utc_iso(decision.window_start),
+        "window_end": utc_iso(decision.window_end),
+        "level": decision.level,
+        "should_publish": decision.should_publish,
+        "anomaly_score": decision.anomaly_score,
+        "model_label": decision.model_label,
+        "reasons": decision_reasons(decision),
+    }
+
+
+def feature_window_context(window: FeatureWindow | None) -> dict[str, Any] | None:
+    if window is None:
+        return None
+    features = window.features or {}
+    return {
+        "window_id": f"window-{window.id}",
+        "window_start": utc_iso(window.window_start),
+        "window_end": utc_iso(window.window_end),
+        "available_feature_count": sum(1 for value in features.values() if value is not None),
+        "key_features": {
+            "heart_rate_mean": features.get("heart_rate_mean"),
+            "spo2_mean": features.get("spo2_mean"),
+            "room_changes": features.get("room_changes"),
+            "night_room_changes": features.get("night_room_changes"),
+            "prevalent_room": prevalent_room_from_features(features),
+        },
+    }
+
+
+def available_alert_actions(alert: Alert, current_user: CurrentUser) -> list[str]:
+    """Elenca azioni UI permesse in base a ruolo e stato."""
+    actions: list[str] = []
+    if alert.status == "new" and current_user.role in {"doctor", "caregiver", "admin"}:
+        actions.append("acknowledge")
+    if alert.status in {"new", "acknowledged"} and current_user.role in {"doctor", "admin"}:
+        actions.extend(["create_task", "send_message", "resolve"])
+    if alert.status == "resolved" and current_user.role in {"doctor", "admin"}:
+        actions.append("delete")
+    return actions
+
+
+def decision_reasons(decision: Decision) -> list[str]:
+    payload = decision.payload.get("payload", {}) if isinstance(decision.payload, dict) else {}
+    reasons = payload.get("reasons") if isinstance(payload, dict) else None
+    return [str(reason) for reason in reasons] if isinstance(reasons, list) else []
+
+
+def prevalent_room_from_features(features: dict[str, Any]) -> str | None:
+    rooms = {
+        "bedroom": features.get("bedroom_minutes"),
+        "kitchen": features.get("kitchen_minutes"),
+        "bathroom": features.get("bathroom_minutes"),
+        "living_room": features.get("living_room_minutes"),
+    }
+    numeric_rooms = {room: float(value) for room, value in rooms.items() if isinstance(value, int | float) and not isinstance(value, bool)}
+    if not numeric_rooms:
+        return None
+    room, minutes = max(numeric_rooms.items(), key=lambda item: item[1])
+    return room if minutes > 0 else None
+
+
+def notification_event_type(notification: Notification) -> str:
+    payload = notification.payload or {}
+    kind = payload.get("kind")
+    if kind == "caregiver_message":
+        return "caregiver_message_created"
+    if kind == "patient_message":
+        return "patient_message_created"
+    return "notification_created"
 
 
 def caregiver_patient_payload(db: Session, patient: Patient) -> dict[str, Any]:

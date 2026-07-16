@@ -5,7 +5,7 @@ Backend FastAPI unico per dashboard medico, app paziente, caregiver e integrazio
 ## Scopo
 
 Questa cartella contiene il backend Cloud del progetto. Al momento copre i blocchi D2,
-D3, D4, D5, D6, D7, D8, D9, D13, D14, D15, D18 e D19 della scaletta di Daniel:
+D3, D4, D5, D6, D7, D8, D9, D13, D14, D15, D16, D17, D18 e D19 della scaletta di Daniel:
 
 ```text
 MQTT broker -> backend -> database -> dashboard/app
@@ -25,6 +25,8 @@ D9 -> task clinici, risultati, scadenze e scoring controllato
 D13 -> riepilogo aggregato ultime 24 ore
 D14 -> timeline normalizzata del paziente
 D15 -> template questionari, programmazioni e storico punteggi
+D16 -> dettaglio alert composto e workflow operativo
+D17 -> aggregazioni spaziali BLE e confronto con riferimento/baseline
 D18 -> spiegazioni AI normalizzate
 D19 -> validazione check-in brevi e evento questionnaire_completed
 ```
@@ -136,8 +138,10 @@ GET    http://127.0.0.1:8080/api/v1/patients/patient-001/current
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/windows
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/decisions
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/alerts
+GET    http://127.0.0.1:8080/api/v1/alerts/alert-1/details
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/tasks
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/system-status
+GET    http://127.0.0.1:8080/api/v1/patients/patient-001/spatial-summary
 GET    http://127.0.0.1:8080/api/v1/questionnaires/templates
 GET    http://127.0.0.1:8080/api/v1/questionnaires/patients/patient-001/schedules
 GET    http://127.0.0.1:8080/api/v1/questionnaires/patients/patient-001/results
@@ -381,6 +385,58 @@ IOT_BACKEND_PATIENT_APP_STALE_MINUTES=15
 ```
 
 Il payload non espone token Google Health, token FCM, password o client secret.
+
+## Routine ambientale BLE
+
+L'endpoint:
+
+```text
+GET /api/v1/patients/{patient_id}/spatial-summary
+```
+
+aggregra i dati spaziali dei beacon/BLE per la dashboard:
+
+- minuti per stanza;
+- stanza prevalente;
+- cambi stanza e transizioni stanza-stanza, se presenti nel payload Edge;
+- movimenti notturni da verificare;
+- permanenza continuativa massima;
+- qualita' del dato BLE e finestre mancanti stimate;
+- confronto con baseline spaziale se disponibile, altrimenti con il periodo precedente.
+
+Parametri utili:
+
+```text
+days=7
+date_from=2026-07-16T00:00:00Z
+date_to=2026-07-17T00:00:00Z
+```
+
+## Workflow alert
+
+L'endpoint:
+
+```text
+GET /api/v1/alerts/{alert_id}/details
+```
+
+espone una segnalazione come caso operativo completo:
+
+- decisione AI collegata;
+- finestra dati collegata;
+- task creati come follow-up;
+- messaggi/notifiche collegati;
+- storico `alert_events`;
+- azioni disponibili per ruolo e stato.
+
+La cancellazione definitiva:
+
+```text
+DELETE /api/v1/alerts/{alert_id}
+```
+
+e' permessa solo dopo `resolve`, cosi' un alert aperto non puo' sparire senza nota di
+chiusura.
 
 ## Prossimi passi
 
