@@ -997,12 +997,14 @@ visita o per la discussione del progetto.
 - [ ] Escludere token, dettagli tecnici sensibili e dati non necessari.
 - [ ] Aggiungere data generazione e dicitura "supporto al triage".
 - [ ] Preparare esportazione PDF tramite stampa browser o libreria dedicata.
+- [ ] Mostrare, se utile, lo storico audit leggibile fornito da Daniel.
 
 Dipendenze da Daniel:
 
 - endpoint riepilogo;
 - dati timeline;
 - eventuali note medico salvate.
+- endpoint audit trail leggibile, se si decide di mostrarlo nella dashboard.
 
 Output atteso: la demo puo' produrre un documento comprensibile e professionale.
 
@@ -1013,14 +1015,30 @@ Responsabile: Daniel.
 Obiettivo: rendere disponibili al frontend i dati necessari per un report senza query
 multiple fragili.
 
-- [ ] Creare endpoint `GET /api/v1/patients/{patient_id}/report-data`.
-- [ ] Restituire riepilogo, decisioni recenti, alert recenti, task e note.
-- [ ] Applicare autorizzazioni doctor-only.
-- [ ] Registrare audit dell'esportazione report.
-- [ ] Evitare dati sensibili non necessari nel payload.
-- [ ] Aggiungere test di autorizzazione e completezza payload.
+- [x] Creare endpoint `GET /api/v1/patients/{patient_id}/report-data`.
+- [x] Restituire riepilogo, decisioni recenti, alert recenti, task e note.
+- [x] Applicare autorizzazioni doctor-only.
+- [x] Registrare audit dell'esportazione report.
+- [x] Evitare dati sensibili non necessari nel payload.
+- [x] Aggiungere test di autorizzazione e completezza payload.
 
 Output atteso: il report usa dati coerenti e tracciabili.
+
+### D21. Rifiniture demo backend e audit leggibile
+
+Responsabile: Daniel.
+
+Obiettivo: rendere la parte backend piu' comoda da provare, presentare e verificare prima
+del deployment finale D12.
+
+- [x] Creare endpoint audit leggibile per il medico `GET /api/v1/patients/{patient_id}/audit-trail`.
+- [x] Preparare comando seed dati demo.
+- [x] Preparare comando reset dati demo.
+- [x] Preparare test end-to-end backend simulato.
+- [x] Aggiungere test automatici per audit trail ed E2E simulato.
+
+Output atteso: Daniel puo' popolare una demo, resettarla e verificare il flusso backend
+senza dover ricostruire tutto manualmente da Swagger.
 
 ### Integrazione dei nuovi miglioramenti
 

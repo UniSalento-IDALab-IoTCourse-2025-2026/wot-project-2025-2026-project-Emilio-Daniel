@@ -18,7 +18,7 @@ from app.auth.dependencies import (
     write_audit,
 )
 from app.core.config import get_settings
-from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Notification, Patient, PatientAppStatus, SensorStatus, Task, TaskResult
+from app.db.models import Alert, AlertEvent, AuditLog, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Notification, Patient, PatientAppStatus, SensorStatus, Task, TaskResult
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 from app.services.push_notifications import notify_caregiver_message, notify_task_created
@@ -158,6 +158,62 @@ def patient_spatial_summary(
         },
         "ble_quality": spatial_ble_quality(db, patient.patient_id, windows, period_start, period_end, now=now),
     }
+
+
+@router.get("/{patient_id}/report-data", summary="Patient report data")
+def patient_report_data(
+    patient_id: str,
+    days: int = Query(default=7, ge=1, le=31),
+    current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Restituisce un pacchetto coerente per report stampabile/esportabile."""
+    if current_user.role not in {"doctor", "admin"}:
+        raise HTTPException(status_code=403, detail="Only doctor or admin can export patient reports.")
+    patient = get_patient_or_404(db, patient_id)
+    now = datetime.now(timezone.utc)
+    report = report_data_payload(db, patient, current_user, now=now, days=days)
+    write_audit(
+        db,
+        actor=current_user,
+        action="patient_report.exported",
+        patient_id=patient.patient_id,
+        target_type="patient_report",
+        target_id=patient.patient_id,
+        details={
+            "days": days,
+            "generated_at": report["generated_at"],
+            "sections": list(report["sections"].keys()),
+        },
+    )
+    db.commit()
+    return report
+
+
+@router.get("/{patient_id}/audit-trail", summary="Patient readable audit trail")
+def patient_audit_trail(
+    patient_id: str,
+    action: str | None = Query(default=None),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=30, ge=1, le=200),
+    current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Mostra al medico uno storico audit leggibile delle azioni sul paziente."""
+    if current_user.role not in {"doctor", "admin"}:
+        raise HTTPException(status_code=403, detail="Only doctor or admin can read patient audit trail.")
+    get_patient_or_404(db, patient_id)
+    query = select(AuditLog).where(AuditLog.patient_id == patient_id)
+    if action:
+        query = query.where(AuditLog.action == action)
+    if date_from is not None:
+        query = query.where(AuditLog.timestamp >= date_from)
+    if date_to is not None:
+        query = query.where(AuditLog.timestamp <= date_to)
+    rows = db.execute(query.order_by(desc(AuditLog.timestamp), desc(AuditLog.id))).scalars().all()
+    return paginated([audit_trail_payload(row) for row in rows], page=page, page_size=page_size)
 
 
 @router.get("/{patient_id}/timeline", summary="Patient normalized timeline")
@@ -867,6 +923,236 @@ def data_completeness_summary(
             "last_cycle_at": utc_iso(latest_cycle.timestamp) if latest_cycle else None,
         },
     }
+
+
+def report_data_payload(db: Session, patient: Patient, current_user: CurrentUser, *, now: datetime, days: int) -> dict[str, Any]:
+    """Compone i dati necessari a generare un report senza query multiple dal frontend."""
+    summary = summary_24h_payload(db, patient, now=now)
+    spatial = spatial_report_payload(db, patient.patient_id, now=now, days=days)
+    decisions = recent_decisions(db, patient.patient_id, limit=8)
+    alerts = recent_alerts(db, patient.patient_id, limit=8)
+    tasks = recent_tasks(db, patient.patient_id, limit=8)
+    timeline = report_timeline(db, patient.patient_id, now=now, days=days)
+    return {
+        "schema_version": 1,
+        "report_type": "patient_triage_summary",
+        "generated_at": utc_iso(now),
+        "generated_by": {
+            "user_id": f"user-{current_user.id}",
+            "role": current_user.role,
+            "display_name": current_user.display_name,
+        },
+        "patient": {
+            "patient_id": patient.patient_id,
+            "display_name": patient.display_name,
+        },
+        "range": {
+            "start": utc_iso(now - timedelta(days=days)),
+            "end": utc_iso(now),
+            "days": days,
+        },
+        "disclaimer": "Report di supporto al triage: la valutazione finale resta al medico.",
+        "sections": {
+            "current": current_payload(db, patient),
+            "summary_24h": summary,
+            "spatial_summary": spatial,
+            "recent_decisions": [decision_payload(row, db) for row in decisions],
+            "recent_alerts": [alert_payload(db, row) for row in alerts],
+            "recent_tasks": [task_payload(row, db) for row in tasks],
+            "timeline": timeline,
+            "medical_notes": report_medical_notes(db, alerts, tasks),
+        },
+        "privacy": {
+            "excluded": ["password_hash", "refresh_token", "access_token", "fcm_token", "google_oauth_token", "client_secret"],
+            "contains_raw_sensor_payloads": False,
+        },
+    }
+
+
+def summary_24h_payload(db: Session, patient: Patient, *, now: datetime) -> dict[str, Any]:
+    """Riusa la logica del riepilogo 24 ore in forma interna al report."""
+    period_start = now - timedelta(hours=24)
+    previous_start = period_start - timedelta(hours=24)
+    windows = feature_windows_between(db, patient.patient_id, period_start, now)
+    previous_windows = feature_windows_between(db, patient.patient_id, previous_start, period_start)
+    decisions = decisions_between(db, patient.patient_id, period_start, now)
+    previous_decisions = decisions_between(db, patient.patient_id, previous_start, period_start)
+    latest_cycle = latest_edge_cycle(db, patient.patient_id)
+    baseline = baseline_status_from_cycle(latest_edge_cycle_status_payload(latest_cycle))
+    return {
+        "range": {"start": utc_iso(period_start), "end": utc_iso(now), "hours": 24},
+        "counts": {"windows": len(windows), "decisions": len(decisions)},
+        "ai": ai_summary(decisions, previous_decisions),
+        "spatial": spatial_summary(windows),
+        "wearable": wearable_summary(windows),
+        "data_completeness": data_completeness_summary(db, patient.patient_id, windows, latest_cycle, now=now),
+        "baseline": {
+            "available": bool(baseline.get("trained") or baseline.get("status") in {"trained", "ready", "completed"}),
+            "status": baseline.get("status"),
+            "reason": baseline.get("reason") or ("baseline_not_ready" if not baseline.get("trained") else None),
+        },
+    }
+
+
+def spatial_report_payload(db: Session, patient_id: str, *, now: datetime, days: int) -> dict[str, Any]:
+    """Produce la stessa sintesi spaziale D17 in forma interna al report."""
+    period_end = now
+    period_start = now - timedelta(days=days)
+    previous_start = period_start - (period_end - period_start)
+    windows = feature_windows_between(db, patient_id, period_start, period_end)
+    previous_windows = feature_windows_between(db, patient_id, previous_start, period_start)
+    latest_cycle = latest_edge_cycle(db, patient_id)
+    cycle_status = latest_edge_cycle_status_payload(latest_cycle)
+    baseline = baseline_status_from_cycle(cycle_status)
+    current = spatial_summary(windows)
+    reference = spatial_reference_summary(cycle_status, previous_windows)
+    return {
+        "range": {"start": utc_iso(period_start), "end": utc_iso(period_end), "days": days},
+        "counts": {"windows": len(windows), "reference_windows": len(previous_windows)},
+        "room_minutes": current["room_minutes"],
+        "prevalent_room": current["prevalent_room"],
+        "transitions": spatial_transition_summary(windows),
+        "night": spatial_night_summary(windows),
+        "longest_single_room_minutes": current["longest_single_room_minutes"],
+        "baseline": {
+            "available": bool(baseline.get("trained") or baseline.get("status") in {"trained", "ready", "completed"}),
+            "status": baseline.get("status"),
+            "source": reference["source"],
+            "reason": reference["reason"],
+            "comparison": spatial_baseline_comparison(current, reference["summary"]),
+        },
+        "ble_quality": spatial_ble_quality(db, patient_id, windows, period_start, period_end, now=now),
+    }
+
+
+def recent_decisions(db: Session, patient_id: str, *, limit: int) -> list[Decision]:
+    return list(
+        db.execute(
+            select(Decision)
+            .where(Decision.patient_id == patient_id)
+            .order_by(desc(Decision.timestamp), desc(Decision.id))
+            .limit(limit)
+        ).scalars()
+    )
+
+
+def recent_alerts(db: Session, patient_id: str, *, limit: int) -> list[Alert]:
+    return list(
+        db.execute(
+            select(Alert)
+            .where(Alert.patient_id == patient_id)
+            .order_by(desc(Alert.opened_at), desc(Alert.id))
+            .limit(limit)
+        ).scalars()
+    )
+
+
+def recent_tasks(db: Session, patient_id: str, *, limit: int) -> list[Task]:
+    return list(
+        db.execute(
+            select(Task)
+            .where(Task.patient_id == patient_id)
+            .order_by(desc(Task.created_at), desc(Task.id))
+            .limit(limit)
+        ).scalars()
+    )
+
+
+def report_timeline(db: Session, patient_id: str, *, now: datetime, days: int) -> list[dict[str, Any]]:
+    """Restituisce una timeline compatta adatta al report."""
+    events = normalized_timeline_events(db, patient_id, date_from=now - timedelta(days=days), date_to=now)
+    events = deduplicate_timeline_events(events)
+    events.sort(key=lambda event: (parse_datetime(event["timestamp"]) or datetime.min.replace(tzinfo=timezone.utc), event["event_id"]), reverse=True)
+    return events[:30]
+
+
+def report_medical_notes(db: Session, alerts: list[Alert], tasks: list[Task]) -> list[dict[str, Any]]:
+    """Raccoglie note medico da task e risoluzioni alert senza includere dati sensibili."""
+    notes: list[dict[str, Any]] = []
+    for task in tasks:
+        payload = task.payload or {}
+        note = payload.get("medical_note")
+        if note:
+            notes.append(
+                {
+                    "source": "task",
+                    "resource_id": f"task-{task.id}",
+                    "timestamp": payload.get("medical_note_at") or utc_iso(task.updated_at),
+                    "author": payload.get("medical_note_by"),
+                    "text": note,
+                }
+            )
+    alert_ids = [alert.id for alert in alerts]
+    if alert_ids:
+        rows = db.execute(
+            select(AlertEvent)
+            .where(AlertEvent.alert_id.in_(alert_ids), AlertEvent.event_type == "resolved")
+            .order_by(desc(AlertEvent.timestamp), desc(AlertEvent.id))
+        ).scalars().all()
+        alert_by_id = {alert.id: alert for alert in alerts}
+        for row in rows:
+            note_payload = event_note_payload(row.note)
+            note = note_payload.get("note")
+            if note:
+                notes.append(
+                    {
+                        "source": "alert",
+                        "resource_id": f"alert-{row.alert_id}",
+                        "timestamp": utc_iso(row.timestamp),
+                        "author": note_payload.get("user_id"),
+                        "text": note,
+                        "title": alert_by_id.get(row.alert_id).title if row.alert_id in alert_by_id else None,
+                    }
+                )
+    notes.sort(key=lambda item: item.get("timestamp") or "", reverse=True)
+    return notes
+
+
+def audit_trail_payload(row: AuditLog) -> dict[str, Any]:
+    """Trasforma audit tecnico in voce leggibile dalla dashboard medico."""
+    title, summary = audit_copy(row.action, row.details or {})
+    return {
+        "audit_id": f"audit-{row.id}",
+        "timestamp": utc_iso(row.timestamp),
+        "action": row.action,
+        "title": title,
+        "summary": summary,
+        "actor": {
+            "user_id": f"user-{row.actor_user_id}" if row.actor_user_id else None,
+            "role": row.actor_role,
+        },
+        "target": {
+            "type": row.target_type,
+            "id": row.target_id,
+        },
+        "patient_id": row.patient_id,
+        "details": public_audit_details(row.details or {}),
+    }
+
+
+def audit_copy(action: str, details: dict[str, Any]) -> tuple[str, str]:
+    """Restituisce titolo e descrizione italiana per l'audit trail."""
+    mapping = {
+        "alert.acknowledged": ("Alert preso in carico", "Una segnalazione e' stata assegnata a un operatore."),
+        "alert.resolved": ("Alert risolto", "Una segnalazione e' stata chiusa con nota di verifica."),
+        "alert.deleted": ("Alert eliminato", "Una segnalazione risolta e' stata eliminata definitivamente."),
+        "task.created": ("Attivita' creata", f"Task creato: {details.get('title') or details.get('type') or 'n/d'}."),
+        "task.completed": ("Attivita' completata", "Il paziente ha inviato un risultato."),
+        "task.cancelled": ("Attivita' annullata", "Un task e' stato annullato dal medico."),
+        "task.medical_note_updated": ("Nota medico aggiornata", "Una nota e' stata salvata sul task."),
+        "questionnaire_schedule.created": ("Questionario programmato", "E' stata creata una programmazione ricorrente."),
+        "questionnaire_schedule.suspended": ("Questionario sospeso", "Una programmazione ricorrente e' stata sospesa."),
+        "questionnaire_task.generated": ("Questionario inviato", "La programmazione ha generato un task per il paziente."),
+        "patient_report.exported": ("Report esportato", "Il medico ha richiesto i dati per un report paziente."),
+        "notification.device_registered": ("Dispositivo app registrato", "L'app paziente ha aggiornato lo stato notifiche."),
+    }
+    return mapping.get(action, (action.replace("_", " ").replace(".", " ").title(), "Evento registrato dal backend."))
+
+
+def public_audit_details(details: dict[str, Any]) -> dict[str, Any]:
+    """Rimuove eventuali chiavi sensibili dai dettagli audit."""
+    blocked = {"password", "password_hash", "token", "access_token", "refresh_token", "fcm_token", "client_secret", "authorization"}
+    return {key: value for key, value in details.items() if key.lower() not in blocked}
 
 
 def completeness_payload(available: int, total: int) -> dict[str, Any]:

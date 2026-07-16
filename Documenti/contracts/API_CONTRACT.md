@@ -65,6 +65,8 @@ GET    /api/v1/patients/{patient_id}/current
 GET    /api/v1/patients/{patient_id}/summary/24h
 GET    /api/v1/patients/{patient_id}/timeline
 GET    /api/v1/patients/{patient_id}/spatial-summary
+GET    /api/v1/patients/{patient_id}/report-data
+GET    /api/v1/patients/{patient_id}/audit-trail
 GET    /api/v1/patients/{patient_id}/windows
 GET    /api/v1/patients/{patient_id}/decisions
 GET    /api/v1/patients/{patient_id}/alerts
@@ -467,6 +469,103 @@ Response minima:
 Se l'Edge non espone ancora una baseline spaziale personale, `baseline.source` puo'
 essere `previous_period`. La dashboard deve mostrarlo come confronto operativo, non come
 baseline clinica definitiva.
+
+### Dati report
+
+```text
+GET /api/v1/patients/{patient_id}/report-data?days=7
+```
+
+Accesso consentito solo a `doctor` e `admin`.
+
+Response minima:
+
+```json
+{
+  "schema_version": 1,
+  "report_type": "patient_triage_summary",
+  "generated_at": "2026-07-16T10:00:00Z",
+  "generated_by": {
+    "user_id": "user-1",
+    "role": "doctor",
+    "display_name": "Medico Demo"
+  },
+  "patient": {
+    "patient_id": "patient-001",
+    "display_name": "Paziente Demo"
+  },
+  "range": {
+    "start": "2026-07-09T10:00:00Z",
+    "end": "2026-07-16T10:00:00Z",
+    "days": 7
+  },
+  "disclaimer": "Report di supporto al triage: la valutazione finale resta al medico.",
+  "sections": {
+    "current": {},
+    "summary_24h": {},
+    "spatial_summary": {},
+    "recent_decisions": [],
+    "recent_alerts": [],
+    "recent_tasks": [],
+    "timeline": [],
+    "medical_notes": []
+  },
+  "privacy": {
+    "excluded": ["password_hash", "refresh_token", "access_token", "fcm_token", "google_oauth_token", "client_secret"],
+    "contains_raw_sensor_payloads": false
+  }
+}
+```
+
+Ogni richiesta valida registra audit:
+
+```text
+action = patient_report.exported
+```
+
+### Audit trail leggibile
+
+```text
+GET /api/v1/patients/{patient_id}/audit-trail
+```
+
+Accesso consentito solo a `doctor` e `admin`.
+
+Filtri:
+
+```text
+action=patient_report.exported
+date_from=2026-07-16T00:00:00Z
+date_to=2026-07-17T00:00:00Z
+page=1
+page_size=30
+```
+
+Response item:
+
+```json
+{
+  "audit_id": "audit-1",
+  "timestamp": "2026-07-16T10:00:00Z",
+  "action": "patient_report.exported",
+  "title": "Report esportato",
+  "summary": "Il medico ha richiesto i dati per un report paziente.",
+  "actor": {
+    "user_id": "user-1",
+    "role": "doctor"
+  },
+  "target": {
+    "type": "patient_report",
+    "id": "patient-001"
+  },
+  "patient_id": "patient-001",
+  "details": {
+    "days": 7
+  }
+}
+```
+
+I dettagli vengono ripuliti da chiavi sensibili come token, password e client secret.
 
 ## Alert
 

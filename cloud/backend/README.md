@@ -5,7 +5,7 @@ Backend FastAPI unico per dashboard medico, app paziente, caregiver e integrazio
 ## Scopo
 
 Questa cartella contiene il backend Cloud del progetto. Al momento copre i blocchi D2,
-D3, D4, D5, D6, D7, D8, D9, D13, D14, D15, D16, D17, D18 e D19 della scaletta di Daniel:
+D3, D4, D5, D6, D7, D8, D9, D13, D14, D15, D16, D17, D18, D19 e D20 della scaletta di Daniel:
 
 ```text
 MQTT broker -> backend -> database -> dashboard/app
@@ -29,6 +29,7 @@ D16 -> dettaglio alert composto e workflow operativo
 D17 -> aggregazioni spaziali BLE e confronto con riferimento/baseline
 D18 -> spiegazioni AI normalizzate
 D19 -> validazione check-in brevi e evento questionnaire_completed
+D20 -> dati aggregati per report esportabile e audit leggero
 ```
 
 Estensioni completate su D5-D8:
@@ -142,6 +143,8 @@ GET    http://127.0.0.1:8080/api/v1/alerts/alert-1/details
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/tasks
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/system-status
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/spatial-summary
+GET    http://127.0.0.1:8080/api/v1/patients/patient-001/report-data
+GET    http://127.0.0.1:8080/api/v1/patients/patient-001/audit-trail
 GET    http://127.0.0.1:8080/api/v1/questionnaires/templates
 GET    http://127.0.0.1:8080/api/v1/questionnaires/patients/patient-001/schedules
 GET    http://127.0.0.1:8080/api/v1/questionnaires/patients/patient-001/results
@@ -437,6 +440,73 @@ DELETE /api/v1/alerts/{alert_id}
 
 e' permessa solo dopo `resolve`, cosi' un alert aperto non puo' sparire senza nota di
 chiusura.
+
+## Report esportabile
+
+L'endpoint:
+
+```text
+GET /api/v1/patients/{patient_id}/report-data
+```
+
+restituisce un pacchetto unico per la dashboard:
+
+- stato corrente;
+- riepilogo 24 ore;
+- routine ambientale;
+- decisioni recenti;
+- alert recenti;
+- task/check-in recenti;
+- timeline compatta;
+- note medico.
+
+Ogni esportazione valida registra audit:
+
+```text
+patient_report.exported
+```
+
+Il payload non include password, token FCM, token OAuth Google Health, refresh token o
+client secret.
+
+## Audit leggibile
+
+L'endpoint:
+
+```text
+GET /api/v1/patients/{patient_id}/audit-trail
+```
+
+trasforma `audit_logs` in voci leggibili dalla dashboard medico. I dettagli vengono
+ripuliti da token, password e segreti.
+
+## Dati demo e test E2E simulato
+
+Per popolare dati demo locali:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend
+.\.venv\Scripts\python -m scripts.demo_data seed
+```
+
+Per pulire soltanto i dati demo:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend
+.\.venv\Scripts\python -m scripts.demo_data reset
+```
+
+Gli script demo sono bloccati se `IOT_BACKEND_ENVIRONMENT=production`.
+
+Test end-to-end backend simulato, senza broker o database reale:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud\backend
+.\.venv\Scripts\python -m scripts.e2e_backend_demo
+```
+
+Il flusso simulato verifica login medico/paziente, template questionario, schedule,
+task, risultato paziente, report e audit trail.
 
 ## Prossimi passi
 
