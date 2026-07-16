@@ -5,7 +5,7 @@ Backend FastAPI unico per dashboard medico, app paziente, caregiver e integrazio
 ## Scopo
 
 Questa cartella contiene il backend Cloud del progetto. Al momento copre i blocchi D2,
-D3, D4, D5, D6, D7, D8 e D9 della scaletta di Daniel:
+D3, D4, D5, D6, D7, D8, D9, D13, D14, D15, D18 e D19 della scaletta di Daniel:
 
 ```text
 MQTT broker -> backend -> database -> dashboard/app
@@ -22,6 +22,11 @@ D6 -> WebSocket realtime verso dashboard
 D7 -> autenticazione, autorizzazione per ruolo e audit
 D8 -> logica alert, presa in carico e alert automatici da decisioni AI
 D9 -> task clinici, risultati, scadenze e scoring controllato
+D13 -> riepilogo aggregato ultime 24 ore
+D14 -> timeline normalizzata del paziente
+D15 -> template questionari, programmazioni e storico punteggi
+D18 -> spiegazioni AI normalizzate
+D19 -> validazione check-in brevi e evento questionnaire_completed
 ```
 
 Estensioni completate su D5-D8:
@@ -47,6 +52,7 @@ cloud/backend/
         telemetry.py
         alerts.py
         tasks.py
+        questionnaires.py
         notifications.py
         realtime.py
         health.py
@@ -132,6 +138,9 @@ GET    http://127.0.0.1:8080/api/v1/patients/patient-001/decisions
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/alerts
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/tasks
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/system-status
+GET    http://127.0.0.1:8080/api/v1/questionnaires/templates
+GET    http://127.0.0.1:8080/api/v1/questionnaires/patients/patient-001/schedules
+GET    http://127.0.0.1:8080/api/v1/questionnaires/patients/patient-001/results
 WS     ws://127.0.0.1:8080/ws/v1/patients/patient-001?token=<access_token>
 ```
 
@@ -326,6 +335,37 @@ IOT_BACKEND_FIREBASE_FAKE_ENABLED=true
 
 La modalita' fake registra `delivery.provider = "fake"` e non invia notifiche reali.
 In `production` viene rifiutata dalla configurazione.
+
+## Questionari programmabili
+
+Il backend supporta template questionario e programmazioni ricorrenti. Ogni occorrenza
+genera un task concreto, quindi app paziente e dashboard continuano a usare il flusso
+task gia' esistente.
+
+Endpoint principali:
+
+```text
+GET   /api/v1/questionnaires/templates
+POST  /api/v1/questionnaires/templates
+GET   /api/v1/questionnaires/patients/{patient_id}/schedules
+POST  /api/v1/questionnaires/patients/{patient_id}/schedules
+PATCH /api/v1/questionnaires/schedules/{schedule_id}/suspend
+POST  /api/v1/questionnaires/schedules/{schedule_id}/generate-due-task
+GET   /api/v1/questionnaires/patients/{patient_id}/results
+```
+
+Tipi domanda validati:
+
+```text
+yes_no
+scale
+single_choice
+text
+```
+
+Quando un task questionario viene completato, il backend pubblica sia `task_completed`
+sia `questionnaire_completed`, cosi' dashboard e futuro centro valutazioni possono
+aggiornarsi in tempo reale.
 
 ## Stato Sistema
 

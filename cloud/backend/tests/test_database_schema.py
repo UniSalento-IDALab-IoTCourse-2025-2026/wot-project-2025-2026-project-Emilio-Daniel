@@ -40,6 +40,8 @@ def test_d3_tables_exist() -> None:
         "patient_app_status",
         "tasks",
         "task_results",
+        "questionnaire_templates",
+        "questionnaire_schedules",
         "notifications",
     }
     assert expected_tables.issubset(set(inspector.get_table_names()))
@@ -70,6 +72,8 @@ def test_patient_timestamp_level_status_indexes_exist() -> None:
         "alerts": {"ix_alerts_patient_status_level"},
         "tasks": {"ix_tasks_patient_status_due"},
         "notifications": {"ix_notifications_patient_status"},
+        "questionnaire_templates": {"ix_questionnaire_templates_active"},
+        "questionnaire_schedules": {"ix_questionnaire_schedules_patient_status_next"},
         "refresh_tokens": {"ix_refresh_tokens_user_revoked"},
         "audit_logs": {"ix_audit_logs_actor_timestamp", "ix_audit_logs_patient_timestamp"},
     }

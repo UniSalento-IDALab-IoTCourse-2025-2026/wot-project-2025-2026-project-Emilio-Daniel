@@ -75,6 +75,14 @@ PATCH  /api/v1/alerts/{alert_id}/resolve
 POST   /api/v1/tasks/{task_id}/results
 PATCH  /api/v1/tasks/{task_id}/cancel
 
+GET    /api/v1/questionnaires/templates
+POST   /api/v1/questionnaires/templates
+GET    /api/v1/questionnaires/patients/{patient_id}/schedules
+POST   /api/v1/questionnaires/patients/{patient_id}/schedules
+PATCH  /api/v1/questionnaires/schedules/{schedule_id}/suspend
+POST   /api/v1/questionnaires/schedules/{schedule_id}/generate-due-task
+GET    /api/v1/questionnaires/patients/{patient_id}/results
+
 POST   /api/v1/admin/patients
 POST   /api/v1/admin/users
 POST   /api/v1/admin/users/{user_id}/patients/{patient_id}
@@ -639,7 +647,150 @@ alert_resolved
 task_created
 task_completed
 task_cancelled
+questionnaire_completed
 pong
+```
+
+## Questionari programmabili
+
+I questionari sono definiti tramite template versionati e possono essere programmati per
+un paziente. Ogni invio genera comunque un task concreto, quindi app paziente e dashboard
+continuano a usare il flusso task gia' esistente.
+
+### Creazione template
+
+```text
+POST /api/v1/questionnaires/templates
+```
+
+Request:
+
+```json
+{
+  "template_key": "daily_checkin",
+  "title": "Check-in quotidiano",
+  "description": "Breve controllo sullo stato percepito.",
+  "task_type": "check_in",
+  "questions": [
+    {
+      "id": "mood",
+      "type": "scale",
+      "text": "Come ti senti oggi?",
+      "min": 0,
+      "max": 10
+    },
+    {
+      "id": "dizziness",
+      "type": "yes_no",
+      "text": "Hai avuto capogiri?"
+    },
+    {
+      "id": "sleep",
+      "type": "single_choice",
+      "text": "Hai dormito bene?",
+      "options": ["bene", "cosi_cosi", "male"]
+    }
+  ],
+  "scoring": {
+    "type": "scale_average",
+    "question_ids": ["mood"]
+  }
+}
+```
+
+Tipi domanda supportati:
+
+```text
+yes_no
+scale
+single_choice
+text
+```
+
+### Programmazione
+
+```text
+POST /api/v1/questionnaires/patients/{patient_id}/schedules
+```
+
+Request:
+
+```json
+{
+  "template_id": "template-1",
+  "frequency": "daily",
+  "interval": 1,
+  "next_run_at": "2026-07-16T08:00:00Z",
+  "payload_overrides": {
+    "task_due_hours": 12
+  }
+}
+```
+
+### Generazione task dovuto
+
+```text
+POST /api/v1/questionnaires/schedules/{schedule_id}/generate-due-task
+```
+
+Response:
+
+```json
+{
+  "status": "generated",
+  "schedule": {
+    "schedule_id": "schedule-1",
+    "patient_id": "patient-001",
+    "status": "active",
+    "frequency": "daily",
+    "next_run_at": "2026-07-17T08:00:00Z",
+    "last_task_id": "task-12"
+  },
+  "task": {
+    "task_id": "task-12",
+    "patient_id": "patient-001",
+    "status": "created",
+    "type": "check_in",
+    "title": "Check-in quotidiano"
+  }
+}
+```
+
+Se il task e' gia' stato generato nello stesso periodo, il backend restituisce
+`already_generated` e il riferimento al task esistente.
+
+### Storico risultati
+
+```text
+GET /api/v1/questionnaires/patients/{patient_id}/results
+```
+
+Response item:
+
+```json
+{
+  "result_id": "result-1",
+  "task_id": "task-12",
+  "patient_id": "patient-001",
+  "template_key": "daily_checkin",
+  "template_version": 1,
+  "schedule_id": "schedule-1",
+  "title": "Check-in quotidiano",
+  "completed_at": "2026-07-16T08:03:00Z",
+  "duration_seconds": 120,
+  "score": 7.0,
+  "score_details": {
+    "type": "scale_average",
+    "score": 7.0,
+    "count": 1
+  },
+  "answers": [
+    {
+      "question_id": "mood",
+      "value": 7
+    }
+  ]
+}
 ```
 
 ## OpenAPI

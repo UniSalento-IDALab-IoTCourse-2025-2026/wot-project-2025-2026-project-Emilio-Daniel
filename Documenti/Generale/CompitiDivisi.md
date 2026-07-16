@@ -789,13 +789,13 @@ Responsabile: Daniel.
 Obiettivo: rendere i questionari una risorsa stabile del sistema, non solo payload liberi
 dentro un task.
 
-- [ ] Creare tabella o modello `questionnaire_templates`.
-- [ ] Creare tabella o modello `questionnaire_schedules` per programmazioni ricorrenti.
-- [ ] Associare ogni invio generato a un task concreto.
-- [ ] Salvare versione del template usato, cosi' lo storico resta interpretabile.
-- [ ] Esporre endpoint per lista template, creazione programmazione, sospensione programmazione e storico risultati.
-- [ ] Gestire scadenze automatiche e generazione task pianificati.
-- [ ] Aggiungere test su invio giornaliero, scadenza, completamento e duplicati.
+- [x] Creare tabella o modello `questionnaire_templates`.
+- [x] Creare tabella o modello `questionnaire_schedules` per programmazioni ricorrenti.
+- [x] Associare ogni invio generato a un task concreto.
+- [x] Salvare versione del template usato, cosi' lo storico resta interpretabile.
+- [x] Esporre endpoint per lista template, creazione programmazione, sospensione programmazione e storico risultati.
+- [x] Gestire scadenze automatiche e generazione task pianificati.
+- [x] Aggiungere test su invio giornaliero, scadenza, completamento e duplicati.
 
 Output atteso: la dashboard puo' mostrare valutazioni e trend senza usare logica fragile
 solo lato frontend.
@@ -973,13 +973,13 @@ Responsabile: Daniel.
 
 Obiettivo: definire e validare i questionari brevi ripetibili.
 
-- [ ] Definire schema JSON per domande e risposte.
-- [ ] Validare tipi di risposta: yes_no, scale, single_choice, text.
-- [ ] Salvare durata compilazione e device_id.
-- [ ] Calcolare score semplice quando previsto, ad esempio dolore 0-10 o benessere.
-- [ ] Esporre risultati al medico nella timeline e nel centro valutazioni.
-- [ ] Inviare WebSocket `task_completed` o `questionnaire_completed`.
-- [ ] Aggiungere test di validazione payload e autorizzazione paziente.
+- [x] Definire schema JSON per domande e risposte.
+- [x] Validare tipi di risposta: yes_no, scale, single_choice, text.
+- [x] Salvare durata compilazione e device_id.
+- [x] Calcolare score semplice quando previsto, ad esempio dolore 0-10 o benessere.
+- [x] Esporre risultati al medico nella timeline e nel centro valutazioni.
+- [x] Inviare WebSocket `task_completed` o `questionnaire_completed`.
+- [x] Aggiungere test di validazione payload e autorizzazione paziente.
 
 Output atteso: le risposte brevi sono dati strutturati, non messaggi liberi difficili da
 analizzare.

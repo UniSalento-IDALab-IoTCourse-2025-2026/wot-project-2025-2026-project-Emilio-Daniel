@@ -39,6 +39,7 @@ def test_openapi_contains_expected_routes() -> None:
     assert "/telemetry/status" in paths
     assert "/alerts/status" in paths
     assert "/tasks/status" in paths
+    assert "/questionnaires/status" in paths
     assert "/notifications/status" in paths
     assert "/realtime/status" in paths
 

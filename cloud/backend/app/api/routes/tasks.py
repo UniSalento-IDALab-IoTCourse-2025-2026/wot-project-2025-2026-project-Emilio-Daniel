@@ -13,6 +13,7 @@ from app.api.routes.task_rules import (
     ensure_task_can_be_completed,
     is_patient_message_task,
     score_task_result_details,
+    validate_questionnaire_result,
 )
 from app.api.routes.utils import utc_iso
 from app.auth.dependencies import CurrentUser, can_access_patient, get_current_user, write_audit
@@ -47,13 +48,16 @@ def create_task_result(
     if not can_access_patient(db, current_user, patient_id):
         raise HTTPException(status_code=403, detail="Patient not authorized.")
     ensure_task_can_be_completed(task.status, task.due_at, completed_at)
+    normalized_answers = validate_questionnaire_result(task.payload or {}, payload.get("answers", []))
+    normalized_payload = dict(payload)
+    normalized_payload["answers"] = normalized_answers
     result_payload = {
         "result_type": task.task_type,
         "started_at": payload.get("started_at"),
-        "answers": payload.get("answers", []),
+        "answers": normalized_answers,
         "device_info": payload.get("device_info", {}),
         "note": payload.get("note"),
-        "content": structured_result_content(task.task_type, payload),
+        "content": structured_result_content(task.task_type, normalized_payload),
     }
     score_details = score_task_result_details(task.payload or {}, result_payload)
     result_payload["score"] = score_details["score"] if score_details else None
@@ -95,6 +99,19 @@ def create_task_result(
             payload={"task_id": f"task-{task.id}", "result_id": f"result-{result.id}"},
         )
     )
+    if is_questionnaire_task(task.payload or {}):
+        event_bus.publish(
+            InternalEvent(
+                event_type="questionnaire_completed",
+                patient_id=result.patient_id,
+                timestamp=result.completed_at,
+                payload={
+                    "task_id": f"task-{task.id}",
+                    "result_id": f"result-{result.id}",
+                    "template_key": (task.payload or {}).get("questionnaire", {}).get("template_key"),
+                },
+            )
+        )
     return {
         "result_id": f"result-{result.id}",
         "task_id": f"task-{task.id}",
@@ -381,6 +398,13 @@ def structured_result_content(task_type: str, payload: dict[str, Any]) -> dict[s
     if task_type == "medication_reminder":
         return {"taken": payload.get("taken"), "taken_at": payload.get("taken_at"), "note": payload.get("note")}
     return {"answers": payload.get("answers", []), "note": payload.get("note")}
+
+
+def is_questionnaire_task(task_payload: dict[str, Any]) -> bool:
+    """Riconosce task generati da template questionario o check-in strutturati."""
+    questionnaire = task_payload.get("questionnaire")
+    content = task_payload.get("content")
+    return isinstance(questionnaire, dict) or (isinstance(content, dict) and isinstance(content.get("questions"), list))
 
 
 def parse_prefixed_id(value: str, prefix: str) -> int | None:
