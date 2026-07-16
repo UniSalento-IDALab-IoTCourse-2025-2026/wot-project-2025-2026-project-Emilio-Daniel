@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from app.api.routes.patients import get_patient_or_404
+from app.api.routes.patients import decision_payload, get_patient_or_404
 from app.api.routes.utils import paginated, utc_iso
 from app.auth.dependencies import CurrentUser, require_patient_access
 from app.db.models import Decision, FeatureWindow
@@ -55,7 +55,7 @@ def patient_decisions(
         .order_by(desc(Decision.timestamp), desc(Decision.id))
         .limit(limit)
     ).scalars().all()
-    items = [decision_payload(row) for row in reversed(rows)]
+    items = [decision_payload(row, db) for row in reversed(rows)]
     return paginated(items, page_size=limit)
 
 
@@ -72,23 +72,3 @@ def window_payload(row: FeatureWindow) -> dict[str, Any]:
         "created_at": utc_iso(row.created_at),
     }
 
-
-def decision_payload(row: Decision) -> dict[str, Any]:
-    """Serializza una decisione AI in formato dashboard."""
-    payload = row.payload or {}
-    return {
-        "decision_id": f"decision-{row.id}",
-        "patient_id": row.patient_id,
-        "edge_id": row.edge_id,
-        "timestamp": utc_iso(row.timestamp),
-        "window_start": utc_iso(row.window_start),
-        "window_end": utc_iso(row.window_end),
-        "level": row.level,
-        "should_publish": row.should_publish,
-        "anomaly_score": row.anomaly_score,
-        "model_label": row.model_label,
-        "reasons": payload.get("payload", {}).get("reasons", payload.get("reasons", [])),
-        "evidence": payload.get("payload", {}).get("evidence", payload.get("evidence", {})),
-        "message_id": row.message_id,
-        "created_at": utc_iso(row.created_at),
-    }

@@ -1,0 +1,63 @@
+{
+  "previous_score": 40.0,
+  "score_delta": 32.5,
+  "score_direction": "aumento",
+  "updated_at": "2026-07-15T10:00:00Z",
+  "model_label": "generic_wearable_anomaly_only",
+  "data_reliability": {
+    "level": "media",
+    "ratio": 0.58,
+    "available_features": 7,
+    "expected_features": 11,
+    "imputed_features": 2,
+    "quality_status": "warning"
+  },
+  "feature_explanations": [
+    {
+      "feature": "heart_rate_mean",
+      "label": "Frequenza cardiaca media",
+      "unit": "bpm",
+      "model": "generic_wearable",
+      "value": 82.0,
+      "model_value": 82.0,
+      "z_score": 2.1,
+      "impact": 2.1,
+      "direction": "above_training",
+      "direction_label": "Piu' alto del riferimento",
+      "effect": "increase",
+      "imputed": false
+    }
+  ],
+  "positive_factors": [
+    {
+      "feature": "heart_rate_mean",
+      "label": "Frequenza cardiaca media",
+      "unit": "bpm",
+      "value": 82.0,
+      "model_value": 82.0,
+      "impact": 2.1,
+      "direction": "above_training",
+      "direction_label": "Piu' alto del riferimento",
+      "imputed": false,
+      "model": "generic_wearable"
+    }
+  ],
+  "negative_factors": [],
+  "missing_or_imputed_features": [
+    {
+      "feature": "steps",
+      "label": "Passi",
+      "unit": "",
+      "status": "imputed"
+    }
+  ],
+  "model_contributions": {
+    "generic_wearable": {
+      "available": true,
+      "score": 82.5,
+      "label": "outlier",
+      "decision_value": -0.25
+    }
+  },
+  "message": "Supporto al triage: la decisione finale resta al medico."
+}

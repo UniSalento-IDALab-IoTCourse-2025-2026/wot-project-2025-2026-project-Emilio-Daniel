@@ -917,14 +917,14 @@ Responsabile: Daniel.
 Obiettivo: rendere la spiegazione AI stabile per il frontend, anche se cambia la forma
 del payload prodotto dall'Edge.
 
-- [ ] Salvare o calcolare `previous_score` per ogni decisione.
-- [ ] Restituire `score_delta` e direzione: aumento, diminuzione, stabile.
-- [ ] Normalizzare feature explanation in campi leggibili: label, valore, unita', direzione, impatto.
-- [ ] Restituire elenco `positive_factors` e `negative_factors`.
-- [ ] Restituire elenco `missing_or_imputed_features`.
-- [ ] Calcolare `data_reliability` da completezza sensori e qualita' finestra.
-- [ ] Aggiornare endpoint decisioni e current senza rompere compatibilita'.
-- [ ] Aggiungere esempi nel contratto API.
+- [x] Salvare o calcolare `previous_score` per ogni decisione.
+- [x] Restituire `score_delta` e direzione: aumento, diminuzione, stabile.
+- [x] Normalizzare feature explanation in campi leggibili: label, valore, unita', direzione, impatto.
+- [x] Restituire elenco `positive_factors` e `negative_factors`.
+- [x] Restituire elenco `missing_or_imputed_features`.
+- [x] Calcolare `data_reliability` da completezza sensori e qualita' finestra.
+- [x] Aggiornare endpoint decisioni e current senza rompere compatibilita'.
+- [x] Aggiungere esempi nel contratto API.
 
 Output atteso: il frontend riceve dati gia' pronti per una spiegazione clinicamente
 comprensibile.

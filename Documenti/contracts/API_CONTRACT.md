@@ -212,6 +212,45 @@ Response minima:
   "signal_type": "routine",
   "should_publish": false,
   "anomaly_score": 0.0,
+  "ai_explanation": {
+    "previous_score": 40.0,
+    "score_delta": 32.5,
+    "score_direction": "aumento",
+    "updated_at": "2026-07-13T10:00:00Z",
+    "model_label": "generic_wearable_anomaly_only",
+    "data_reliability": {
+      "level": "media",
+      "ratio": 0.58,
+      "available_features": 7,
+      "expected_features": 11,
+      "imputed_features": 2,
+      "quality_status": "warning"
+    },
+    "positive_factors": [
+      {
+        "feature": "heart_rate_mean",
+        "label": "Frequenza cardiaca media",
+        "unit": "bpm",
+        "value": 82.0,
+        "model_value": 82.0,
+        "impact": 2.1,
+        "direction": "above_training",
+        "direction_label": "Piu' alto del riferimento",
+        "imputed": false,
+        "model": "generic_wearable"
+      }
+    ],
+    "negative_factors": [],
+    "missing_or_imputed_features": [
+      {
+        "feature": "steps",
+        "label": "Passi",
+        "unit": "",
+        "status": "imputed"
+      }
+    ],
+    "message": "Supporto al triage: la decisione finale resta al medico."
+  },
   "current_room": "kitchen",
   "watch": {
     "present": true,

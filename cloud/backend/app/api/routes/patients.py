@@ -171,7 +171,7 @@ def patient_decisions(
     if date_to is not None:
         query = query.where(Decision.timestamp <= date_to)
     rows = db.execute(query.order_by(desc(Decision.timestamp), desc(Decision.id)).limit(limit)).scalars().all()
-    items = [decision_payload(row) for row in reversed(rows)]
+    items = [decision_payload(row, db) for row in reversed(rows)]
     return paginated(items, page=page, page_size=page_size or limit)
 
 
@@ -509,6 +509,7 @@ def current_payload(db: Session, patient: Patient) -> dict[str, Any]:
         "signal_type": signal_type(level=level, edge_online=edge_online, features=features),
         "should_publish": bool(decision.should_publish) if decision else False,
         "anomaly_score": decision.anomaly_score if decision else 0.0,
+        "ai_explanation": decision_ai_explanation(db, decision, features) if decision else empty_ai_explanation(features),
         "current_room": current_room,
         "watch": {
             "present": bool(features.get("wearable_present")) if features else False,
@@ -1385,11 +1386,11 @@ def window_payload(row: FeatureWindow) -> dict[str, Any]:
     }
 
 
-def decision_payload(row: Decision) -> dict[str, Any]:
+def decision_payload(row: Decision, db: Session | None = None) -> dict[str, Any]:
     """Serializza una decisione AI in formato dashboard."""
     payload = row.payload or {}
     inner_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload
-    return {
+    result = {
         "decision_id": f"decision-{row.id}",
         "patient_id": row.patient_id,
         "edge_id": row.edge_id,
@@ -1405,6 +1406,320 @@ def decision_payload(row: Decision) -> dict[str, Any]:
         "message_id": row.message_id,
         "created_at": utc_iso(row.created_at),
     }
+    if db is not None:
+        result["ai_explanation"] = decision_ai_explanation(db, row, latest_feature_window_for_decision(db, row))
+    return result
+
+
+def decision_ai_explanation(db: Session, decision: Decision | None, features: dict[str, Any] | FeatureWindow | None) -> dict[str, Any]:
+    """Normalizza la spiegazione AI in campi stabili per il frontend."""
+    if decision is None:
+        return empty_ai_explanation(features if isinstance(features, dict) else features.features if features else {})
+    previous = previous_decision(db, decision)
+    current_score = float(decision.anomaly_score) if is_number(decision.anomaly_score) else None
+    previous_score = float(previous.anomaly_score) if previous and is_number(previous.anomaly_score) else None
+    score_delta = round(current_score - previous_score, 3) if current_score is not None and previous_score is not None else None
+    normalized_features = normalized_feature_explanations(decision)
+    feature_dict = features.features if isinstance(features, FeatureWindow) else (features or {})
+    missing_or_imputed = missing_or_imputed_features(feature_dict, normalized_features)
+    reliability = data_reliability(feature_dict, normalized_features, decision)
+    return {
+        "previous_score": round(previous_score, 3) if previous_score is not None else None,
+        "score_delta": score_delta,
+        "score_direction": score_direction(score_delta),
+        "updated_at": utc_iso(decision.timestamp),
+        "model_label": decision.model_label,
+        "data_reliability": reliability,
+        "feature_explanations": normalized_features,
+        "positive_factors": positive_factors(normalized_features),
+        "negative_factors": negative_factors(normalized_features),
+        "missing_or_imputed_features": missing_or_imputed,
+        "model_contributions": model_contributions(decision),
+        "message": "Supporto al triage: la decisione finale resta al medico.",
+    }
+
+
+def empty_ai_explanation(features: dict[str, Any] | FeatureWindow | None) -> dict[str, Any]:
+    feature_dict = features.features if isinstance(features, FeatureWindow) else (features or {})
+    return {
+        "previous_score": None,
+        "score_delta": None,
+        "score_direction": "non_disponibile",
+        "updated_at": None,
+        "model_label": None,
+        "data_reliability": data_reliability(feature_dict, [], None),
+        "feature_explanations": [],
+        "positive_factors": [],
+        "negative_factors": [],
+        "missing_or_imputed_features": missing_or_imputed_features(feature_dict, []),
+        "model_contributions": {},
+        "message": "Supporto al triage: la decisione finale resta al medico.",
+    }
+
+
+def previous_decision(db: Session, decision: Decision) -> Decision | None:
+    """Trova la decisione precedente dello stesso paziente."""
+    return db.execute(
+        select(Decision)
+        .where(
+            Decision.patient_id == decision.patient_id,
+            Decision.timestamp < decision.timestamp,
+        )
+        .order_by(desc(Decision.timestamp), desc(Decision.id))
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def latest_feature_window_for_decision(db: Session, decision: Decision) -> FeatureWindow | None:
+    """Associa una finestra alla decisione usando window_end quando disponibile."""
+    query = select(FeatureWindow).where(FeatureWindow.patient_id == decision.patient_id)
+    if decision.window_end is not None:
+        query = query.where(FeatureWindow.window_end <= decision.window_end)
+    else:
+        query = query.where(FeatureWindow.window_end <= decision.timestamp)
+    return db.execute(query.order_by(desc(FeatureWindow.window_end), desc(FeatureWindow.id)).limit(1)).scalar_one_or_none()
+
+
+def normalized_feature_explanations(decision: Decision) -> list[dict[str, Any]]:
+    """Converte le top feature dei modelli in una lista unica e leggibile."""
+    fusion = decision_fusion_payload(decision)
+    models = fusion.get("models") if isinstance(fusion.get("models"), dict) else {}
+    normalized: list[dict[str, Any]] = []
+    for model_name, model_payload in models.items():
+        if not isinstance(model_payload, dict):
+            continue
+        explanation = model_payload.get("feature_explanation")
+        if not isinstance(explanation, dict):
+            continue
+        top_features = explanation.get("top_features")
+        if not isinstance(top_features, list):
+            continue
+        for item in top_features:
+            if not isinstance(item, dict):
+                continue
+            feature = str(item.get("feature") or "").strip()
+            if not feature:
+                continue
+            normalized.append(normalized_feature_item(feature, item, str(model_name)))
+    normalized.sort(key=lambda item: item["impact"], reverse=True)
+    return normalized
+
+
+def normalized_feature_item(feature: str, item: dict[str, Any], model_name: str) -> dict[str, Any]:
+    z_score = parse_float(item.get("z_score"))
+    impact = parse_float(item.get("abs_z_score"))
+    if impact is None and z_score is not None:
+        impact = abs(z_score)
+    direction = str(item.get("direction") or "").strip() or direction_from_z_score(z_score)
+    return {
+        "feature": feature,
+        "label": feature_label(feature),
+        "unit": feature_unit(feature),
+        "model": model_name,
+        "value": item.get("value"),
+        "model_value": item.get("model_value"),
+        "z_score": round(z_score, 3) if z_score is not None else None,
+        "impact": round(impact, 3) if impact is not None else 0.0,
+        "direction": direction,
+        "direction_label": direction_label(direction),
+        "effect": effect_from_direction(direction),
+        "imputed": bool(item.get("imputed")),
+    }
+
+
+def positive_factors(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fattori sopra il riferimento: utili al frontend come aumento del punteggio."""
+    return [factor_summary(item) for item in features if item.get("effect") == "increase"][:6]
+
+
+def negative_factors(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fattori sotto il riferimento: utili al frontend come riduzione/assenza."""
+    return [factor_summary(item) for item in features if item.get("effect") == "decrease"][:6]
+
+
+def factor_summary(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "feature": item["feature"],
+        "label": item["label"],
+        "unit": item["unit"],
+        "value": item["value"],
+        "model_value": item["model_value"],
+        "impact": item["impact"],
+        "direction": item["direction"],
+        "direction_label": item["direction_label"],
+        "imputed": item["imputed"],
+        "model": item["model"],
+    }
+
+
+def missing_or_imputed_features(feature_values_payload: dict[str, Any], explanations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Evidenzia dati mancanti o imputati che riducono l'affidabilita'."""
+    tracked = {
+        "heart_rate_mean",
+        "heart_rate_std",
+        "spo2_mean",
+        "steps",
+        "sleep_minutes",
+        "sedentary_minutes",
+        "hrv_rmssd",
+        "room_changes",
+        "night_room_changes",
+        "bedroom_minutes",
+        "kitchen_minutes",
+        "bathroom_minutes",
+        "living_room_minutes",
+        "longest_single_room_minutes",
+    }
+    rows: dict[str, dict[str, Any]] = {}
+    for feature in tracked:
+        if is_missing_feature_value(feature_values_payload.get(feature)):
+            rows[feature] = missing_feature_payload(feature, "missing")
+    for item in explanations:
+        if item.get("imputed"):
+            rows[item["feature"]] = missing_feature_payload(item["feature"], "imputed")
+    return sorted(rows.values(), key=lambda item: item["label"])
+
+
+def missing_feature_payload(feature: str, status: str) -> dict[str, Any]:
+    return {
+        "feature": feature,
+        "label": feature_label(feature),
+        "unit": feature_unit(feature),
+        "status": status,
+    }
+
+
+def data_reliability(feature_values_payload: dict[str, Any], explanations: list[dict[str, Any]], decision: Decision | None) -> dict[str, Any]:
+    """Stima leggibile della qualita' dati usata dalla spiegazione AI."""
+    expected = [
+        "heart_rate_mean",
+        "heart_rate_std",
+        "spo2_mean",
+        "steps",
+        "sleep_minutes",
+        "sedentary_minutes",
+        "room_changes",
+        "bedroom_minutes",
+        "kitchen_minutes",
+        "bathroom_minutes",
+        "living_room_minutes",
+    ]
+    available = sum(1 for feature in expected if not is_missing_feature_value(feature_values_payload.get(feature)))
+    ratio = available / len(expected) if expected else 0.0
+    imputed_count = len({item["feature"] for item in explanations if item.get("imputed")})
+    quality_status = quality_status_from_decision(decision)
+    penalty = 0.15 if quality_status == "warning" else 0.3 if quality_status == "error" else 0.0
+    adjusted_ratio = max(0.0, ratio - min(0.35, imputed_count * 0.03) - penalty)
+    return {
+        "level": reliability_level(adjusted_ratio),
+        "ratio": round(adjusted_ratio, 3),
+        "available_features": available,
+        "expected_features": len(expected),
+        "imputed_features": imputed_count,
+        "quality_status": quality_status,
+    }
+
+
+def model_contributions(decision: Decision) -> dict[str, Any]:
+    """Espone contributi dei modelli senza rendere obbligatoria la forma Edge."""
+    fusion = decision_fusion_payload(decision)
+    models = fusion.get("models") if isinstance(fusion.get("models"), dict) else {}
+    result: dict[str, Any] = {}
+    for model_name, model_payload in models.items():
+        if not isinstance(model_payload, dict):
+            continue
+        result[str(model_name)] = {
+            "available": model_payload.get("available"),
+            "score": model_payload.get("score"),
+            "label": model_payload.get("label"),
+            "decision_value": model_payload.get("decision_value"),
+        }
+    return result
+
+
+def decision_fusion_payload(decision: Decision) -> dict[str, Any]:
+    payload = decision.payload or {}
+    inner_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload
+    evidence = inner_payload.get("evidence") if isinstance(inner_payload.get("evidence"), dict) else {}
+    fusion = evidence.get("fusion") if isinstance(evidence.get("fusion"), dict) else {}
+    return fusion
+
+
+FEATURE_LABELS = {
+    "heart_rate_mean": ("Frequenza cardiaca media", "bpm"),
+    "heart_rate_std": ("Variabilita' frequenza cardiaca", "bpm"),
+    "resting_heart_rate": ("Frequenza cardiaca a riposo", "bpm"),
+    "hrv_rmssd": ("Variabilita' cardiaca HRV", "ms"),
+    "spo2_mean": ("Saturazione media SpO2", "%"),
+    "sleep_minutes": ("Minuti di sonno", "min"),
+    "awake_minutes": ("Minuti sveglio", "min"),
+    "steps": ("Passi", ""),
+    "sedentary_minutes": ("Sedentarieta'", "min"),
+    "room_changes": ("Cambi stanza", ""),
+    "night_room_changes": ("Cambi stanza notturni", ""),
+    "bedroom_minutes": ("Permanenza in camera", "min"),
+    "kitchen_minutes": ("Permanenza in cucina", "min"),
+    "bathroom_minutes": ("Permanenza in bagno", "min"),
+    "living_room_minutes": ("Permanenza in soggiorno", "min"),
+    "longest_single_room_minutes": ("Permanenza continuativa massima", "min"),
+}
+
+
+def feature_label(feature: str) -> str:
+    return FEATURE_LABELS.get(feature, (feature.replace("_", " ").capitalize(), ""))[0]
+
+
+def feature_unit(feature: str) -> str:
+    return FEATURE_LABELS.get(feature, ("", ""))[1]
+
+
+def score_direction(delta: float | None) -> str:
+    if delta is None:
+        return "non_disponibile"
+    if abs(delta) < 1.0:
+        return "stabile"
+    return "aumento" if delta > 0 else "diminuzione"
+
+
+def direction_from_z_score(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    return "above_training" if value > 0 else "below_training" if value < 0 else "aligned"
+
+
+def direction_label(direction: str) -> str:
+    return {
+        "above_training": "Piu' alto del riferimento",
+        "below_training": "Piu' basso del riferimento",
+        "aligned": "In linea con il riferimento",
+    }.get(direction, "Confronto non disponibile")
+
+
+def effect_from_direction(direction: str) -> str:
+    if direction == "above_training":
+        return "increase"
+    if direction == "below_training":
+        return "decrease"
+    return "neutral"
+
+
+def parse_float(value: Any) -> float | None:
+    if is_number(value):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def is_missing_feature_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and value != value:
+        return True
+    if isinstance(value, str) and value.strip().lower() in {"", "nan", "null", "none", "n/d"}:
+        return True
+    return False
 
 
 def alert_payload(db: Session, alert: Alert) -> dict[str, Any]:
