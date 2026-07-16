@@ -18,7 +18,7 @@ from app.auth.dependencies import (
     write_audit,
 )
 from app.core.config import get_settings
-from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Patient, PatientAppStatus, SensorStatus, Task, TaskResult
+from app.db.models import Alert, AlertEvent, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Notification, Patient, PatientAppStatus, SensorStatus, Task, TaskResult
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
 from app.services.push_notifications import notify_caregiver_message, notify_task_created
@@ -55,6 +55,78 @@ def patient_current(
     """Aggrega ultima finestra, decisione e stato tecnico del paziente."""
     patient = get_patient_or_404(db, patient_id)
     return current_payload(db, patient)
+
+
+@router.get("/{patient_id}/summary/24h", summary="Patient 24h summary")
+def patient_summary_24h(
+    patient_id: str,
+    _current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Restituisce un riepilogo aggregato delle ultime 24 ore per la dashboard."""
+    patient = get_patient_or_404(db, patient_id)
+    now = datetime.now(timezone.utc)
+    period_start = now - timedelta(hours=24)
+    previous_start = period_start - timedelta(hours=24)
+    windows = feature_windows_between(db, patient.patient_id, period_start, now)
+    previous_windows = feature_windows_between(db, patient.patient_id, previous_start, period_start)
+    decisions = decisions_between(db, patient.patient_id, period_start, now)
+    previous_decisions = decisions_between(db, patient.patient_id, previous_start, period_start)
+    latest_cycle = latest_edge_cycle(db, patient.patient_id)
+    baseline = baseline_status_from_cycle(latest_edge_cycle_status_payload(latest_cycle))
+    return {
+        "patient_id": patient.patient_id,
+        "generated_at": utc_iso(now),
+        "range": {
+            "start": utc_iso(period_start),
+            "end": utc_iso(now),
+            "hours": 24,
+        },
+        "previous_range": {
+            "start": utc_iso(previous_start),
+            "end": utc_iso(period_start),
+            "hours": 24,
+        },
+        "counts": {
+            "windows": len(windows),
+            "decisions": len(decisions),
+            "previous_windows": len(previous_windows),
+            "previous_decisions": len(previous_decisions),
+        },
+        "ai": ai_summary(decisions, previous_decisions),
+        "spatial": spatial_summary(windows),
+        "wearable": wearable_summary(windows),
+        "data_completeness": data_completeness_summary(db, patient.patient_id, windows, latest_cycle, now=now),
+        "baseline": {
+            "available": bool(baseline.get("trained") or baseline.get("status") in {"trained", "ready", "completed"}),
+            "status": baseline.get("status"),
+            "accepted_windows": baseline.get("accepted_windows"),
+            "min_training_windows": baseline.get("min_training_windows"),
+            "reason": baseline.get("reason") or ("baseline_not_ready" if not baseline.get("trained") else None),
+        },
+    }
+
+
+@router.get("/{patient_id}/timeline", summary="Patient normalized timeline")
+def patient_timeline(
+    patient_id: str,
+    event_type: str | None = Query(default=None),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=30, ge=1, le=200),
+    _current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Aggrega eventi eterogenei del paziente in una timeline normalizzata."""
+    patient = get_patient_or_404(db, patient_id)
+    allowed_types = parse_event_type_filter(event_type)
+    events = normalized_timeline_events(db, patient.patient_id, date_from=date_from, date_to=date_to)
+    if allowed_types:
+        events = [event for event in events if event["event_type"] in allowed_types]
+    events = deduplicate_timeline_events(events)
+    events.sort(key=lambda event: (parse_datetime(event["timestamp"]) or datetime.min.replace(tzinfo=timezone.utc), event["event_id"]), reverse=True)
+    return paginated(events, page=page, page_size=page_size)
 
 
 @router.get("/{patient_id}/windows", summary="Patient feature windows")
@@ -450,6 +522,591 @@ def current_payload(db: Session, patient: Patient) -> dict[str, Any]:
             "last_seen_at": utc_iso(edge.last_seen_at) if edge else None,
         },
     }
+
+
+def feature_windows_between(db: Session, patient_id: str, start: datetime, end: datetime) -> list[FeatureWindow]:
+    """Carica finestre feature ordinate in un intervallo temporale chiuso a destra."""
+    return list(
+        db.execute(
+            select(FeatureWindow)
+            .where(
+                FeatureWindow.patient_id == patient_id,
+                FeatureWindow.window_end > start,
+                FeatureWindow.window_end <= end,
+            )
+            .order_by(FeatureWindow.window_end, FeatureWindow.id)
+        ).scalars()
+    )
+
+
+def decisions_between(db: Session, patient_id: str, start: datetime, end: datetime) -> list[Decision]:
+    """Carica decisioni AI ordinate in un intervallo temporale chiuso a destra."""
+    return list(
+        db.execute(
+            select(Decision)
+            .where(
+                Decision.patient_id == patient_id,
+                Decision.timestamp > start,
+                Decision.timestamp <= end,
+            )
+            .order_by(Decision.timestamp, Decision.id)
+        ).scalars()
+    )
+
+
+def ai_summary(decisions: list[Decision], previous_decisions: list[Decision]) -> dict[str, Any]:
+    """Calcola statistiche AI essenziali per il riepilogo 24 ore."""
+    scores = [float(decision.anomaly_score) for decision in decisions if is_number(decision.anomaly_score)]
+    previous_scores = [float(decision.anomaly_score) for decision in previous_decisions if is_number(decision.anomaly_score)]
+    last_decision = decisions[-1] if decisions else None
+    current_average = average(scores)
+    previous_average = average(previous_scores)
+    return {
+        "average_score": round(current_average, 3) if current_average is not None else None,
+        "max_score": round(max(scores), 3) if scores else None,
+        "last_score": round(float(last_decision.anomaly_score), 3) if last_decision and is_number(last_decision.anomaly_score) else None,
+        "last_level": last_decision.level if last_decision else None,
+        "last_decision_at": utc_iso(last_decision.timestamp) if last_decision else None,
+        "previous_day_average_score": round(previous_average, 3) if previous_average is not None else None,
+        "score_delta_vs_previous_day": round(current_average - previous_average, 3) if current_average is not None and previous_average is not None else None,
+    }
+
+
+def spatial_summary(windows: list[FeatureWindow]) -> dict[str, Any]:
+    """Aggrega permanenza stanze e cambi stanza nelle ultime 24 ore."""
+    room_minutes = {
+        "bedroom": sum_feature_values(windows, "bedroom_minutes"),
+        "kitchen": sum_feature_values(windows, "kitchen_minutes"),
+        "bathroom": sum_feature_values(windows, "bathroom_minutes"),
+        "living_room": sum_feature_values(windows, "living_room_minutes"),
+    }
+    known_rooms = {room: minutes for room, minutes in room_minutes.items() if minutes is not None}
+    prevalent_room = None
+    if known_rooms:
+        prevalent_room, prevalent_minutes = max(known_rooms.items(), key=lambda item: item[1])
+        if prevalent_minutes <= 0:
+            prevalent_room = None
+    return {
+        "room_minutes": {room: round(value, 3) if value is not None else None for room, value in room_minutes.items()},
+        "prevalent_room": prevalent_room,
+        "room_changes": round(sum_feature_values(windows, "room_changes") or 0, 3) if windows else None,
+        "night_room_changes": round(sum_feature_values(windows, "night_room_changes") or 0, 3) if windows else None,
+        "longest_single_room_minutes": max_feature_value(windows, "longest_single_room_minutes"),
+    }
+
+
+def wearable_summary(windows: list[FeatureWindow]) -> dict[str, Any]:
+    """Aggrega le principali metriche wearable senza trasformare dati assenti in zero."""
+    return {
+        "heart_rate": numeric_stats(windows, "heart_rate_mean"),
+        "heart_rate_std": numeric_stats(windows, "heart_rate_std"),
+        "spo2": numeric_stats(windows, "spo2_mean"),
+        "steps": {
+            "total": round(sum_feature_values(windows, "steps"), 3) if any_feature_value(windows, "steps") else None,
+        },
+        "sleep_minutes": numeric_stats(windows, "sleep_minutes"),
+        "sedentary_minutes": {
+            "total": round(sum_feature_values(windows, "sedentary_minutes"), 3) if any_feature_value(windows, "sedentary_minutes") else None,
+            "average": round(average_feature_values(windows, "sedentary_minutes"), 3) if any_feature_value(windows, "sedentary_minutes") else None,
+        },
+        "hrv_rmssd": numeric_stats(windows, "hrv_rmssd"),
+    }
+
+
+def data_completeness_summary(
+    db: Session,
+    patient_id: str,
+    windows: list[FeatureWindow],
+    latest_cycle: EdgeCycle | None,
+    *,
+    now: datetime,
+) -> dict[str, Any]:
+    """Calcola quanto sono utilizzabili i dati disponibili nel riepilogo."""
+    total = len(windows)
+    ble_features = ["room_changes", "bedroom_minutes", "kitchen_minutes", "bathroom_minutes", "living_room_minutes"]
+    wearable_features = ["heart_rate_mean", "heart_rate_std", "spo2_mean", "steps", "sleep_minutes", "sedentary_minutes", "hrv_rmssd"]
+    ble_count = count_windows_with_any_feature(windows, ble_features)
+    wearable_count = count_windows_with_any_feature(windows, wearable_features)
+    app_status = latest_patient_app_status(db, patient_id)
+    cycle_payload = latest_edge_cycle_status_payload(latest_cycle)
+    mqtt_payload = public_mqtt_payload(cycle_payload.get("mqtt_publish")) if cycle_payload else None
+    return {
+        "overall": completeness_payload(min(ble_count + wearable_count, total), total),
+        "ble": completeness_payload(ble_count, total),
+        "google_health": completeness_payload(wearable_count, total),
+        "patient_app": {
+            "status": patient_app_status_payload(app_status, now=now, stale_minutes=get_settings().patient_app_stale_minutes)["status"],
+            "last_seen_at": utc_iso(app_status.last_seen_at) if app_status else None,
+        },
+        "mqtt": {
+            "status": mqtt_payload.get("status") if mqtt_payload else None,
+            "queue_depth": mqtt_payload.get("queue_depth") if mqtt_payload else None,
+            "last_cycle_at": utc_iso(latest_cycle.timestamp) if latest_cycle else None,
+        },
+    }
+
+
+def completeness_payload(available: int, total: int) -> dict[str, Any]:
+    ratio = (available / total) if total else 0.0
+    return {
+        "available_windows": available,
+        "total_windows": total,
+        "ratio": round(ratio, 3),
+        "level": reliability_level(ratio),
+    }
+
+
+def reliability_level(ratio: float) -> str:
+    if ratio >= 0.8:
+        return "alta"
+    if ratio >= 0.45:
+        return "media"
+    return "bassa"
+
+
+def numeric_stats(windows: list[FeatureWindow], feature: str) -> dict[str, float | int | None]:
+    values = feature_values(windows, feature)
+    return {
+        "average": round(average(values), 3) if values else None,
+        "min": round(min(values), 3) if values else None,
+        "max": round(max(values), 3) if values else None,
+        "count": len(values),
+    }
+
+
+def feature_values(windows: list[FeatureWindow], feature: str) -> list[float]:
+    return [float(window.features[feature]) for window in windows if is_number(window.features.get(feature))]
+
+
+def sum_feature_values(windows: list[FeatureWindow], feature: str) -> float | None:
+    values = feature_values(windows, feature)
+    return sum(values) if values else None
+
+
+def average_feature_values(windows: list[FeatureWindow], feature: str) -> float | None:
+    return average(feature_values(windows, feature))
+
+
+def max_feature_value(windows: list[FeatureWindow], feature: str) -> float | None:
+    values = feature_values(windows, feature)
+    return round(max(values), 3) if values else None
+
+
+def any_feature_value(windows: list[FeatureWindow], feature: str) -> bool:
+    return any(is_number(window.features.get(feature)) for window in windows)
+
+
+def count_windows_with_any_feature(windows: list[FeatureWindow], features: list[str]) -> int:
+    return sum(1 for window in windows if any(is_number(window.features.get(feature)) for feature in features))
+
+
+def average(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def normalized_timeline_events(
+    db: Session,
+    patient_id: str,
+    *,
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> list[dict[str, Any]]:
+    """Unisce le principali tabelle operative in una timeline unica."""
+    events: list[dict[str, Any]] = []
+    events.extend(window_timeline_events(timeline_rows(db, FeatureWindow, patient_id, FeatureWindow.window_end, date_from, date_to)))
+    events.extend(decision_timeline_events(timeline_rows(db, Decision, patient_id, Decision.timestamp, date_from, date_to)))
+    alerts = timeline_rows(db, Alert, patient_id, Alert.opened_at, date_from, date_to)
+    events.extend(alert_timeline_events(alerts))
+    events.extend(alert_event_timeline_events(db, patient_id, date_from=date_from, date_to=date_to))
+    tasks = timeline_rows(db, Task, patient_id, Task.created_at, date_from, date_to)
+    events.extend(task_timeline_events(tasks))
+    events.extend(task_result_timeline_events(timeline_rows(db, TaskResult, patient_id, TaskResult.completed_at, date_from, date_to)))
+    events.extend(notification_timeline_events(timeline_rows(db, Notification, patient_id, Notification.created_at, date_from, date_to)))
+    events.extend(edge_cycle_timeline_events(timeline_rows(db, EdgeCycle, patient_id, EdgeCycle.timestamp, date_from, date_to)))
+    events.extend(sensor_timeline_events(timeline_rows(db, SensorStatus, patient_id, SensorStatus.last_seen_at, date_from, date_to)))
+    return events
+
+
+def timeline_rows(db: Session, model: Any, patient_id: str, timestamp_column: Any, date_from: datetime | None, date_to: datetime | None) -> list[Any]:
+    """Carica righe filtrate per paziente e intervallo temporale."""
+    query = select(model).where(model.patient_id == patient_id)
+    if date_from is not None:
+        query = query.where(timestamp_column >= date_from)
+    if date_to is not None:
+        query = query.where(timestamp_column <= date_to)
+    return list(db.execute(query.order_by(timestamp_column, model.id if hasattr(model, "id") else timestamp_column)).scalars())
+
+
+def parse_event_type_filter(value: str | None) -> set[str]:
+    """Permette filtro singolo o lista separata da virgole."""
+    if not value:
+        return set()
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
+def timeline_event(
+    *,
+    event_id: str,
+    event_type: str,
+    timestamp: datetime | None,
+    title: str,
+    summary: str | None,
+    severity: str | None,
+    source: str,
+    linked_resource: dict[str, Any],
+    dedupe_key: str | None = None,
+) -> dict[str, Any]:
+    """Costruisce il formato comune usato dal frontend per la timeline."""
+    return {
+        "event_id": event_id,
+        "event_type": event_type,
+        "timestamp": utc_iso(timestamp),
+        "title": title,
+        "summary": summary,
+        "severity": severity,
+        "source": source,
+        "linked_resource": linked_resource,
+        "dedupe_key": dedupe_key or event_id,
+    }
+
+
+def window_timeline_events(rows: list[FeatureWindow]) -> list[dict[str, Any]]:
+    return [
+        timeline_event(
+            event_id=f"window-{row.id}",
+            event_type="patient_window_updated",
+            timestamp=row.window_end,
+            title="Finestra dati aggiornata",
+            summary=window_timeline_summary(row.features),
+            severity="info",
+            source="edge",
+            linked_resource={
+                "type": "feature_window",
+                "id": f"window-{row.id}",
+                "message_id": row.message_id,
+                "window_start": utc_iso(row.window_start),
+                "window_end": utc_iso(row.window_end),
+            },
+            dedupe_key=f"window:{row.message_id}",
+        )
+        for row in rows
+    ]
+
+
+def decision_timeline_events(rows: list[Decision]) -> list[dict[str, Any]]:
+    events = []
+    for row in rows:
+        score = round(row.anomaly_score, 3) if is_number(row.anomaly_score) else None
+        events.append(
+            timeline_event(
+                event_id=f"decision-{row.id}",
+                event_type="decision_updated",
+                timestamp=row.timestamp,
+                title=f"Decisione AI {levelLabel_backend(row.level)}",
+                summary=f"Score {score}" if score is not None else "Score non disponibile",
+                severity=row.level,
+                source="ai",
+                linked_resource={
+                    "type": "decision",
+                    "id": f"decision-{row.id}",
+                    "message_id": row.message_id,
+                    "window_start": utc_iso(row.window_start),
+                    "window_end": utc_iso(row.window_end),
+                },
+                dedupe_key=f"decision:{row.message_id}",
+            )
+        )
+    return events
+
+
+def alert_timeline_events(rows: list[Alert]) -> list[dict[str, Any]]:
+    return [
+        timeline_event(
+            event_id=f"alert-{row.id}",
+            event_type="alert_created",
+            timestamp=row.opened_at,
+            title=row.title,
+            summary=row.description,
+            severity=row.level,
+            source=row.source,
+            linked_resource={
+                "type": "alert",
+                "id": f"alert-{row.id}",
+                "message_id": row.message_id,
+                "status": row.status,
+                "category": row.category,
+            },
+            dedupe_key=f"alert:{row.message_id}",
+        )
+        for row in rows
+    ]
+
+
+def alert_event_timeline_events(db: Session, patient_id: str, *, date_from: datetime | None, date_to: datetime | None) -> list[dict[str, Any]]:
+    query = select(AlertEvent, Alert).join(Alert, Alert.id == AlertEvent.alert_id).where(Alert.patient_id == patient_id)
+    if date_from is not None:
+        query = query.where(AlertEvent.timestamp >= date_from)
+    if date_to is not None:
+        query = query.where(AlertEvent.timestamp <= date_to)
+    rows = db.execute(query.order_by(AlertEvent.timestamp, AlertEvent.id)).all()
+    events = []
+    for event, alert in rows:
+        note_payload = event_note_payload(event.note)
+        events.append(
+            timeline_event(
+                event_id=f"alert-event-{event.id}",
+                event_type=f"alert_{event.event_type}",
+                timestamp=event.timestamp,
+                title=alert_event_title(event.event_type),
+                summary=note_payload.get("note") or alert.title,
+                severity=alert.level,
+                source="workflow",
+                linked_resource={
+                    "type": "alert",
+                    "id": f"alert-{alert.id}",
+                    "event_id": f"alert-event-{event.id}",
+                    "actor_role": note_payload.get("role"),
+                    "actor": note_payload.get("user_id"),
+                },
+            )
+        )
+    return events
+
+
+def task_timeline_events(rows: list[Task]) -> list[dict[str, Any]]:
+    events = []
+    for row in rows:
+        payload = row.payload or {}
+        events.append(
+            timeline_event(
+                event_id=f"task-{row.id}",
+                event_type="task_created",
+                timestamp=row.created_at,
+                title=row.title,
+                summary=row.instructions,
+                severity=task_severity(payload.get("priority")),
+                source="task",
+                linked_resource={
+                    "type": "task",
+                    "id": f"task-{row.id}",
+                    "status": effective_task_status(row.status, row.due_at),
+                    "task_type": row.task_type,
+                    "assigned_to": payload.get("assigned_to", "patient"),
+                },
+            )
+        )
+        if row.seen_at is not None:
+            events.append(task_state_event(row, "task_seen", row.seen_at, "Task visualizzato dal paziente"))
+        if row.started_at is not None:
+            events.append(task_state_event(row, "task_started", row.started_at, "Task iniziato dal paziente"))
+        if row.completed_at is not None:
+            events.append(task_state_event(row, "task_completed", row.completed_at, "Task completato dal paziente"))
+    return events
+
+
+def task_state_event(row: Task, event_type: str, timestamp: datetime, title: str) -> dict[str, Any]:
+    return timeline_event(
+        event_id=f"{event_type}-{row.id}",
+        event_type=event_type,
+        timestamp=timestamp,
+        title=title,
+        summary=row.title,
+        severity=task_severity((row.payload or {}).get("priority")),
+        source="task",
+        linked_resource={"type": "task", "id": f"task-{row.id}", "status": effective_task_status(row.status, row.due_at)},
+    )
+
+
+def task_result_timeline_events(rows: list[TaskResult]) -> list[dict[str, Any]]:
+    events = []
+    for row in rows:
+        result = row.result or {}
+        events.append(
+            timeline_event(
+                event_id=f"task-result-{row.id}",
+                event_type="task_result_received",
+                timestamp=row.completed_at,
+                title="Risultato task ricevuto",
+                summary=task_result_summary(result),
+                severity="info",
+                source="patient_app",
+                linked_resource={
+                    "type": "task_result",
+                    "id": f"result-{row.id}",
+                    "task_id": f"task-{row.task_id}",
+                    "message_id": row.message_id,
+                },
+                dedupe_key=f"task-result:{row.message_id}",
+            )
+        )
+    return events
+
+
+def notification_timeline_events(rows: list[Notification]) -> list[dict[str, Any]]:
+    events = []
+    for row in rows:
+        payload = row.payload or {}
+        kind = payload.get("kind") or payload.get("type") or row.channel
+        events.append(
+            timeline_event(
+                event_id=f"notification-{row.id}",
+                event_type=notification_event_type(kind),
+                timestamp=row.created_at,
+                title=row.title,
+                summary=row.body,
+                severity=task_severity(payload.get("priority")),
+                source="notification",
+                linked_resource={
+                    "type": "notification",
+                    "id": f"notification-{row.id}",
+                    "channel": row.channel,
+                    "status": row.status,
+                    "kind": kind,
+                },
+            )
+        )
+    return events
+
+
+def edge_cycle_timeline_events(rows: list[EdgeCycle]) -> list[dict[str, Any]]:
+    return [
+        timeline_event(
+            event_id=f"edge-cycle-{row.id}",
+            event_type=row.event_type,
+            timestamp=row.timestamp,
+            title="Ciclo Edge completato" if row.event_type == "edge_cycle_completed" else "Evento Edge",
+            summary=edge_cycle_summary(row),
+            severity=edge_cycle_severity(row),
+            source="edge",
+            linked_resource={
+                "type": "edge_cycle",
+                "id": f"edge-cycle-{row.id}",
+                "message_id": row.message_id,
+                "window_start": utc_iso(row.window_start),
+                "window_end": utc_iso(row.window_end),
+            },
+            dedupe_key=f"edge-cycle:{row.message_id}",
+        )
+        for row in rows
+    ]
+
+
+def sensor_timeline_events(rows: list[SensorStatus]) -> list[dict[str, Any]]:
+    return [
+        timeline_event(
+            event_id=f"sensor-status-{row.id}",
+            event_type=f"sensor_{row.sensor_type}_updated",
+            timestamp=row.last_seen_at or row.updated_at,
+            title=f"Sensore {row.sensor_type} aggiornato",
+            summary=f"Stato {row.status}",
+            severity="technical" if row.status in {"error", "offline", "missing", "stale"} else "info",
+            source="sensor",
+            linked_resource={
+                "type": "sensor_status",
+                "id": f"sensor-status-{row.id}",
+                "sensor_type": row.sensor_type,
+                "status": row.status,
+            },
+        )
+        for row in rows
+    ]
+
+
+def deduplicate_timeline_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Deduplica eventi con stessa chiave tecnica mantenendo il piu' recente."""
+    by_key: dict[str, dict[str, Any]] = {}
+    for event in events:
+        key = str(event.get("dedupe_key") or event["event_id"])
+        current = by_key.get(key)
+        if current is None:
+            by_key[key] = event
+            continue
+        current_ts = parse_datetime(current.get("timestamp")) or datetime.min.replace(tzinfo=timezone.utc)
+        new_ts = parse_datetime(event.get("timestamp")) or datetime.min.replace(tzinfo=timezone.utc)
+        if new_ts >= current_ts:
+            by_key[key] = event
+    return [public_timeline_event(event) for event in by_key.values()]
+
+
+def public_timeline_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Rimuove campi interni usati solo dal backend."""
+    return {key: value for key, value in event.items() if key != "dedupe_key"}
+
+
+def window_timeline_summary(features: dict[str, Any]) -> str:
+    available = [key for key, value in features.items() if value is not None]
+    if not available:
+        return "Finestra ricevuta senza feature disponibili"
+    return f"{len(available)} feature disponibili"
+
+
+def levelLabel_backend(level: str | None) -> str:
+    return {
+        "green": "routine",
+        "yellow": "attenzione",
+        "orange": "rischio",
+        "red": "massima allerta",
+        "technical": "tecnica",
+    }.get(str(level), str(level or "n/d"))
+
+
+def alert_event_title(event_type: str) -> str:
+    return {
+        "acknowledged": "Alert preso in carico",
+        "resolved": "Alert risolto",
+        "deleted": "Alert eliminato",
+    }.get(event_type, f"Alert {event_type}")
+
+
+def task_severity(priority: Any) -> str:
+    return {
+        "urgent": "red",
+        "high": "orange",
+        "normal": "info",
+        None: "info",
+    }.get(str(priority), "info")
+
+
+def task_result_summary(result: dict[str, Any]) -> str:
+    score = result.get("score")
+    if score is not None:
+        return f"Score risultato {score}"
+    answers = result.get("answers")
+    if isinstance(answers, list):
+        return f"{len(answers)} risposte ricevute"
+    return "Risultato ricevuto dall'app paziente"
+
+
+def notification_event_type(kind: Any) -> str:
+    if kind == "caregiver_message":
+        return "caregiver_message_created"
+    if kind == "patient_message":
+        return "patient_message_created"
+    if kind == "task_created":
+        return "task_notification_created"
+    return "notification_created"
+
+
+def edge_cycle_summary(row: EdgeCycle) -> str:
+    payload = latest_edge_cycle_status_payload(row)
+    quality = payload.get("quality_status")
+    inference = payload.get("inference")
+    parts = [part for part in [f"qualita {quality}" if quality else None, str(inference) if inference else None] if part]
+    return " - ".join(parts) if parts else row.event_type
+
+
+def edge_cycle_severity(row: EdgeCycle) -> str:
+    payload = latest_edge_cycle_status_payload(row)
+    quality = str(payload.get("quality_status") or "").lower()
+    if quality == "error":
+        return "technical"
+    if quality == "warning":
+        return "yellow"
+    return "info"
 
 
 def latest_decision(db: Session, patient_id: str) -> Decision | None:

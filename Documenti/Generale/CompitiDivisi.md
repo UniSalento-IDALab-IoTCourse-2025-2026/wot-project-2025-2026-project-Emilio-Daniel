@@ -703,14 +703,14 @@ Responsabile: Daniel.
 Obiettivo: fornire alla dashboard dati gia' aggregati, evitando che il frontend debba
 calcolare tutto da centinaia di finestre.
 
-- [ ] Creare endpoint `GET /api/v1/patients/{patient_id}/summary/24h`.
-- [ ] Calcolare score AI medio, massimo, ultimo e variazione rispetto al giorno precedente.
-- [ ] Calcolare permanenza per stanza, stanza prevalente e numero transizioni.
-- [ ] Calcolare statistiche wearable essenziali: heart rate, SpO2, passi, sonno, sedentarieta'.
-- [ ] Calcolare completezza dei dati per BLE, Google Health, app paziente e MQTT.
-- [ ] Restituire confronto con baseline personale quando il modello personale esiste.
-- [ ] Restituire `baseline_available: false` e motivazione quando la baseline non e' pronta.
-- [ ] Aggiungere test con paziente normale, dati mancanti e giornata anomala.
+- [x] Creare endpoint `GET /api/v1/patients/{patient_id}/summary/24h`.
+- [x] Calcolare score AI medio, massimo, ultimo e variazione rispetto al giorno precedente.
+- [x] Calcolare permanenza per stanza, stanza prevalente e numero transizioni.
+- [x] Calcolare statistiche wearable essenziali: heart rate, SpO2, passi, sonno, sedentarieta'.
+- [x] Calcolare completezza dei dati per BLE, Google Health, app paziente e MQTT.
+- [x] Restituire confronto con baseline personale quando il modello personale esiste.
+- [x] Restituire `baseline_available: false` e motivazione quando la baseline non e' pronta.
+- [x] Aggiungere test con paziente normale, dati mancanti e giornata anomala.
 
 Output atteso: un unico payload backend permette di costruire il riepilogo 24 ore in modo
 stabile e verificabile.
@@ -747,12 +747,12 @@ Responsabile: Daniel.
 
 Obiettivo: aggregare in backend gli eventi principali in un formato unico.
 
-- [ ] Creare endpoint `GET /api/v1/patients/{patient_id}/timeline`.
-- [ ] Supportare filtri per tipo evento, data inizio, data fine, pagina e dimensione pagina.
-- [ ] Restituire eventi con campi comuni: `event_id`, `event_type`, `timestamp`, `title`, `summary`, `severity`, `source`, `linked_resource`.
-- [ ] Includere decisioni AI, alert, task, risultati task, messaggi medico, note e stati tecnici rilevanti.
-- [ ] Deduplicare eventi generati dallo stesso `message_id` o ciclo Edge.
-- [ ] Aggiungere test di ordinamento e autorizzazione per medico, paziente e caregiver.
+- [x] Creare endpoint `GET /api/v1/patients/{patient_id}/timeline`.
+- [x] Supportare filtri per tipo evento, data inizio, data fine, pagina e dimensione pagina.
+- [x] Restituire eventi con campi comuni: `event_id`, `event_type`, `timestamp`, `title`, `summary`, `severity`, `source`, `linked_resource`.
+- [x] Includere decisioni AI, alert, task, risultati task, messaggi medico, note e stati tecnici rilevanti.
+- [x] Deduplicare eventi generati dallo stesso `message_id` o ciclo Edge.
+- [x] Aggiungere test di ordinamento e autorizzazione per medico, paziente e caregiver.
 
 Output atteso: il frontend riceve una lista gia' pronta e non deve unire manualmente
 tabelle diverse.
