@@ -10,7 +10,7 @@ from app.core.logging import configure_logging, get_logger
 
 
 def create_app() -> FastAPI:
-    """Create the single modular FastAPI backend used by dashboards and apps."""
+    """Crea il backend FastAPI unico usato da dashboard e app."""
     settings = get_settings()
     configure_logging(settings.log_level)
 

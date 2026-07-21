@@ -5,7 +5,7 @@ Backend FastAPI unico per dashboard medico, app paziente, caregiver e integrazio
 ## Scopo
 
 Questa cartella contiene il backend Cloud del progetto. Al momento copre i blocchi D2,
-D3, D4, D5, D6, D7, D8, D9, D13, D14, D15, D16, D17, D18, D19 e D20 della scaletta di Daniel:
+D3, D4, D5, D6, D7, D8, D9, D12, D13, D14, D15, D16, D17, D18, D19 e D20 della scaletta di Daniel:
 
 ```text
 MQTT broker -> backend -> database -> dashboard/app
@@ -22,6 +22,7 @@ D6 -> WebSocket realtime verso dashboard
 D7 -> autenticazione, autorizzazione per ruolo e audit
 D8 -> logica alert, presa in carico e alert automatici da decisioni AI
 D9 -> task clinici, risultati, scadenze e scoring controllato
+D12 -> Docker Compose completo, health, metriche, backup, log e rollback
 D13 -> riepilogo aggregato ultime 24 ore
 D14 -> timeline normalizzata del paziente
 D15 -> template questionari, programmazioni e storico punteggi
@@ -86,6 +87,8 @@ cloud/backend/
       20260712_0002_auth_audit.py
   scripts/
     export_openapi.py
+    demo_data.py
+    e2e_backend_demo.py
   tests/
     test_database_schema.py
     test_d5_api.py
@@ -93,8 +96,36 @@ cloud/backend/
     test_d7_auth.py
     test_health.py
     test_mqtt_ingest.py
+  Dockerfile
   alembic.ini
   requirements.txt
+```
+
+## Avvio Cloud con Docker Compose
+
+Per una demo Cloud completa e piu' vicina alla produzione:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT\cloud
+docker compose up -d mqtt postgres backend backend-mqtt-worker
+```
+
+Compose avvia anche `backend-migrations`, che applica Alembic prima del backend.
+Le password vengono lette da `cloud\.env` e `cloud\backend\.env`, entrambi ignorati
+da Git.
+
+Log Docker ruotati:
+
+```text
+max-size 10m
+max-file 5
+```
+
+Smoke test infrastrutturale:
+
+```powershell
+cd C:\Users\Daniel\Desktop\ProgettoIoT
+.\Script\test\test_cloud_smoke.ps1 -StartCompose
 ```
 
 ## Avvio locale
@@ -126,6 +157,7 @@ http://127.0.0.1:8080/health
 http://127.0.0.1:8080/ready
 http://127.0.0.1:8080/docs
 http://127.0.0.1:8080/openapi.json
+http://127.0.0.1:8080/api/v1/metrics
 ```
 
 Endpoint dashboard/app principali:
@@ -145,6 +177,7 @@ GET    http://127.0.0.1:8080/api/v1/patients/patient-001/system-status
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/spatial-summary
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/report-data
 GET    http://127.0.0.1:8080/api/v1/patients/patient-001/audit-trail
+GET    http://127.0.0.1:8080/api/v1/metrics
 GET    http://127.0.0.1:8080/api/v1/questionnaires/templates
 GET    http://127.0.0.1:8080/api/v1/questionnaires/patients/patient-001/schedules
 GET    http://127.0.0.1:8080/api/v1/questionnaires/patients/patient-001/results
@@ -387,6 +420,21 @@ IOT_BACKEND_GOOGLE_HEALTH_STALE_MINUTES=12
 IOT_BACKEND_PATIENT_APP_STALE_MINUTES=15
 ```
 
+Per deployment, osservabilita', backup e rollback vedere anche:
+
+```text
+Documenti/Daniel/D12.md
+cloud/deploy/nginx.example.conf
+Script/avvio/backupPostgres.ps1
+Script/avvio/backupPostgres
+Script/avvio/ruotaLogCloud.ps1
+Script/avvio/ruotaLogCloud
+Script/test/test_cloud_smoke.ps1
+Script/test/test_cloud_smoke
+cloud/deploy/iot-cloud-stack.service
+cloud/deploy/iot-cloud-backup.timer
+```
+
 Il payload non espone token Google Health, token FCM, password o client secret.
 
 ## Routine ambientale BLE
@@ -510,4 +558,4 @@ task, risultato paziente, report e audit trail.
 
 ## Prossimi passi
 
-- D12: completare deployment e osservabilita' Cloud.
+- Eseguire una prova finale end-to-end con Edge reale, dashboard reale e app paziente.

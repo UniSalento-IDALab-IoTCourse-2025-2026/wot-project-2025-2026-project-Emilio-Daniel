@@ -14,6 +14,7 @@ from app.db.session import SessionLocal
 from app.mqtt.events import InternalEvent, event_bus
 
 router = APIRouter()
+_active_websocket_connections = 0
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,8 @@ async def patient_websocket(websocket: WebSocket, patient_id: str) -> None:
             await websocket.close(code=1008)
             return
     await websocket.accept()
+    global _active_websocket_connections
+    _active_websocket_connections += 1
     cursor = len(event_bus.events)
     snapshot = load_patient_snapshot(patient_id)
     await websocket.send_json(
@@ -71,12 +74,19 @@ async def patient_websocket(websocket: WebSocket, patient_id: str) -> None:
                 continue
     except WebSocketDisconnect:
         return
+    finally:
+        _active_websocket_connections = max(0, _active_websocket_connections - 1)
 
 
 @router.get("/status", summary="Realtime module status")
 def realtime_status() -> dict[str, str]:
     """Espone lo stato del modulo WebSocket realtime."""
     return {"status": "implemented", "module": "realtime"}
+
+
+def active_websocket_connections() -> int:
+    """Restituisce quante connessioni WebSocket sono attive nel processo corrente."""
+    return _active_websocket_connections
 
 
 async def flush_memory_events(websocket: WebSocket, patient_id: str, cursor: int) -> int:

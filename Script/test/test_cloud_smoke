@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE_URL="${BASE_URL:-http://127.0.0.1:8080}"
+START_COMPOSE="${START_COMPOSE:-false}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CLOUD_DIR="$PROJECT_DIR/cloud"
+
+wait_http_ok() {
+  local url="$1"
+  local timeout_seconds="${2:-60}"
+  local deadline=$((SECONDS + timeout_seconds))
+
+  while [[ "$SECONDS" -lt "$deadline" ]]; do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      curl -fsS "$url"
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Endpoint non raggiungibile: $url" >&2
+  return 1
+}
+
+cd "$CLOUD_DIR"
+if [[ "$START_COMPOSE" == "true" ]]; then
+  docker compose up -d mqtt postgres backend backend-mqtt-worker
+fi
+
+docker compose exec -T postgres pg_isready -U iot_backend -d progetto_iot
+
+health="$(wait_http_ok "$BASE_URL/health")"
+ready="$(wait_http_ok "$BASE_URL/ready")"
+api_ready="$(wait_http_ok "$BASE_URL/api/v1/ready")"
+metrics="$(wait_http_ok "$BASE_URL/api/v1/metrics")"
+
+echo "$health" | grep -q '"status":"ok"\|"status": "ok"'
+echo "$ready" | grep -q '"status":"ready"\|"status": "ready"'
+echo "$api_ready" | grep -q '"status":"ready"\|"status": "ready"'
+echo "$metrics" | grep -q '"counters"'
+
+echo "Smoke test Cloud completato."
+echo "Health: ok"
+echo "Ready: ready"
+echo "Metriche: disponibili"

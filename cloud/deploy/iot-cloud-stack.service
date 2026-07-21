@@ -1,0 +1,16 @@
+[Unit]
+Description=IoT Cloud stack Docker Compose
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/pi/progetto-iot/cloud
+ExecStart=/usr/bin/docker compose up -d mqtt postgres backend backend-mqtt-worker
+ExecStop=/usr/bin/docker compose stop backend-mqtt-worker backend postgres mqtt
+RemainAfterExit=yes
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

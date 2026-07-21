@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CLOUD_DIR="$PROJECT_DIR/cloud"
+BACKUP_DIR="${1:-$CLOUD_DIR/backups}"
+KEEP_LAST="${KEEP_LAST:-7}"
+
+mkdir -p "$BACKUP_DIR"
+
+timestamp="$(date +%Y%m%d-%H%M%S)"
+backup_file="$BACKUP_DIR/progetto_iot_$timestamp.sql"
+
+cd "$CLOUD_DIR"
+echo "Creo backup PostgreSQL: $backup_file"
+docker compose exec -T postgres pg_dump -U iot_backend -d progetto_iot > "$backup_file"
+
+find "$BACKUP_DIR" -maxdepth 1 -type f -name "progetto_iot_*.sql" \
+  | sort -r \
+  | tail -n +"$((KEEP_LAST + 1))" \
+  | xargs -r rm -f
+
+echo "Backup completato."
+echo "$backup_file"

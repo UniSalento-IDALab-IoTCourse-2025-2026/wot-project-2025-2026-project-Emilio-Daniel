@@ -284,6 +284,64 @@ Durante i primi 5/6 giorni di baseline, usare invece:
 In produzione i collector reali scriveranno i campioni grezzi in `data/raw/`, poi
 `edge_runtime` usera' `edge_ingest` e `edge_ai` per produrre l'output finale.
 
+## Avvio Cloud su Raspberry Pi 5
+
+Se il Raspberry deve eseguire anche lo stack Cloud locale della demo, usare Docker
+Compose e systemd invece degli script PowerShell.
+
+Avvio manuale:
+
+```bash
+cd /home/pi/progetto-iot/cloud
+docker compose up -d mqtt postgres backend backend-mqtt-worker
+```
+
+Installazione systemd:
+
+```bash
+cd /home/pi/progetto-iot
+sudo cp cloud/deploy/iot-cloud-stack.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now iot-cloud-stack.service
+sudo systemctl status iot-cloud-stack.service
+```
+
+Smoke test su Raspberry:
+
+```bash
+cd /home/pi/progetto-iot
+chmod +x Script/avvio/backupPostgres Script/avvio/ruotaLogCloud Script/test/test_cloud_smoke
+START_COMPOSE=true ./Script/test/test_cloud_smoke
+```
+
+Backup PostgreSQL manuale:
+
+```bash
+cd /home/pi/progetto-iot
+chmod +x Script/avvio/backupPostgres
+./Script/avvio/backupPostgres
+```
+
+Backup automatico giornaliero:
+
+```bash
+sudo cp cloud/deploy/iot-cloud-backup.service /etc/systemd/system/
+sudo cp cloud/deploy/iot-cloud-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now iot-cloud-backup.timer
+```
+
+Rotazione log MQTT:
+
+```bash
+cd /home/pi/progetto-iot
+chmod +x Script/avvio/ruotaLogCloud
+./Script/avvio/ruotaLogCloud
+```
+
+Nota: i file systemd assumono il percorso `/home/pi/progetto-iot`. Se il progetto viene
+copiato altrove, aggiornare `WorkingDirectory` ed `ExecStart`.
+
 File raw principali da controllare:
 
 ```text

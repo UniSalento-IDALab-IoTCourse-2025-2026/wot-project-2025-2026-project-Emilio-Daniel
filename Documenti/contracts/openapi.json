@@ -53,6 +53,30 @@
         }
       }
     },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Operational metrics",
+        "description": "Espone metriche minime per controllare che l'infrastruttura lavori.",
+        "operationId": "metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Metrics Metrics Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/login": {
       "post": {
         "tags": [
@@ -3637,6 +3661,30 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Ready Api V1 Ready Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Operational metrics",
+        "description": "Espone metriche minime per controllare che l'infrastruttura lavori.",
+        "operationId": "metrics_api_v1_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Metrics Api V1 Metrics Get"
                 }
               }
             }

@@ -5,6 +5,11 @@ services:
     image: eclipse-mosquitto:2.0
     container_name: iot-mqtt
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     ports:
       - "1883:1883"
       - "8883:8883"
@@ -21,6 +26,11 @@ services:
     image: postgres:16-alpine
     container_name: iot-postgres
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-progetto_iot}
       POSTGRES_USER: ${POSTGRES_USER:-iot_backend}
@@ -34,6 +44,99 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  backend-migrations:
+    build:
+      context: ./backend
+    container_name: iot-backend-migrations
+    restart: "no"
+    env_file:
+      - ./backend/.env
+    environment:
+      IOT_BACKEND_MQTT_HOST: mqtt
+      IOT_BACKEND_MQTT_PORT: 8883
+      IOT_BACKEND_MQTT_USE_TLS: "true"
+      IOT_BACKEND_MQTT_CA_FILE: /mqtt/certs/ca.crt
+      IOT_BACKEND_MQTT_PASSWORD: ${MQTT_BACKEND_PASSWORD:-CAMBIA_QUESTA_PASSWORD_BACKEND}
+      IOT_BACKEND_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-iot_backend}:${POSTGRES_PASSWORD:-CAMBIA_QUESTA_PASSWORD_POSTGRES}@postgres:5432/${POSTGRES_DB:-progetto_iot}
+      IOT_BACKEND_FIREBASE_CREDENTIALS_FILE: /firebase/service-account.json
+    volumes:
+      - ./mqtt/certs:/mqtt/certs:ro
+      - ./firebase:/firebase:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  backend:
+    build:
+      context: ./backend
+    container_name: iot-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      IOT_BACKEND_MQTT_HOST: mqtt
+      IOT_BACKEND_MQTT_PORT: 8883
+      IOT_BACKEND_MQTT_USE_TLS: "true"
+      IOT_BACKEND_MQTT_CA_FILE: /mqtt/certs/ca.crt
+      IOT_BACKEND_MQTT_PASSWORD: ${MQTT_BACKEND_PASSWORD:-CAMBIA_QUESTA_PASSWORD_BACKEND}
+      IOT_BACKEND_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-iot_backend}:${POSTGRES_PASSWORD:-CAMBIA_QUESTA_PASSWORD_POSTGRES}@postgres:5432/${POSTGRES_DB:-progetto_iot}
+      IOT_BACKEND_FIREBASE_CREDENTIALS_FILE: /firebase/service-account.json
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./mqtt/certs:/mqtt/certs:ro
+      - ./firebase:/firebase:ro
+    depends_on:
+      backend-migrations:
+        condition: service_completed_successfully
+      mqtt:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=5)\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  backend-mqtt-worker:
+    build:
+      context: ./backend
+    container_name: iot-backend-mqtt-worker
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      IOT_BACKEND_MQTT_HOST: mqtt
+      IOT_BACKEND_MQTT_PORT: 8883
+      IOT_BACKEND_MQTT_USE_TLS: "true"
+      IOT_BACKEND_MQTT_CA_FILE: /mqtt/certs/ca.crt
+      IOT_BACKEND_MQTT_PASSWORD: ${MQTT_BACKEND_PASSWORD:-CAMBIA_QUESTA_PASSWORD_BACKEND}
+      IOT_BACKEND_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-iot_backend}:${POSTGRES_PASSWORD:-CAMBIA_QUESTA_PASSWORD_POSTGRES}@postgres:5432/${POSTGRES_DB:-progetto_iot}
+      IOT_BACKEND_FIREBASE_CREDENTIALS_FILE: /firebase/service-account.json
+    volumes:
+      - ./mqtt/certs:/mqtt/certs:ro
+      - ./firebase:/firebase:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: ["python", "-m", "app.mqtt.worker"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   postgres-data:

@@ -1,0 +1,9 @@
+[Unit]
+Description=IoT Cloud PostgreSQL backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/pi/progetto-iot
+ExecStart=/home/pi/progetto-iot/Script/avvio/backupPostgres

@@ -504,15 +504,15 @@ minimi e verificabili.
 
 ### D12. Deployment e osservabilita'
 
-- [ ] Preparare avvio automatico di backend, database e broker.
-- [ ] Usare Docker Compose per sviluppo e, se opportuno, per la demo Cloud.
-- [ ] Separare configurazioni development, test e production.
-- [ ] Configurare HTTPS/WSS con certificati validi.
-- [ ] Configurare CORS soltanto per gli host delle applicazioni autorizzate.
-- [ ] Aggiungere metriche minime: messaggi ricevuti, errori, client connessi e latenza.
-- [ ] Configurare rotazione dei log.
-- [ ] Documentare installazione, aggiornamento, backup e ripristino.
-- [ ] Preparare uno script di smoke test dell'intera infrastruttura.
+- [x] Preparare avvio automatico di backend, database e broker.
+- [x] Usare Docker Compose per sviluppo e, se opportuno, per la demo Cloud.
+- [x] Separare configurazioni development, test e production.
+- [x] Configurare HTTPS/WSS con certificati validi.
+- [x] Configurare CORS soltanto per gli host delle applicazioni autorizzate.
+- [x] Aggiungere metriche minime: messaggi ricevuti, errori, client connessi e latenza.
+- [x] Configurare rotazione dei log.
+- [x] Documentare installazione, aggiornamento, backup e ripristino.
+- [x] Preparare uno script di smoke test dell'intera infrastruttura.
 
 ## 6. Attivita' condivise di integrazione
 
@@ -522,33 +522,33 @@ programmate quando entrambi i lati hanno superato i propri test indipendenti.
 ### I1. Verifica dei contratti
 
 - [ ] Confrontare payload reali Edge e schemi backend.
-- [ ] Verificare null, timestamp, livelli alert e nomi delle feature.
-- [ ] Bloccare la versione `schema_version: 1`.
-- [ ] Salvare esempi validi ed esempi che devono essere rifiutati.
+- [x] Verificare null, timestamp, livelli alert e nomi delle feature.
+- [x] Bloccare la versione `schema_version: 1`.
+- [x] Salvare esempi validi ed esempi che devono essere rifiutati.
 
 ### I2. Primo collegamento Raspberry-Broker-Backend
 
 - [ ] Avviare il sistema reale con il comando unico.
-- [ ] Verificare TLS e autenticazione MQTT.
-- [ ] Controllare che una finestra venga salvata una sola volta nel database.
+- [x] Verificare TLS e autenticazione MQTT.
+- [x] Controllare che una finestra venga salvata una sola volta nel database.
 - [ ] Spegnere Internet e verificare la coda locale.
 - [ ] Riattivare Internet e verificare ritrasmissione e deduplicazione.
 
 ### I3. Collegamento backend-dashboard
 
-- [ ] Sostituire URL mock con URL reale.
+- [x] Sostituire URL mock con URL reale.
 - [ ] Confrontare risposta `/current` con i file presenti sul Raspberry.
-- [ ] Verificare grafici e valori null.
-- [ ] Verificare ricezione WebSocket senza refresh pagina.
-- [ ] Verificare scadenza token e riconnessione.
+- [x] Verificare grafici e valori null.
+- [x] Verificare ricezione WebSocket senza refresh pagina.
+- [x] Verificare scadenza token e riconnessione.
 
 ### I4. Flusso task paziente
 
-- [ ] Il medico crea un task dalla dashboard.
-- [ ] Il backend salva il task e invia la push.
-- [ ] L'app paziente apre e completa il task.
-- [ ] Il backend salva il risultato.
-- [ ] La dashboard riceve l'evento e mostra il risultato.
+- [x] Il medico crea un task dalla dashboard.
+- [x] Il backend salva il task e invia la push.
+- [x] L'app paziente apre e completa il task.
+- [x] Il backend salva il risultato.
+- [x] La dashboard riceve l'evento e mostra il risultato.
 
 ### I5. Flusso alert caregiver
 
@@ -617,11 +617,11 @@ programmate quando entrambi i lati hanno superato i propri test indipendenti.
 
 ### Daniel ha completato la propria parte quando
 
-- [ ] Broker, backend e database partono automaticamente.
-- [ ] TLS, autenticazione e ACL impediscono accessi non autorizzati.
-- [ ] I messaggi duplicati non producono righe o alert duplicati.
-- [ ] REST, WebSocket, task, audit e notifiche push sono testati.
-- [ ] Backup, ripristino e configurazione sono documentati.
+- [x] Broker, backend e database partono automaticamente.
+- [x] TLS, autenticazione e ACL impediscono accessi non autorizzati.
+- [x] I messaggi duplicati non producono righe o alert duplicati.
+- [x] REST, WebSocket, task, audit e notifiche push sono testati.
+- [x] Backup, ripristino e configurazione sono documentati.
 
 ### Il sistema e' completato quando
 
@@ -630,7 +630,7 @@ programmate quando entrambi i lati hanno superato i propri test indipendenti.
 - [ ] La presa in carico viene sincronizzata e registrata.
 - [ ] Un test inviato dal medico viene completato dal paziente e restituito.
 - [ ] Edge, app e Cloud recuperano correttamente dopo una disconnessione.
-- [ ] Nessun segreto e nessun dataset sensibile e' presente nel repository Git.
+- [x] Nessun segreto e nessun dataset sensibile e' presente nel repository Git.
 
 ## 9. Attivita' successive alla prima versione
 
