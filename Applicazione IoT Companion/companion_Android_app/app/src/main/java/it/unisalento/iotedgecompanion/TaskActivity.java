@@ -108,7 +108,7 @@ public class TaskActivity extends Activity {
         panel.addView(label);
 
         String type = question.optString("type", "text");
-        JSONArray options = question.optJSONArray("options");
+        JSONArray options = normalizedQuestionOptions(question, type);
         if (options != null && options.length() > 0) {
             RadioGroup group = new RadioGroup(this);
             group.setOrientation(RadioGroup.VERTICAL);
@@ -147,6 +147,31 @@ public class TaskActivity extends Activity {
             answerFields.add(AnswerField.text(question.optString("id", "q" + number), questionText, input));
         }
         questionsContainer.addView(panel);
+    }
+
+    private JSONArray normalizedQuestionOptions(JSONObject question, String type) {
+        JSONArray options = question.optJSONArray("options");
+        if (options != null && options.length() > 0) {
+            return options;
+        }
+        JSONArray generated = new JSONArray();
+        if ("yes_no".equals(type)) {
+            generated.put("Si");
+            generated.put("No");
+            return generated;
+        }
+        if ("scale".equals(type)) {
+            int min = question.optInt("min", 0);
+            int max = question.optInt("max", 10);
+            if (max < min) {
+                max = min;
+            }
+            for (int value = min; value <= max && value <= min + 20; value++) {
+                generated.put(String.valueOf(value));
+            }
+            return generated;
+        }
+        return null;
     }
 
     private void addInformativePanel(String text) {

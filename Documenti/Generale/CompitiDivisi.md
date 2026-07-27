@@ -1,4 +1,4 @@
-# Compiti divisi tra Emilio e Daniel
+﻿# Compiti divisi tra Emilio e Daniel
 
 Questo documento trasforma l'architettura descritta in
 `DASHBOARD_ARCHITECTURE.md` in un piano di lavoro concreto. La divisione e'
@@ -677,15 +677,15 @@ Responsabile: Emilio.
 Obiettivo: creare una scheda leggibile per il medico che riassuma cosa e' successo nelle
 ultime 24 ore senza costringerlo a leggere tutti i grafici.
 
-- [ ] Creare una sezione "Riepilogo 24 ore" nella pagina paziente.
-- [ ] Mostrare indice AI medio, massimo e ultimo valore delle ultime 24 ore.
-- [ ] Mostrare tempo totale rilevato per stanza e stanza prevalente.
-- [ ] Mostrare numero di cambi stanza e cambi notturni.
-- [ ] Mostrare media battito, SpO2, passi, sonno e sedentarieta' quando disponibili.
-- [ ] Evidenziare dati mancanti senza trasformarli in zero.
-- [ ] Mostrare confronto testuale rispetto alla baseline personale quando disponibile.
-- [ ] Usare linguaggio semplice: "piu' alto del solito", "simile alla routine", "dato non disponibile".
-- [ ] Inserire badge di affidabilita' del riepilogo: alta, media, bassa.
+- [x] Creare una sezione "Riepilogo 24 ore" nella pagina paziente.
+- [x] Mostrare indice AI medio, massimo e ultimo valore delle ultime 24 ore.
+- [x] Mostrare tempo totale rilevato per stanza e stanza prevalente.
+- [x] Mostrare numero di cambi stanza e cambi notturni.
+- [x] Mostrare media battito, SpO2, passi, sonno e sedentarieta' quando disponibili.
+- [x] Evidenziare dati mancanti senza trasformarli in zero.
+- [x] Mostrare confronto testuale rispetto alla baseline personale quando disponibile.
+- [x] Usare linguaggio semplice: "piu' alto del solito", "simile alla routine", "dato non disponibile".
+- [x] Inserire badge di affidabilita' del riepilogo: alta, media, bassa.
 
 Dipendenze da Daniel:
 
@@ -723,14 +723,14 @@ Obiettivo: creare una timeline unica che metta insieme finestre dati, anomalie, 
 attivita', note e cambi di stato. Serve al medico per ricostruire cosa e' successo in
 ordine cronologico.
 
-- [ ] Creare schermata o sezione "Timeline".
-- [ ] Mostrare eventi ordinati per tempo: finestre AI, alert, task, messaggi, note medico.
-- [ ] Usare icone e colori diversi per dato, anomalia, messaggio, attivita', nota e problema tecnico.
-- [ ] Aggiungere filtri: tutti, AI, alert, task, messaggi, note, tecnico.
-- [ ] Aggiungere filtro intervallo temporale con data e ora.
-- [ ] Collegare ogni evento al dettaglio corrispondente: alert, task, grafico o decisione AI.
-- [ ] Evitare duplicati visivi quando alert e decisione derivano dallo stesso ciclo.
-- [ ] Rendere la timeline leggibile su desktop e tablet.
+- [x] Creare schermata o sezione "Timeline".
+- [x] Mostrare eventi ordinati per tempo: finestre AI, alert, task, messaggi, note medico.
+- [x] Usare icone e colori diversi per dato, anomalia, messaggio, attivita', nota e problema tecnico.
+- [x] Aggiungere filtri: tutti, AI, alert, task, messaggi, note, tecnico.
+- [x] Aggiungere filtro intervallo temporale con data e ora.
+- [x] Collegare ogni evento al dettaglio corrispondente: alert, task, grafico o decisione AI.
+- [x] Evitare duplicati visivi quando alert e decisione derivano dallo stesso ciclo.
+- [x] Rendere la timeline leggibile su desktop e tablet.
 
 Dipendenze da Daniel:
 
@@ -764,14 +764,14 @@ Responsabile: Emilio.
 Obiettivo: trasformare i task/test in un centro valutazioni ordinato, con storico dei
 punteggi e invio programmabile.
 
-- [ ] Creare schermata "Valutazioni" separata dalla lista generica delle attivita'.
-- [ ] Mostrare questionari disponibili: check-in quotidiano, PHQ-2, test dimostrativo, MMSE/MoCA solo come somministrazione ufficiale supervisionata.
-- [ ] Mostrare stato di ogni valutazione: programmata, inviata, vista, iniziata, completata, scaduta.
-- [ ] Aggiungere andamento dei punteggi nel tempo per i test ripetibili.
-- [ ] Consentire al medico di programmare un questionario giornaliero o settimanale.
-- [ ] Consentire al medico di interrompere una programmazione.
-- [ ] Mostrare chiaramente note di licenza per test clinici non riproducibili liberamente.
-- [ ] Preparare nell'app paziente una UI semplice per check-in brevi ripetibili.
+- [x] Creare schermata "Valutazioni" separata dalla lista generica delle attivita'.
+- [x] Mostrare questionari disponibili: check-in quotidiano, PHQ-2, test dimostrativo, MMSE/MoCA solo come somministrazione ufficiale supervisionata.
+- [x] Mostrare stato di ogni valutazione: programmata, inviata, vista, iniziata, completata, scaduta.
+- [x] Aggiungere andamento dei punteggi nel tempo per i test ripetibili.
+- [x] Consentire al medico di programmare un questionario giornaliero o settimanale.
+- [x] Consentire al medico di interrompere una programmazione.
+- [x] Mostrare chiaramente note di licenza per test clinici non riproducibili liberamente.
+- [x] Preparare nell'app paziente una UI semplice per check-in brevi ripetibili.
 
 Dipendenze da Daniel:
 
@@ -807,13 +807,13 @@ Responsabile: Emilio.
 Obiettivo: rendere le segnalazioni piu' utili di una lista eventi. Una segnalazione deve
 mostrare contesto, azioni, stato e storico.
 
-- [ ] Riorganizzare il dettaglio alert in blocchi: contesto, evidenze, azioni, storico.
-- [ ] Mostrare evento principale e segnali collegati nella stessa segnalazione.
-- [ ] Mostrare se l'alert nasce da AI, problema tecnico, messaggio manuale o escalation.
-- [ ] Consentire azioni guidate: prendi in carico, invia task, invia messaggio, risolvi con nota.
-- [ ] Mostrare storico delle azioni: creato, preso in carico, messaggio inviato, task creato, risolto.
-- [ ] Nascondere le azioni quando l'alert e' risolto, lasciando lo storico leggibile.
-- [ ] Consentire cancellazione definitiva solo per alert risolti e solo con conferma.
+- [x] Riorganizzare il dettaglio alert in blocchi: contesto, evidenze, azioni, storico.
+- [x] Mostrare evento principale e segnali collegati nella stessa segnalazione.
+- [x] Mostrare se l'alert nasce da AI, problema tecnico, messaggio manuale o escalation.
+- [x] Consentire azioni guidate: prendi in carico, invia task, invia messaggio, risolvi con nota.
+- [x] Mostrare storico delle azioni: creato, preso in carico, messaggio inviato, task creato, risolto.
+- [x] Nascondere le azioni quando l'alert e' risolto, lasciando lo storico leggibile.
+- [x] Consentire cancellazione definitiva solo per alert risolti e solo con conferma.
 
 Dipendenze da Daniel:
 
@@ -848,14 +848,14 @@ Responsabile: Emilio.
 Obiettivo: valorizzare i beacon e la parte spaziale con visualizzazioni piu' chiare su
 permanenze, transizioni e anomalie notturne.
 
-- [ ] Creare sezione "Routine ambientale".
-- [ ] Mostrare permanenza per stanza nel giorno selezionato e nella settimana.
-- [ ] Mostrare transizioni stanza-stanza con una vista semplice, ad esempio matrice o flusso.
-- [ ] Evidenziare permanenze insolite rispetto alla baseline.
-- [ ] Evidenziare transizioni notturne e wandering potenziale.
-- [ ] Mostrare differenza tra dato assente e stanza non rilevata.
-- [ ] Permettere confronto tra oggi, ieri e media baseline.
-- [ ] Usare testi prudenti: "movimento notturno da verificare", non "wandering certo".
+- [x] Creare sezione "Routine ambientale".
+- [x] Mostrare permanenza per stanza nel giorno selezionato e nella settimana.
+- [x] Mostrare transizioni stanza-stanza con una vista semplice, ad esempio matrice o flusso.
+- [x] Evidenziare permanenze insolite rispetto alla baseline.
+- [x] Evidenziare transizioni notturne e wandering potenziale.
+- [x] Mostrare differenza tra dato assente e stanza non rilevata.
+- [x] Permettere confronto tra oggi, ieri e media baseline.
+- [x] Usare testi prudenti: "movimento notturno da verificare", non "wandering certo".
 
 Dipendenze da Daniel:
 
@@ -890,15 +890,15 @@ Responsabile: Emilio.
 Obiettivo: rendere l'indice AI piu' comprensibile al medico, mostrando perche' e' salito
 o sceso e quanto e' affidabile.
 
-- [ ] Mostrare fattori che aumentano il punteggio.
-- [ ] Mostrare fattori che diminuiscono il punteggio.
-- [ ] Mostrare dati mancanti o imputati che riducono l'affidabilita'.
-- [ ] Mostrare confronto con punteggio precedente.
-- [ ] Mostrare ultimo aggiornamento della decisione.
-- [ ] Mostrare intervallo o classe di affidabilita': alta, media, bassa.
-- [ ] Separare contributo spaziale, wearable e modello personale.
-- [ ] Usare nomi leggibili al medico, non nomi tecnici come `kitchen_minutes`.
-- [ ] Mantenere sempre il messaggio: supporto al triage, decisione finale al medico.
+- [x] Mostrare fattori che aumentano il punteggio.
+- [x] Mostrare fattori che diminuiscono il punteggio.
+- [x] Mostrare dati mancanti o imputati che riducono l'affidabilita'.
+- [x] Mostrare confronto con punteggio precedente.
+- [x] Mostrare ultimo aggiornamento della decisione.
+- [x] Mostrare intervallo o classe di affidabilita': alta, media, bassa.
+- [x] Separare contributo spaziale, wearable e modello personale.
+- [x] Usare nomi leggibili al medico, non nomi tecnici come `kitchen_minutes`.
+- [x] Mantenere sempre il messaggio: supporto al triage, decisione finale al medico.
 
 Dipendenze da Daniel:
 
@@ -948,14 +948,14 @@ Hai dolore? Da 0 a 10 quanto?
 Hai bisogno di essere contattato?
 ```
 
-- [ ] Creare UI paziente accessibile, con pulsanti grandi e testo leggibile.
-- [ ] Supportare risposte si/no, scala 0-10, scelta singola e testo breve opzionale.
-- [ ] Salvare localmente risposte non inviate.
-- [ ] Inviare risposta, durata, timestamp e device_id al backend.
-- [ ] Mostrare conferma chiara al paziente dopo l'invio.
-- [ ] Evitare linguaggio allarmante.
-- [ ] Gestire task scaduti o gia' completati.
-- [ ] Aggiungere notifica push con testo personalizzato del medico.
+- [x] Creare UI paziente accessibile, con pulsanti grandi e testo leggibile.
+- [x] Supportare risposte si/no, scala 0-10, scelta singola e testo breve opzionale.
+- [x] Salvare localmente risposte non inviate.
+- [x] Inviare risposta, durata, timestamp e device_id al backend.
+- [x] Mostrare conferma chiara al paziente dopo l'invio.
+- [x] Evitare linguaggio allarmante.
+- [x] Gestire task scaduti o gia' completati.
+- [x] Aggiungere notifica push con testo personalizzato del medico.
 
 Dipendenze da Daniel:
 
@@ -991,13 +991,13 @@ Responsabile: Emilio.
 Obiettivo: permettere al medico di esportare un riepilogo leggibile del paziente per una
 visita o per la discussione del progetto.
 
-- [ ] Creare pulsante "Esporta riepilogo" nella dashboard.
-- [ ] Generare una vista stampabile con dati principali, grafici essenziali e note.
-- [ ] Includere riepilogo 24 ore, indice AI, routine ambientale, task recenti e alert.
-- [ ] Escludere token, dettagli tecnici sensibili e dati non necessari.
-- [ ] Aggiungere data generazione e dicitura "supporto al triage".
-- [ ] Preparare esportazione PDF tramite stampa browser o libreria dedicata.
-- [ ] Mostrare, se utile, lo storico audit leggibile fornito da Daniel.
+- [x] Creare pulsante "Esporta riepilogo" nella dashboard.
+- [x] Generare una vista stampabile con dati principali, grafici essenziali e note.
+- [x] Includere riepilogo 24 ore, indice AI, routine ambientale, task recenti e alert.
+- [x] Escludere token, dettagli tecnici sensibili e dati non necessari.
+- [x] Aggiungere data generazione e dicitura "supporto al triage".
+- [x] Preparare esportazione PDF tramite stampa browser o libreria dedicata.
+- [x] Mostrare, se utile, lo storico audit leggibile fornito da Daniel.
 
 Dipendenze da Daniel:
 
@@ -1058,3 +1058,4 @@ Motivo dell'ordine: il riepilogo e la timeline riusano quasi tutti i dati gia' p
 spiegazione AI e valutazioni migliorano la parte clinica; routine ambientale e workflow
 alert richiedono piu' rifinitura; il report va fatto quando le sezioni principali sono
 abbastanza stabili.
+

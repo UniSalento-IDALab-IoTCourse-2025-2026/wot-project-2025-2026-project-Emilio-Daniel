@@ -55,6 +55,25 @@ export const api = {
   login: (credentials) => request("/auth/login", { method: "POST", body: credentials }),
   patients: (session) => request("/patients", { token: session?.access_token }),
   current: (patientId, session) => request(`/patients/${patientId}/current`, { token: session?.access_token }),
+  summary24h: (patientId, session) => request(`/patients/${patientId}/summary/24h`, { token: session?.access_token }),
+  timeline: (patientId, session, options = {}) => {
+    const params = new URLSearchParams({ page_size: String(options.page_size ?? 80) });
+    if (options.event_type && options.event_type !== "all") params.set("event_type", options.event_type);
+    if (options.date_from) params.set("date_from", options.date_from);
+    if (options.date_to) params.set("date_to", options.date_to);
+    if (options.page) params.set("page", String(options.page));
+    return request(`/patients/${patientId}/timeline?${params.toString()}`, { token: session?.access_token });
+  },
+  spatialSummary: (patientId, session, options = {}) => {
+    const params = new URLSearchParams({ days: String(options.days ?? 7) });
+    if (options.date_from) params.set("date_from", options.date_from);
+    if (options.date_to) params.set("date_to", options.date_to);
+    return request(`/patients/${patientId}/spatial-summary?${params.toString()}`, { token: session?.access_token });
+  },
+  reportData: (patientId, session, options = {}) =>
+    request(`/patients/${patientId}/report-data?days=${encodeURIComponent(String(options.days ?? 7))}`, {
+      token: session?.access_token,
+    }),
   windows: (patientId, session, options = {}) => {
     const params = new URLSearchParams({ limit: String(options.limit ?? 200) });
     if (options.date_from) params.set("date_from", options.date_from);
@@ -66,7 +85,37 @@ export const api = {
       token: session?.access_token,
     }),
   alerts: (patientId, session) => request(`/patients/${patientId}/alerts`, { token: session?.access_token }),
+  alertDetails: (alertId, session) => request(`/alerts/${alertId}/details`, { token: session?.access_token }),
   tasks: (patientId, session) => request(`/patients/${patientId}/tasks`, { token: session?.access_token }),
+  questionnaireTemplates: (session) => request("/questionnaires/templates", { token: session?.access_token }),
+  questionnaireSchedules: (patientId, session, options = {}) => {
+    const params = new URLSearchParams();
+    if (options.include_suspended !== undefined) params.set("include_suspended", String(options.include_suspended));
+    return request(`/questionnaires/patients/${patientId}/schedules${params.toString() ? `?${params.toString()}` : ""}`, {
+      token: session?.access_token,
+    });
+  },
+  createQuestionnaireSchedule: (patientId, payload, session) =>
+    request(`/questionnaires/patients/${patientId}/schedules`, {
+      method: "POST",
+      token: session?.access_token,
+      body: payload,
+    }),
+  suspendQuestionnaireSchedule: (scheduleId, session) =>
+    request(`/questionnaires/schedules/${scheduleId}/suspend`, {
+      method: "PATCH",
+      token: session?.access_token,
+    }),
+  generateQuestionnaireTask: (scheduleId, session, force = false) =>
+    request(`/questionnaires/schedules/${scheduleId}/generate-due-task`, {
+      method: "POST",
+      token: session?.access_token,
+      body: { force },
+    }),
+  questionnaireResults: (patientId, session, options = {}) =>
+    request(`/questionnaires/patients/${patientId}/results?limit=${encodeURIComponent(String(options.limit ?? 80))}`, {
+      token: session?.access_token,
+    }),
   systemStatus: (patientId, session) => request(`/patients/${patientId}/system-status`, { token: session?.access_token }),
   acknowledgeAlert: (alertId, session) =>
     request(`/alerts/${alertId}/acknowledge`, {

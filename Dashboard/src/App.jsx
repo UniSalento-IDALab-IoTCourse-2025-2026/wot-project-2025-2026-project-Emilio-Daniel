@@ -52,9 +52,13 @@ import { aiScoreBand, formatDateTime, isStale, levelLabel, scoreText } from "./u
 
 const tabs = [
   { id: "patient", label: "Quadro clinico", shortLabel: "Paziente", icon: HeartPulse },
+  { id: "timeline", label: "Timeline", shortLabel: "Timeline", icon: CalendarClock },
+  { id: "evaluations", label: "Valutazioni", shortLabel: "Valutazioni", icon: BrainCircuit },
+  { id: "routine", label: "Routine ambientale", shortLabel: "Routine", icon: Home },
   { id: "alerts", label: "Segnalazioni", shortLabel: "Alert", icon: AlertTriangle },
   { id: "tasks", label: "Attivita", shortLabel: "Task", icon: ClipboardList },
   { id: "system", label: "Stato sistema", shortLabel: "Sistema", icon: MonitorCog },
+  { id: "report", label: "Report", shortLabel: "Report", icon: DatabaseZap },
 ];
 
 const PATIENT_PROFILE_STORAGE_KEY = "iot_dashboard_patient_profiles_v1";
@@ -448,13 +452,41 @@ function Dashboard({ session, onLogout }) {
       setState({ loading: true, error: "", data: null });
     }
     try {
-      const [current, windows, decisions, alerts, tasks, system] = await Promise.all([
+      const optional = async (loader, fallback) => {
+        try {
+          return await loader();
+        } catch {
+          return fallback;
+        }
+      };
+      const [
+        current,
+        windows,
+        decisions,
+        alerts,
+        tasks,
+        system,
+        summary24h,
+        timeline,
+        spatialSummary,
+        questionnaireTemplates,
+        questionnaireSchedules,
+        questionnaireResults,
+        reportData,
+      ] = await Promise.all([
         api.current(patientId, session),
         api.windows(patientId, session),
         api.decisions(patientId, session),
         api.alerts(patientId, session),
         api.tasks(patientId, session),
         api.systemStatus(patientId, session),
+        optional(() => api.summary24h(patientId, session), null),
+        optional(() => api.timeline(patientId, session), { items: [] }),
+        optional(() => api.spatialSummary(patientId, session), null),
+        optional(() => api.questionnaireTemplates(session), { items: [] }),
+        optional(() => api.questionnaireSchedules(patientId, session, { include_suspended: true }), { items: [] }),
+        optional(() => api.questionnaireResults(patientId, session), { items: [] }),
+        optional(() => api.reportData(patientId, session), null),
       ]);
       setState({
         loading: false,
@@ -466,6 +498,13 @@ function Dashboard({ session, onLogout }) {
           alerts: alerts.items ?? [],
           tasks: tasks.items ?? [],
           system,
+          summary24h,
+          timeline: timeline.items ?? [],
+          spatialSummary,
+          questionnaireTemplates: questionnaireTemplates.items ?? [],
+          questionnaireSchedules: questionnaireSchedules.items ?? [],
+          questionnaireResults: questionnaireResults.items ?? [],
+          reportData,
         },
       });
     } catch (error) {
@@ -506,6 +545,8 @@ function Dashboard({ session, onLogout }) {
             "task_cancelled",
             "task_deleted",
             "task_updated",
+            "questionnaire_completed",
+            "questionnaire_schedule_updated",
             "caregiver_message_created",
             "system_status_updated",
           ].includes(event.event_type)
@@ -569,6 +610,10 @@ function Dashboard({ session, onLogout }) {
           decisions: [],
           alerts: [],
           tasks: [],
+          timeline: [],
+          questionnaireResults: [],
+          questionnaireSchedules: [],
+          reportData: null,
         },
       };
     });
@@ -727,6 +772,9 @@ function Dashboard({ session, onLogout }) {
           <div className="workspace-content">
             <div className="view-stage" key={`${activeTab}-${selectedPatientId}`}>
               {activeTab === "patient" && <PatientView data={state.data} patient={selectedPatient} onClearPatientData={clearCurrentPatientView} />}
+              {activeTab === "timeline" && <TimelineView data={state.data} />}
+              {activeTab === "evaluations" && <EvaluationsView data={state.data} session={session} patientId={selectedPatientId} onChanged={() => loadPatientData(selectedPatientId, { background: true })} />}
+              {activeTab === "routine" && <RoutineView data={state.data} />}
               {activeTab === "alerts" && (
                 <AlertsView
                   data={state.data}
@@ -741,6 +789,7 @@ function Dashboard({ session, onLogout }) {
               )}
               {activeTab === "tasks" && <TasksView data={state.data} session={session} patientId={selectedPatientId} onChanged={() => loadPatientData(selectedPatientId, { background: true })} />}
               {activeTab === "system" && <SystemView data={state.data} events={events} wsStatus={wsStatus} />}
+              {activeTab === "report" && <ReportView data={state.data} patient={selectedPatient} />}
             </div>
           </div>
         )}
@@ -1133,6 +1182,10 @@ function PatientView({ data, patient, onClearPatientData }) {
       <PatientClinicalHero current={current} patient={patient} stale={stale} />
 
       <section className="panel span-2">
+        <Summary24hPanel summary={data.summary24h} current={current} />
+      </section>
+
+      <section className="panel span-2">
         <AiExplanationPanel decision={latestDecision} system={data.system} current={current} />
       </section>
 
@@ -1259,6 +1312,75 @@ function PatientView({ data, patient, onClearPatientData }) {
         )}
       </section>
       <ChartDialog chart={expandedChart} windows={chartWindows} onClose={() => setExpandedChart(null)} />
+    </div>
+  );
+}
+
+function Summary24hPanel({ summary, current }) {
+  if (!summary) {
+    return (
+      <div>
+        <div className="panel-heading">
+          <div className="section-heading-group">
+            <span className="section-heading-icon soft"><Clock3 size={19} /></span>
+            <div>
+              <h3>Riepilogo ultime 24 ore</h3>
+              <p className="panel-subtitle">Il backend non ha ancora inviato l'aggregazione dedicata.</p>
+            </div>
+          </div>
+        </div>
+        <ViewEmptyState icon={<Info size={24} />} title="Riepilogo in attesa" text="La dashboard continua a usare finestre, decisioni e stato corrente gia' disponibili." />
+      </div>
+    );
+  }
+
+  const ai = summary.ai ?? {};
+  const spatial = summary.spatial ?? {};
+  const wearable = summary.wearable ?? {};
+  const completeness = summary.data_completeness ?? summary.completeness ?? {};
+  const baseline = summary.baseline ?? {};
+  const roomMinutes = spatial.room_minutes ?? {};
+  const reliability = reliabilityFromCompleteness(completeness);
+  const baselineText = baseline.baseline_available === false
+    ? "Baseline personale non ancora pronta"
+    : baseline.summary ?? baseline.message ?? "Confronto baseline disponibile";
+
+  return (
+    <div className="summary24">
+      <div className="panel-heading">
+        <div className="section-heading-group">
+          <span className="section-heading-icon soft"><Clock3 size={19} /></span>
+          <div>
+            <h3>Riepilogo ultime 24 ore</h3>
+            <p className="panel-subtitle">Sintesi automatica per orientare la revisione, non una diagnosi.</p>
+          </div>
+        </div>
+        <span className={`badge reliability-${reliability.key}`}>Affidabilita {reliability.label}</span>
+      </div>
+      <div className="summary24-grid">
+        <Metric icon={<Gauge size={18} />} label="Indice medio" value={scoreBandText(ai.mean_score ?? ai.average_score)} tone={aiScoreBand(ai.mean_score ?? ai.average_score).key} />
+        <Metric icon={<AlertTriangle size={18} />} label="Picco massimo" value={scoreBandText(ai.max_score)} tone={aiScoreBand(ai.max_score).key} />
+        <Metric icon={<MapPin size={18} />} label="Stanza prevalente" value={roomLabel(spatial.prevalent_room ?? current?.current_room)} />
+        <Metric icon={<ArrowDownUp size={18} />} label="Cambi stanza" value={formatNumber(spatial.room_changes ?? spatial.transitions_count)} />
+        <Metric icon={<HeartPulse size={18} />} label="Battito medio" value={formatFeatureValue(wearable.heart_rate_mean, "bpm")} />
+        <Metric icon={<Watch size={18} />} label="SpO2" value={formatFeatureValue(wearable.spo2_mean, "%")} />
+      </div>
+      <div className="summary24-bottom">
+        <div className="room-share-list">
+          {Object.entries(roomMinutes).length > 0 ? Object.entries(roomMinutes).map(([room, minutes]) => (
+            <div key={room} className="room-share-row">
+              <span>{roomLabel(room)}</span>
+              <div className="room-share-track"><span style={{ width: `${roomShare(minutes, roomMinutes)}%` }} /></div>
+              <strong>{formatFeatureValue(minutes, "min")}</strong>
+            </div>
+          )) : <p className="empty-text">Permanenze stanza non disponibili nelle ultime 24 ore.</p>}
+        </div>
+        <div className="summary24-note">
+          <strong>Confronto routine</strong>
+          <p>{baselineText}</p>
+          <small>{summary.range?.start ? `${formatDateTime(summary.range.start)} - ${formatDateTime(summary.range.end)}` : "Intervallo non indicato"}</small>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1562,6 +1684,7 @@ function AiExplanationPanel({ decision, system, current }) {
   const personalModel = fusion?.models?.personal;
   const personalAvailable = personalModel?.available === true || system?.ai?.personal_model_available === true;
   const activeModels = models.filter((model) => model.available).length;
+  const normalizedExplanation = decision?.ai_explanation ?? current?.ai_explanation ?? null;
 
   if (!decision) {
     return (
@@ -1598,6 +1721,8 @@ function AiExplanationPanel({ decision, system, current }) {
           </div>
         </div>
       </section>
+
+      <AdvancedAiExplanation explanation={normalizedExplanation} finalScore={finalScore} />
 
       <section className="ai-section-block">
         <div className="ai-section-heading">
@@ -1689,6 +1814,84 @@ function AiScoreBandLegend({ score }) {
           {band.label}
         </span>
       ))}
+    </div>
+  );
+}
+
+function AdvancedAiExplanation({ explanation, finalScore }) {
+  if (!explanation) {
+    return (
+      <section className="ai-section-block ai-advanced-empty">
+        <div className="ai-section-heading">
+          <div>
+            <h4>Lettura avanzata</h4>
+            <p>Il backend non ha ancora inviato la spiegazione normalizzata.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const positive = explanation.positive_factors ?? [];
+  const negative = explanation.negative_factors ?? [];
+  const missing = explanation.missing_or_imputed_features ?? [];
+  const contributions = explanation.model_contributions ?? [];
+  const delta = Number(explanation.score_delta);
+  const deltaLabel = Number.isFinite(delta)
+    ? `${delta > 0 ? "+" : ""}${delta.toFixed(1)} rispetto alla valutazione precedente`
+    : "Confronto precedente non disponibile";
+
+  return (
+    <section className="ai-section-block ai-advanced">
+      <div className="ai-section-heading">
+        <div>
+          <h4>Perche l'indice e' cambiato</h4>
+          <p>{explanation.message ?? "Lettura normalizzata dei fattori principali."}</p>
+        </div>
+        <span className={`badge reliability-${String(explanation.data_reliability ?? "media").toLowerCase()}`}>
+          Affidabilita {reliabilityLabel(explanation.data_reliability)}
+        </span>
+      </div>
+      <div className="ai-advanced-grid">
+        <div className="ai-delta-card">
+          <span>Confronto precedente</span>
+          <strong>{deltaLabel}</strong>
+          <small>Indice attuale: {scoreBandText(finalScore)}</small>
+        </div>
+        <FactorColumn title="Elementi che aumentano l'indice" items={positive} tone="risk" />
+        <FactorColumn title="Elementi che riducono l'indice" items={negative} tone="protective" />
+        <FactorColumn title="Dati mancanti o stimati" items={missing} tone="missing" />
+      </div>
+      {contributions.length > 0 && (
+        <div className="ai-contribution-strip">
+          {contributions.map((item) => (
+            <span key={item.model ?? item.label}>
+              <strong>{modelContributionLabel(item.model ?? item.label)}</strong>
+              {formatNumber(item.score ?? item.value)} / 100
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FactorColumn({ title, items, tone }) {
+  return (
+    <div className={`factor-column ${tone}`}>
+      <strong>{title}</strong>
+      {items.length === 0 ? (
+        <p>Nessun elemento rilevante indicato.</p>
+      ) : (
+        <ul>
+          {items.slice(0, 5).map((item, index) => (
+            <li key={`${title}-${index}`}>
+              <span>{item.label ?? clinicalFeatureName(item.feature ?? item.name)}</span>
+              <small>{factorValueText(item)}</small>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -2845,6 +3048,366 @@ function roomLabel(room) {
   }[room ?? "unknown"] ?? room;
 }
 
+function TimelineView({ data }) {
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [interval, setInterval] = useState({ date: "", from: "", to: "" });
+  const events = useMemo(() => filterTimelineEvents(data.timeline ?? [], typeFilter, interval), [data.timeline, typeFilter, interval]);
+  const types = useMemo(() => timelineTypeOptions(data.timeline ?? []), [data.timeline]);
+
+  return (
+    <section className="panel page-panel timeline-page">
+      <div className="view-heading">
+        <div className="view-heading-copy">
+          <span className="view-heading-icon soft"><CalendarClock size={22} /></span>
+          <div>
+            <h3>Timeline del paziente</h3>
+            <p>Eventi clinici, operativi e tecnici in ordine cronologico.</p>
+          </div>
+        </div>
+        <span className="badge">{events.length} eventi</span>
+      </div>
+      <div className="filter-toolbar timeline-toolbar">
+        <label>
+          Tipo evento
+          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+            <option value="all">Tutti</option>
+            {types.map((type) => <option key={type} value={type}>{eventTypeLabel(type)}</option>)}
+          </select>
+        </label>
+        <WindowIntervalFilters value={interval} onChange={setInterval} onClear={() => setInterval({ date: "", from: "", to: "" })} />
+      </div>
+      {events.length === 0 ? (
+        <ViewEmptyState icon={<CalendarClock size={24} />} title="Nessun evento nel periodo" text="Modifica filtri o intervallo temporale per ampliare la ricerca." />
+      ) : (
+        <div className="timeline-list">
+          {events.map((event) => (
+            <article key={event.event_id ?? `${event.event_type}-${event.timestamp}`} className={`timeline-item ${event.severity ?? "green"}`}>
+              <span className={`timeline-icon ${event.event_type}`}>{timelineIcon(event.event_type)}</span>
+              <div>
+                <div className="timeline-item-head">
+                  <strong>{event.title ?? eventTypeLabel(event.event_type)}</strong>
+                  <time>{formatDateTime(event.timestamp)}</time>
+                </div>
+                <p>{event.summary ?? "Evento registrato dal sistema."}</p>
+                <div className="timeline-meta">
+                  <span>{eventTypeLabel(event.event_type)}</span>
+                  <span>{categoryLabel(event.source)}</span>
+                  {event.linked_resource?.id && <span>ID {event.linked_resource.id}</span>}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EvaluationsView({ data, session, patientId, onChanged }) {
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [scheduleForm, setScheduleForm] = useState({
+    templateId: data.questionnaireTemplates?.[0]?.template_id ?? "",
+    frequency: "daily",
+    priority: "normal",
+    nextRunAt: "",
+  });
+
+  useEffect(() => {
+    if (!scheduleForm.templateId && data.questionnaireTemplates?.[0]?.template_id) {
+      setScheduleForm((previous) => ({ ...previous, templateId: data.questionnaireTemplates[0].template_id }));
+    }
+  }, [data.questionnaireTemplates, scheduleForm.templateId]);
+
+  async function createSchedule() {
+    if (!scheduleForm.templateId) {
+      setError("Seleziona un questionario da programmare.");
+      return;
+    }
+    setBusy("schedule");
+    setError("");
+    setSuccess("");
+    try {
+      await api.createQuestionnaireSchedule(patientId, {
+        template_id: scheduleForm.templateId,
+        frequency: scheduleForm.frequency,
+        priority: scheduleForm.priority,
+        next_run_at: scheduleForm.nextRunAt ? new Date(scheduleForm.nextRunAt).toISOString() : null,
+      }, session);
+      setSuccess("Programmazione salvata.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function suspendSchedule(schedule) {
+    setBusy(`suspend:${schedule.schedule_id}`);
+    setError("");
+    setSuccess("");
+    try {
+      await api.suspendQuestionnaireSchedule(schedule.schedule_id, session);
+      setSuccess("Programmazione sospesa.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function generateNow(schedule) {
+    setBusy(`generate:${schedule.schedule_id}`);
+    setError("");
+    setSuccess("");
+    try {
+      await api.generateQuestionnaireTask(schedule.schedule_id, session, true);
+      setSuccess("Task generato e inviato al paziente.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <section className="panel page-panel evaluations-page">
+      <div className="view-heading">
+        <div className="view-heading-copy">
+          <span className="view-heading-icon task"><BrainCircuit size={22} /></span>
+          <div>
+            <h3>Centro valutazioni</h3>
+            <p>Questionari programmabili e andamento dei risultati nel tempo.</p>
+          </div>
+        </div>
+        <span className="badge">{data.questionnaireResults?.length ?? 0} risultati</span>
+      </div>
+      {error && <p className="inline-feedback error"><AlertTriangle size={17} />{error}</p>}
+      {success && <p className="inline-feedback success"><CheckCircle2 size={17} />{success}</p>}
+      <div className="evaluation-grid">
+        <section className="evaluation-card">
+          <h4>Programma questionario</h4>
+          <div className="task-form-grid">
+            <PrettySelect
+              label="Questionario"
+              value={scheduleForm.templateId}
+              options={(data.questionnaireTemplates ?? []).map((template) => ({ value: template.template_id, label: template.title ?? template.name ?? template.template_id }))}
+              onChange={(value) => setScheduleForm((previous) => ({ ...previous, templateId: value }))}
+            />
+            <PrettySelect
+              label="Frequenza"
+              value={scheduleForm.frequency}
+              options={[{ value: "daily", label: "Giornaliera" }, { value: "weekly", label: "Settimanale" }]}
+              onChange={(value) => setScheduleForm((previous) => ({ ...previous, frequency: value }))}
+            />
+            <PrettySelect
+              label="Priorita"
+              value={scheduleForm.priority}
+              options={priorityOptions}
+              onChange={(value) => setScheduleForm((previous) => ({ ...previous, priority: value }))}
+            />
+            <label>
+              Primo invio
+              <input type="datetime-local" value={scheduleForm.nextRunAt} onChange={(event) => setScheduleForm((previous) => ({ ...previous, nextRunAt: event.target.value }))} />
+            </label>
+          </div>
+          <button className="primary-button" type="button" onClick={createSchedule} disabled={busy === "schedule"}>
+            {busy === "schedule" ? <LoaderCircle className="spin" size={17} /> : <CalendarClock size={17} />}
+            Salva programmazione
+          </button>
+        </section>
+        <section className="evaluation-card">
+          <h4>Template disponibili</h4>
+          <div className="template-list">
+            {(data.questionnaireTemplates ?? []).length === 0 ? <p className="empty-text">Nessun template ricevuto dal backend.</p> : data.questionnaireTemplates.map((template) => (
+              <article key={template.template_id}>
+                <strong>{template.title ?? template.name ?? template.template_id}</strong>
+                <p>{template.description ?? "Questionario disponibile per invio o programmazione."}</p>
+                {template.license_note && <small>{template.license_note}</small>}
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+      <div className="evaluation-grid">
+        <section className="evaluation-card">
+          <h4>Programmazioni attive</h4>
+          <div className="schedule-list">
+            {(data.questionnaireSchedules ?? []).length === 0 ? <p className="empty-text">Nessuna programmazione salvata.</p> : data.questionnaireSchedules.map((schedule) => (
+              <article key={schedule.schedule_id} className={schedule.status === "suspended" ? "is-muted" : ""}>
+                <div>
+                  <strong>{schedule.title ?? schedule.template?.title ?? schedule.template_id}</strong>
+                  <p>{categoryLabel(schedule.frequency)} - prossimo invio {formatDateTime(schedule.next_run_at)}</p>
+                </div>
+                <div className="inline-actions">
+                  <button className="secondary-button" type="button" onClick={() => generateNow(schedule)} disabled={Boolean(busy)}>
+                    Genera ora
+                  </button>
+                  <button className="secondary-button danger-soft" type="button" onClick={() => suspendSchedule(schedule)} disabled={Boolean(busy) || schedule.status === "suspended"}>
+                    Sospendi
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+        <section className="evaluation-card">
+          <h4>Risultati recenti</h4>
+          <div className="result-list">
+            {(data.questionnaireResults ?? []).length === 0 ? <p className="empty-text">Nessun risultato completato.</p> : data.questionnaireResults.map((result) => (
+              <article key={result.result_id ?? result.task_id ?? result.completed_at}>
+                <strong>{result.template_title ?? result.title ?? "Valutazione completata"}</strong>
+                <p>{taskResultScoreLabel(result)} - durata {formatTaskDuration(result.duration_seconds)}</p>
+                <small>{formatDateTime(result.completed_at ?? result.created_at)}</small>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function RoutineView({ data }) {
+  const summary = data.spatialSummary;
+  const [days, setDays] = useState("7");
+  if (!summary) {
+    return (
+      <section className="panel page-panel">
+        <ViewEmptyState icon={<Home size={24} />} title="Routine ambientale non disponibile" text="Il backend non ha ancora restituito l'aggregazione spaziale." />
+      </section>
+    );
+  }
+
+  const rooms = summary.room_minutes ?? {};
+  const transitions = summary.transitions ?? summary.transition_matrix ?? [];
+  const night = summary.night ?? {};
+  const baseline = summary.baseline ?? {};
+
+  return (
+    <section className="panel page-panel routine-page">
+      <div className="view-heading">
+        <div className="view-heading-copy">
+          <span className="view-heading-icon soft"><Home size={22} /></span>
+          <div>
+            <h3>Routine ambientale</h3>
+            <p>Permanenze, transizioni e movimenti notturni rilevati dai beacon.</p>
+          </div>
+        </div>
+        <select value={days} onChange={(event) => setDays(event.target.value)} aria-label="Periodo routine">
+          <option value="1">Oggi</option>
+          <option value="2">Oggi e ieri</option>
+          <option value="7">Settimana</option>
+        </select>
+      </div>
+      <div className="routine-summary-grid">
+        <Metric icon={<MapPin size={18} />} label="Stanza prevalente" value={roomLabel(summary.prevalent_room)} />
+        <Metric icon={<ArrowDownUp size={18} />} label="Transizioni" value={formatNumber(summary.room_changes ?? summary.transitions_count)} />
+        <Metric icon={<Clock3 size={18} />} label="Permanenza massima" value={formatFeatureValue(summary.longest_single_room_minutes, "min")} />
+        <Metric icon={<AlertTriangle size={18} />} label="Movimenti notturni" value={formatNumber(night.room_changes ?? summary.night_room_changes)} tone={(night.room_changes ?? summary.night_room_changes) > 0 ? "yellow" : "green"} />
+      </div>
+      <div className="routine-layout">
+        <section className="routine-card">
+          <h4>Minuti per stanza</h4>
+          <div className="room-share-list">
+            {Object.entries(rooms).map(([room, minutes]) => (
+              <div key={room} className="room-share-row">
+                <span>{roomLabel(room)}</span>
+                <div className="room-share-track"><span style={{ width: `${roomShare(minutes, rooms)}%` }} /></div>
+                <strong>{formatFeatureValue(minutes, "min")}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="routine-card">
+          <h4>Transizioni principali</h4>
+          <div className="transition-list">
+            {normalizeTransitions(transitions).length === 0 ? <p className="empty-text">Nessuna transizione rilevante.</p> : normalizeTransitions(transitions).map((transition, index) => (
+              <div key={`${transition.from}-${transition.to}-${index}`}>
+                <span>{roomLabel(transition.from)} &rarr; {roomLabel(transition.to)}</span>
+                <strong>{formatNumber(transition.count)} volte</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="routine-card">
+          <h4>Confronto con baseline</h4>
+          <p>{baseline.summary ?? baseline.message ?? "Il confronto personale sara piu' affidabile quando la baseline sara completa."}</p>
+          <small>Qualita BLE: {reliabilityLabel(summary.ble_quality?.status ?? summary.ble_quality)}</small>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function ReportView({ data, patient }) {
+  const report = data.reportData;
+  const displayName = patientDisplayName(patient, data.current?.patient_id);
+  const printable = report ?? {
+    patient: { display_name: displayName, patient_id: data.current?.patient_id },
+    current: data.current,
+    summary_24h: data.summary24h,
+    spatial_summary: data.spatialSummary,
+    recent_decisions: data.decisions?.slice(-5),
+    recent_alerts: data.alerts?.slice(-5),
+    recent_tasks: data.tasks?.slice(-5),
+  };
+
+  return (
+    <section className="panel page-panel report-page">
+      <div className="view-heading">
+        <div className="view-heading-copy">
+          <span className="view-heading-icon soft"><DatabaseZap size={22} /></span>
+          <div>
+            <h3>Report sintetico</h3>
+            <p>Vista stampabile per demo, visita o discussione del caso.</p>
+          </div>
+        </div>
+        <button className="primary-button" type="button" onClick={() => window.print()}>
+          <DatabaseZap size={17} />
+          Esporta PDF
+        </button>
+      </div>
+      <article className="print-report">
+        <header>
+          <div>
+            <span className="clinical-kicker">Supporto al triage</span>
+            <h3>{displayName}</h3>
+          </div>
+          <span>Generato: {formatDateTime(new Date().toISOString())}</span>
+        </header>
+        <div className="report-grid">
+          <Metric icon={<Gauge size={18} />} label="Indice AI corrente" value={scoreBandText(printable.current?.anomaly_score)} />
+          <Metric icon={<MapPin size={18} />} label="Stanza corrente" value={roomLabel(printable.current?.current_room)} />
+          <Metric icon={<Clock3 size={18} />} label="Ultimo aggiornamento" value={formatDateTime(printable.current?.last_update)} />
+          <Metric icon={<AlertTriangle size={18} />} label="Segnalazioni recenti" value={formatNumber(printable.recent_alerts?.length)} />
+        </div>
+        <section>
+          <h4>Decisioni recenti</h4>
+          {(printable.recent_decisions ?? []).length === 0 ? <p>Nessuna decisione recente.</p> : (
+            <ul className="report-list">
+              {(printable.recent_decisions ?? []).map((decision) => (
+                <li key={decision.decision_id ?? decision.window_end}>
+                  {formatDateTime(decision.window_end ?? decision.created_at)} - {scoreBandText(decision.anomaly_score)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section>
+          <h4>Attivita e alert</h4>
+          <p>{formatNumber(printable.recent_tasks?.length)} attivita recenti, {formatNumber(printable.recent_alerts?.length)} segnalazioni recenti.</p>
+          <p className="report-disclaimer">{report?.disclaimer ?? "Documento dimostrativo: supporta il triage, la decisione finale resta al personale sanitario."}</p>
+        </section>
+      </article>
+    </section>
+  );
+}
+
 function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
   const [levelFilter, setLevelFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -2857,6 +3420,7 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
   const [success, setSuccess] = useState("");
   const [dialog, setDialog] = useState(null);
   const [deleteDialog, setDeleteDialog] = useState(null);
+  const [workflowDetails, setWorkflowDetails] = useState({});
 
   const filteredAlerts = useMemo(
     () => filterAlerts(data.alerts, { levelFilter, statusFilter, rangeFilter })
@@ -2940,6 +3504,24 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
       setError(readableApiError(apiError));
     } finally {
       setBusy("");
+    }
+  }
+
+  async function loadAlertWorkflow(alert) {
+    const alertId = alert.alert_id;
+    if (workflowDetails[alertId]?.details) {
+      setWorkflowDetails((previous) => ({ ...previous, [alertId]: { ...previous[alertId], open: !previous[alertId].open } }));
+      return;
+    }
+    setWorkflowDetails((previous) => ({ ...previous, [alertId]: { loading: true, open: true } }));
+    try {
+      const details = await api.alertDetails(alertId, session);
+      setWorkflowDetails((previous) => ({ ...previous, [alertId]: { loading: false, open: true, details } }));
+    } catch (apiError) {
+      setWorkflowDetails((previous) => ({
+        ...previous,
+        [alertId]: { loading: false, open: true, error: readableApiError(apiError) },
+      }));
     }
   }
 
@@ -3086,6 +3668,10 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
                     <p>{resolutionNote}</p>
                   </div>
                 )}
+                <AlertWorkflowDetails
+                  state={workflowDetails[alert.alert_id]}
+                  onToggle={() => loadAlertWorkflow(alert)}
+                />
                 <small>{formatDateTime(alert.opened_at)} - stato {alert.status}</small>
               </div>
               {!resolved ? (
@@ -3168,6 +3754,42 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
         )}
       </ActionDialog>
     </section>
+  );
+}
+
+function AlertWorkflowDetails({ state, onToggle }) {
+  const details = state?.details;
+  const events = details?.workflow?.history ?? details?.related_events ?? details?.alert_events ?? [];
+  return (
+    <div className="alert-workflow-box">
+      <button className="text-button" type="button" onClick={onToggle}>
+        <CalendarClock size={16} />
+        {state?.open ? "Nascondi workflow" : "Mostra workflow clinico"}
+      </button>
+      {state?.open && (
+        <div className="workflow-detail-panel">
+          {state.loading && <p className="empty-text">Caricamento contesto alert...</p>}
+          {state.error && <p className="inline-feedback error"><AlertTriangle size={16} />{state.error}</p>}
+          {details && (
+            <>
+              <div className="workflow-context-grid">
+                <Metric icon={<Gauge size={17} />} label="Origine" value={categoryLabel(details.alert?.source ?? details.alert?.category)} />
+                <Metric icon={<Clock3 size={17} />} label="Decisione collegata" value={details.context?.decision?.decision_id ?? details.decision?.decision_id ?? "n/d"} />
+                <Metric icon={<ClipboardList size={17} />} label="Task collegati" value={formatNumber((details.tasks ?? []).length)} />
+              </div>
+              <div className="workflow-event-list">
+                {events.length === 0 ? <p className="empty-text">Nessuna azione storica ricevuta.</p> : events.slice(0, 6).map((event, index) => (
+                  <span key={event.event_id ?? index}>
+                    <strong>{eventTypeLabel(event.event_type ?? event.action)}</strong>
+                    {formatDateTime(event.timestamp ?? event.created_at)}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -4665,6 +5287,88 @@ function formatTaskDuration(seconds) {
   const minutes = Math.floor(numeric / 60);
   const rest = Math.round(numeric % 60);
   return rest ? `${minutes} min ${rest} sec` : `${minutes} min`;
+}
+
+function reliabilityFromCompleteness(completeness) {
+  const values = Object.values(completeness ?? {})
+    .map((value) => Number(typeof value === "object" ? value?.ratio ?? value?.percentage : value))
+    .filter(Number.isFinite)
+    .map((value) => (value > 1 ? value / 100 : value));
+  if (values.length === 0) return { key: "media", label: "media" };
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (average >= 0.8) return { key: "alta", label: "alta" };
+  if (average >= 0.5) return { key: "media", label: "media" };
+  return { key: "bassa", label: "bassa" };
+}
+
+function reliabilityLabel(value) {
+  const normalized = String(value ?? "").toLowerCase();
+  if (["high", "alta", "ok", "good"].includes(normalized)) return "alta";
+  if (["low", "bassa", "poor", "critical"].includes(normalized)) return "bassa";
+  if (["medium", "media", "warning"].includes(normalized)) return "media";
+  return value ? categoryLabel(value) : "media";
+}
+
+function roomShare(value, rooms) {
+  const total = Object.values(rooms ?? {}).reduce((sum, item) => sum + (Number(item) || 0), 0);
+  if (!total) return 0;
+  return Math.max(3, Math.min(100, ((Number(value) || 0) / total) * 100));
+}
+
+function filterTimelineEvents(events, typeFilter, interval) {
+  return (events ?? []).filter((event) => {
+    if (typeFilter !== "all" && event.event_type !== typeFilter) return false;
+    if (!hasWindowInterval(interval)) return true;
+    const timestamp = new Date(event.timestamp).getTime();
+    if (!Number.isFinite(timestamp)) return false;
+    const date = interval.date || new Date(event.timestamp).toISOString().slice(0, 10);
+    const from = interval.from ? new Date(`${date}T${interval.from}`).getTime() : -Infinity;
+    const to = interval.to ? new Date(`${date}T${interval.to}`).getTime() : Infinity;
+    return timestamp >= from && timestamp <= to;
+  });
+}
+
+function timelineTypeOptions(events) {
+  return [...new Set((events ?? []).map((event) => event.event_type).filter(Boolean))].sort();
+}
+
+function timelineIcon(eventType) {
+  if (String(eventType).includes("alert")) return <AlertTriangle size={18} />;
+  if (String(eventType).includes("task") || String(eventType).includes("questionnaire")) return <ClipboardList size={18} />;
+  if (String(eventType).includes("message")) return <MessageSquare size={18} />;
+  if (String(eventType).includes("system") || String(eventType).includes("edge")) return <MonitorCog size={18} />;
+  if (String(eventType).includes("decision")) return <BrainCircuit size={18} />;
+  return <Clock3 size={18} />;
+}
+
+function normalizeTransitions(transitions) {
+  if (Array.isArray(transitions)) {
+    return transitions.map((transition) => ({
+      from: transition.from ?? transition.source ?? transition.room_from,
+      to: transition.to ?? transition.target ?? transition.room_to,
+      count: transition.count ?? transition.value ?? transition.transitions,
+    })).filter((transition) => transition.from || transition.to);
+  }
+  return Object.entries(transitions ?? {}).map(([key, count]) => {
+    const [from, to] = key.split(/->|_/);
+    return { from, to, count };
+  });
+}
+
+function factorValueText(item) {
+  const parts = [];
+  if (item.value !== undefined && item.value !== null) parts.push(`valore ${formatNumber(item.value)}`);
+  if (item.z_score !== undefined && item.z_score !== null) parts.push(`z-score ${formatNumber(item.z_score)}`);
+  if (item.direction) parts.push(categoryLabel(item.direction));
+  return parts.join(" - ") || "Dettaglio non disponibile";
+}
+
+function modelContributionLabel(value) {
+  return {
+    generic_spatial: "Routine ambientale",
+    generic_wearable: "Parametri wearable",
+    personal: "Profilo personale",
+  }[value] ?? categoryLabel(value);
 }
 
 function taskResultAnswers(result) {

@@ -1729,7 +1729,150 @@ edge_node\config\edge.yml
 edge_node\models
 ```
 
-## 13. Comandi importanti in breve
+## 13. Verifica funzioni Emilio E13-E20
+
+Questa parte serve a verificare le ultime viste aggiunte alla Dashboard e l'estensione
+dei check-in nell'app paziente. Prima devono essere accesi Docker, backend, worker MQTT,
+Edge e Dashboard come nelle sezioni precedenti.
+
+### E13 - Riepilogo ultime 24 ore
+
+Aprire `patient-001` nella Dashboard e restare in `Quadro clinico`.
+
+Controllare:
+
+- la sezione `Riepilogo ultime 24 ore`;
+- indice medio e picco massimo;
+- stanza prevalente e permanenze per stanza;
+- badge di affidabilita';
+- dati mancanti mostrati come non disponibili.
+
+Endpoint backend coinvolto:
+
+```text
+GET /api/v1/patients/patient-001/summary/24h
+```
+
+### E14 - Timeline
+
+Aprire la scheda `Timeline`.
+
+Controllare:
+
+- ordinamento cronologico degli eventi;
+- filtri per tipo evento;
+- filtro per data e orario;
+- presenza di decisioni, alert, task, messaggi e stati tecnici.
+
+Endpoint backend coinvolto:
+
+```text
+GET /api/v1/patients/patient-001/timeline
+```
+
+### E15 - Valutazioni
+
+Aprire la scheda `Valutazioni`.
+
+Provare:
+
+1. vedere i template questionari disponibili;
+2. creare una programmazione giornaliera o settimanale;
+3. generare subito il task dalla programmazione;
+4. completare il task dall'app paziente;
+5. verificare che il risultato compaia nello storico.
+
+Endpoint backend coinvolti:
+
+```text
+GET  /api/v1/questionnaires/templates
+GET  /api/v1/questionnaires/patients/patient-001/schedules
+POST /api/v1/questionnaires/patients/patient-001/schedules
+POST /api/v1/questionnaires/schedules/{schedule_id}/generate-due-task
+GET  /api/v1/questionnaires/patients/patient-001/results
+```
+
+### E16 - Segnalazioni composte
+
+Aprire `Segnalazioni`.
+
+Provare:
+
+- aprire il workflow clinico di un alert;
+- prendere in carico;
+- creare un task di follow-up;
+- risolvere con nota;
+- eliminare definitivamente solo quando l'alert e' risolto.
+
+Endpoint backend coinvolto:
+
+```text
+GET /api/v1/alerts/{alert_id}/details
+```
+
+### E17 - Routine ambientale
+
+Aprire `Routine ambientale`.
+
+Controllare:
+
+- minuti per stanza;
+- stanza prevalente;
+- cambi stanza;
+- cambi notturni;
+- permanenza massima;
+- qualita' BLE e confronto baseline se disponibile.
+
+Endpoint backend coinvolto:
+
+```text
+GET /api/v1/patients/patient-001/spatial-summary
+```
+
+### E18 - Spiegazione AI avanzata
+
+Aprire `Quadro clinico` e guardare `Valutazione comportamentale`.
+
+Controllare:
+
+- confronto con score precedente;
+- affidabilita' del dato;
+- fattori che aumentano e riducono l'indice;
+- dati mancanti o stimati;
+- contributi dei modelli spaziale, wearable e personale.
+
+### E19 - Check-in app paziente
+
+Dalla Dashboard creare o generare un check-in breve. Nell'app Android paziente:
+
+1. accedere con il profilo paziente;
+2. aprire il task ricevuto;
+3. verificare domande si/no, scala 0-10, scelta singola e testo;
+4. inviare le risposte;
+5. spegnere la rete e riprovare per verificare coda locale;
+6. riaccendere la rete e controllare che l'invio venga ritentato.
+
+### E20 - Report esportabile
+
+Aprire la scheda `Report`.
+
+Controllare:
+
+- dati principali del paziente;
+- indice AI corrente;
+- decisioni recenti;
+- alert e task recenti;
+- assenza di token o dati tecnici sensibili.
+
+Poi cliccare `Esporta PDF` e salvare tramite stampa del browser.
+
+Endpoint backend coinvolto:
+
+```text
+GET /api/v1/patients/patient-001/report-data
+```
+
+## 14. Comandi importanti in breve
 
 Questa sezione e' volutamente breve. Usarla quando tutto e' gia' stato configurato.
 
