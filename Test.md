@@ -49,6 +49,52 @@ quando tutto e' gia' configurato.
 Questa non e' ancora la procedura finale per il paziente. Nella versione finale il
 Raspberry dovra' partire con servizi automatici, senza richiedere comandi manuali.
 
+## Test automatici e manuali aggiunti da E21-E33
+
+Dashboard:
+
+```powershell
+cd Dashboard
+npm test
+npm run build
+cd ..
+```
+
+Cosa verifica:
+
+```text
+ErrorBoundary attivo
+offline cache paziente
+metriche modello AI
+confidenza decisione
+giornata tipo
+brief mattino
+report settimanali
+diagnostica rapida
+```
+
+Test manuale demo:
+
+```text
+1. Login medico.
+2. Aprire patient-001.
+3. Verificare Brief del mattino e Riepilogo 24 ore.
+4. Aprire Valutazione comportamentale e controllare confidenza, affidabilita' modello,
+   spiegazione naturale, trend e drift.
+5. Aprire Giornata tipo e cambiare metrica.
+6. Aprire Stato sistema e premere Diagnostica rapida.
+7. Spegnere temporaneamente il backend e ricaricare la dashboard: deve apparire la cache
+   offline e le azioni operative devono essere bloccate.
+8. Riaccendere backend e aggiornare.
+```
+
+Android:
+
+```text
+Seguire la checklist in:
+Applicazione IoT Companion/companion_Android_app/TEST_CHECKLIST.md
+```
+
 ## 0. Prerequisiti
 
 Sul PC devono essere disponibili:

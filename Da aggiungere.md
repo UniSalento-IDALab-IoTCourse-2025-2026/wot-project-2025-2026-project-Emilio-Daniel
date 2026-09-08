@@ -21,6 +21,28 @@ Ogni blocco sotto indica cosa deve fare ciascuno e quale output deve esistere al
 
 ---
 
+## Stato implementazione Emilio
+
+- [x] E21 - Visualizzazione metriche AI nella Dashboard.
+- [x] E22 - UI confidenza e dati mancanti.
+- [x] E23 - Spiegazione clinica in linguaggio naturale.
+- [x] E24 - Visualizzazione alert assenza e workflow caregiver.
+- [x] E25 - Grafici overlay giornata tipo.
+- [x] E26 - UI trend e drift.
+- [x] E27 - UI report settimanale e morning brief.
+- [x] E28 - Test frontend e mobile.
+- [x] E29 - Refactoring iniziale Dashboard con ErrorBoundary e struttura pronta.
+- [x] E30 - Offline mode leggero per Dashboard.
+- [x] E31 - Stato sistema migliorato nella Dashboard.
+- [x] E32 - Messaggi UI privacy-aware.
+- [x] E33 - Guida demo e verifica visuale.
+
+Nota: i punti che dipendono da endpoint non ancora presenti lato Daniel sono implementati
+con chiamate opzionali e fallback dimostrativi. Quando Daniel espone D21-D29/D33, la
+Dashboard li usera' senza rompere la demo.
+
+---
+
 ## Priorita' 1 - Credibilita' tecnica prima dell'esame
 
 ### D21 - Validazione dei modelli AI e metriche

@@ -47,6 +47,7 @@ import { createPortal } from "react-dom";
 import { api, clearSession, loadSession, saveSession } from "./api/client.js";
 import { readableApiError } from "./api/errors.js";
 import { openPatientSocket } from "./api/realtime.js";
+import { Detail, Metric, StatusPill, ViewEmptyState } from "./components/common/ClinicalPrimitives.jsx";
 import { config } from "./config.js";
 import { aiScoreBand, formatDateTime, isStale, levelLabel, scoreText } from "./utils/format.js";
 
@@ -54,6 +55,7 @@ const tabs = [
   { id: "patient", label: "Quadro clinico", shortLabel: "Paziente", icon: HeartPulse },
   { id: "timeline", label: "Timeline", shortLabel: "Timeline", icon: CalendarClock },
   { id: "evaluations", label: "Valutazioni", shortLabel: "Valutazioni", icon: BrainCircuit },
+  { id: "day-profile", label: "Giornata tipo", shortLabel: "Giornata", icon: Activity },
   { id: "routine", label: "Routine ambientale", shortLabel: "Routine", icon: Home },
   { id: "alerts", label: "Segnalazioni", shortLabel: "Alert", icon: AlertTriangle },
   { id: "tasks", label: "Attivita", shortLabel: "Task", icon: ClipboardList },
@@ -62,6 +64,46 @@ const tabs = [
 ];
 
 const PATIENT_PROFILE_STORAGE_KEY = "iot_dashboard_patient_profiles_v1";
+const PATIENT_DATA_CACHE_KEY = "iot_dashboard_patient_data_cache_v1";
+
+function loadPatientDataCache(patientId) {
+  if (!patientId) return null;
+  try {
+    const store = JSON.parse(localStorage.getItem(PATIENT_DATA_CACHE_KEY) || "{}");
+    return store[patientId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function savePatientDataCache(patientId, data) {
+  if (!patientId || !data) return;
+  try {
+    const store = JSON.parse(localStorage.getItem(PATIENT_DATA_CACHE_KEY) || "{}");
+    store[patientId] = {
+      cachedAt: new Date().toISOString(),
+      data: {
+        ...data,
+        _offline: false,
+        _offlineReason: "",
+      },
+    };
+    localStorage.setItem(PATIENT_DATA_CACHE_KEY, JSON.stringify(store));
+  } catch {
+    // La cache offline e' solo un aiuto per demo: se localStorage fallisce, la UI resta online.
+  }
+}
+
+function removePatientDataCache(patientId) {
+  if (!patientId) return;
+  try {
+    const store = JSON.parse(localStorage.getItem(PATIENT_DATA_CACHE_KEY) || "{}");
+    delete store[patientId];
+    localStorage.setItem(PATIENT_DATA_CACHE_KEY, JSON.stringify(store));
+  } catch {
+    localStorage.removeItem(PATIENT_DATA_CACHE_KEY);
+  }
+}
 
 const priorityOptions = [
   { value: "normal", label: "Ordinaria" },
@@ -473,6 +515,11 @@ function Dashboard({ session, onLogout }) {
         questionnaireSchedules,
         questionnaireResults,
         reportData,
+        modelMetrics,
+        dayProfile,
+        weeklyReports,
+        morningBrief,
+        operationalMetrics,
       ] = await Promise.all([
         api.current(patientId, session),
         api.windows(patientId, session),
@@ -487,29 +534,61 @@ function Dashboard({ session, onLogout }) {
         optional(() => api.questionnaireSchedules(patientId, session, { include_suspended: true }), { items: [] }),
         optional(() => api.questionnaireResults(patientId, session), { items: [] }),
         optional(() => api.reportData(patientId, session), null),
+        optional(() => api.modelMetrics(patientId, session), null),
+        optional(() => api.dayProfile(patientId, session), null),
+        optional(() => api.weeklyReports(patientId, session), { items: [] }),
+        optional(() => api.morningBrief(patientId, session), null),
+        optional(() => api.metrics(session), null),
       ]);
+      const nextData = {
+        current,
+        windows: windows.items ?? [],
+        decisions: decisions.items ?? [],
+        alerts: alerts.items ?? [],
+        tasks: tasks.items ?? [],
+        system,
+        summary24h,
+        timeline: timeline.items ?? [],
+        spatialSummary,
+        questionnaireTemplates: questionnaireTemplates.items ?? [],
+        questionnaireSchedules: questionnaireSchedules.items ?? [],
+        questionnaireResults: questionnaireResults.items ?? [],
+        reportData,
+        modelMetrics,
+        dayProfile,
+        weeklyReports: weeklyReports.items ?? weeklyReports.reports ?? [],
+        morningBrief,
+        operationalMetrics,
+        _offline: false,
+        _cachedAt: new Date().toISOString(),
+      };
+      savePatientDataCache(patientId, nextData);
       setState({
         loading: false,
         error: "",
-        data: {
-          current,
-          windows: windows.items ?? [],
-          decisions: decisions.items ?? [],
-          alerts: alerts.items ?? [],
-          tasks: tasks.items ?? [],
-          system,
-          summary24h,
-          timeline: timeline.items ?? [],
-          spatialSummary,
-          questionnaireTemplates: questionnaireTemplates.items ?? [],
-          questionnaireSchedules: questionnaireSchedules.items ?? [],
-          questionnaireResults: questionnaireResults.items ?? [],
-          reportData,
-        },
+        data: nextData,
       });
     } catch (error) {
+      const cached = loadPatientDataCache(patientId);
       if (background) {
-        setState((previous) => ({ ...previous, loading: false }));
+        setState((previous) => ({
+          ...previous,
+          loading: false,
+          data: previous.data
+            ? { ...previous.data, _offline: true, _offlineReason: readableApiError(error) }
+            : previous.data,
+        }));
+      } else if (cached?.data) {
+        setState({
+          loading: false,
+          error: "",
+          data: {
+            ...cached.data,
+            _offline: true,
+            _cachedAt: cached.cachedAt,
+            _offlineReason: readableApiError(error),
+          },
+        });
       } else {
         setState({ loading: false, error: readableApiError(error), data: null });
       }
@@ -575,7 +654,7 @@ function Dashboard({ session, onLogout }) {
 
   const activeView = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
   const activeAlertCount = state.data?.alerts?.filter((alert) => alert.status !== "resolved").length ?? 0;
-  const activeTaskCount = state.data?.tasks?.filter((task) => !["completed", "cancelled"].includes(task.status)).length ?? 0;
+  const activeTaskCount = state.data?.tasks?.filter((task) => !["completed", "cancelled", "expired"].includes(task.status)).length ?? 0;
   const userLabel = session?.user?.display_name ?? session?.user?.email ?? "Medico";
   const selectedPatientName = patientDisplayName(selectedPatient, selectedPatientId);
 
@@ -614,9 +693,15 @@ function Dashboard({ session, onLogout }) {
           questionnaireResults: [],
           questionnaireSchedules: [],
           reportData: null,
+          modelMetrics: null,
+          dayProfile: null,
+          weeklyReports: [],
+          morningBrief: null,
+          operationalMetrics: null,
         },
       };
     });
+    removePatientDataCache(selectedPatientId);
     setEvents([]);
   }
 
@@ -632,6 +717,7 @@ function Dashboard({ session, onLogout }) {
       await api.login({ email, password: clearAllPassword });
       clearCurrentPatientView();
       localStorage.removeItem(PATIENT_PROFILE_STORAGE_KEY);
+      localStorage.removeItem(PATIENT_DATA_CACHE_KEY);
       setClearAllPassword("");
       setClearAllOpen(false);
     } catch (error) {
@@ -770,10 +856,32 @@ function Dashboard({ session, onLogout }) {
         {!state.loading && !state.error && !state.data && <EmptyState />}
         {!state.loading && !state.error && state.data && (
           <div className="workspace-content">
+            {state.data._offline && (
+              <div className="offline-banner" role="status">
+                <Info size={18} />
+                <div>
+                  <strong>Dati non aggiornati</strong>
+                  <span>
+                    Consultazione da cache locale del {formatDateTime(state.data._cachedAt)}.
+                    Le azioni operative sono sospese finche' il backend torna raggiungibile.
+                  </span>
+                </div>
+              </div>
+            )}
             <div className="view-stage" key={`${activeTab}-${selectedPatientId}`}>
-              {activeTab === "patient" && <PatientView data={state.data} patient={selectedPatient} onClearPatientData={clearCurrentPatientView} />}
+              {activeTab === "patient" && (
+                <PatientView
+                  data={state.data}
+                  patient={selectedPatient}
+                  session={session}
+                  patientId={selectedPatientId}
+                  onChanged={() => loadPatientData(selectedPatientId, { background: true })}
+                  onClearPatientData={clearCurrentPatientView}
+                />
+              )}
               {activeTab === "timeline" && <TimelineView data={state.data} />}
               {activeTab === "evaluations" && <EvaluationsView data={state.data} session={session} patientId={selectedPatientId} onChanged={() => loadPatientData(selectedPatientId, { background: true })} />}
+              {activeTab === "day-profile" && <DayProfileView data={state.data} patient={selectedPatient} />}
               {activeTab === "routine" && <RoutineView data={state.data} />}
               {activeTab === "alerts" && (
                 <AlertsView
@@ -788,7 +896,7 @@ function Dashboard({ session, onLogout }) {
                 />
               )}
               {activeTab === "tasks" && <TasksView data={state.data} session={session} patientId={selectedPatientId} onChanged={() => loadPatientData(selectedPatientId, { background: true })} />}
-              {activeTab === "system" && <SystemView data={state.data} events={events} wsStatus={wsStatus} />}
+              {activeTab === "system" && <SystemView data={state.data} events={events} wsStatus={wsStatus} session={session} />}
               {activeTab === "report" && <ReportView data={state.data} patient={selectedPatient} />}
             </div>
           </div>
@@ -1147,7 +1255,7 @@ function PrettySelect({ label, value, options, onChange }) {
   );
 }
 
-function PatientView({ data, patient, onClearPatientData }) {
+function PatientView({ data, patient, session, patientId, onChanged }) {
   const { current, windows, decisions } = data;
   const stale = isStale(current.last_update);
   const latestDecision = decisions.at(-1);
@@ -1156,6 +1264,8 @@ function PatientView({ data, patient, onClearPatientData }) {
   const [chartsHidden, setChartsHidden] = useState(false);
   const [windowFiltersOpen, setWindowFiltersOpen] = useState(false);
   const [expandedChart, setExpandedChart] = useState(null);
+  const [aiActionMessage, setAiActionMessage] = useState("");
+  const [aiActionError, setAiActionError] = useState("");
   const [recentSort, setRecentSort] = useState({ key: "window_end", direction: "desc" });
   const [windowInterval, setWindowInterval] = useState({ date: "", from: "", to: "" });
   const decisionTrendWindows = useMemo(() => decisionScoreWindows(decisions), [decisions]);
@@ -1177,6 +1287,18 @@ function PatientView({ data, patient, onClearPatientData }) {
     }));
   }
 
+  async function approveRetraining() {
+    setAiActionMessage("");
+    setAiActionError("");
+    try {
+      await api.approveModelRetraining(patientId, session);
+      setAiActionMessage("Aggiornamento modello approvato. Attendo conferma dal backend.");
+      onChanged?.();
+    } catch (apiError) {
+      setAiActionError(readableApiError(apiError));
+    }
+  }
+
   return (
     <div className="content-grid">
       <PatientClinicalHero current={current} patient={patient} stale={stale} />
@@ -1186,7 +1308,20 @@ function PatientView({ data, patient, onClearPatientData }) {
       </section>
 
       <section className="panel span-2">
-        <AiExplanationPanel decision={latestDecision} system={data.system} current={current} />
+        <MorningBriefPanel brief={data.morningBrief} windows={windows} decisions={decisions} />
+      </section>
+
+      <section className="panel span-2">
+        <AiExplanationPanel
+          decision={latestDecision}
+          system={data.system}
+          current={current}
+          decisions={decisions}
+          modelMetrics={data.modelMetrics}
+          onApproveRetraining={approveRetraining}
+        />
+        {aiActionMessage && <p className="inline-feedback success"><CheckCircle2 size={16} />{aiActionMessage}</p>}
+        {aiActionError && <p className="inline-feedback error"><AlertTriangle size={16} />{aiActionError}</p>}
       </section>
 
       <section className="panel span-2">
@@ -1381,6 +1516,185 @@ function Summary24hPanel({ summary, current }) {
           <small>{summary.range?.start ? `${formatDateTime(summary.range.start)} - ${formatDateTime(summary.range.end)}` : "Intervallo non indicato"}</small>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MorningBriefPanel({ brief, windows, decisions }) {
+  const fallback = morningBriefFallback(windows, decisions);
+  const payload = brief ?? fallback;
+  const metrics = [
+    { label: "Sonno stimato", value: formatFeatureValue(payload.sleep_minutes, "min"), icon: <Clock3 size={18} /> },
+    { label: "Movimenti notturni", value: formatNumber(payload.night_room_changes), icon: <Home size={18} /> },
+    { label: "HR notturno", value: formatFeatureValue(payload.night_heart_rate_mean ?? payload.heart_rate_mean, "bpm"), icon: <HeartPulse size={18} /> },
+    { label: "Indice notte", value: scoreBandText(payload.ai_score ?? payload.max_score), icon: <BrainCircuit size={18} /> },
+  ];
+
+  return (
+    <div className="morning-brief">
+      <div className="panel-heading">
+        <div className="section-heading-group">
+          <span className="section-heading-icon soft"><CalendarClock size={19} /></span>
+          <div>
+            <h3>Brief del mattino</h3>
+            <p className="panel-subtitle">{payload.summary ?? fallback.summary}</p>
+          </div>
+        </div>
+        <span className={`badge reliability-${payload.confidence ?? "media"}`}>
+          {brief ? "calcolato dal backend" : "fallback demo"}
+        </span>
+      </div>
+      <div className="summary24-grid compact-summary-grid">
+        {metrics.map((item) => (
+          <Metric key={item.label} icon={item.icon} label={item.label} value={item.value} />
+        ))}
+      </div>
+      <p className="system-safe-note">
+        Lettura notturna prudente: utile per orientare il controllo del mattino, non sostituisce valutazioni cliniche.
+      </p>
+    </div>
+  );
+}
+
+function DayProfileView({ data, patient }) {
+  const [metricKey, setMetricKey] = useState("ai");
+  const metric = dayProfileMetricOptions.find((item) => item.key === metricKey) ?? dayProfileMetricOptions[0];
+  const profile = useMemo(() => buildDayProfileData(data, metric), [data, metric]);
+  const insight = dayProfileInsight(profile, metric);
+  const displayName = patientDisplayName(patient, data.current?.patient_id);
+
+  return (
+    <section className="panel page-panel day-profile-page">
+      <div className="view-heading">
+        <div className="view-heading-copy">
+          <span className="view-heading-icon soft"><Activity size={22} /></span>
+          <div>
+            <h3>Giornata tipo</h3>
+            <p>Confronto tra oggi, ieri e routine media del paziente.</p>
+          </div>
+        </div>
+        <div className="view-heading-stats">
+          <span><strong>{displayName}</strong></span>
+          <span>{profile.baselineAvailable ? "baseline disponibile" : "baseline in preparazione"}</span>
+        </div>
+      </div>
+
+      <div className="day-profile-toolbar">
+        {dayProfileMetricOptions.map((option) => (
+          <button
+            key={option.key}
+            className={metricKey === option.key ? "active" : ""}
+            type="button"
+            onClick={() => setMetricKey(option.key)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="day-profile-layout">
+        <DayProfileOverlayChart profile={profile} metric={metric} />
+        <aside className="day-profile-aside">
+          <strong>Interpretazione prudente</strong>
+          <p>{insight}</p>
+          <dl className="mini-detail-list">
+            <Detail label="Metrica" value={metric.label} />
+            <Detail label="Fasce" value={profile.bands.join(", ")} />
+            <Detail label="Origine" value={data.dayProfile ? "Endpoint day-profile" : "Finestre e decisioni gia' caricate"} />
+          </dl>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function DayProfileOverlayChart({ profile, metric }) {
+  const width = 920;
+  const height = 330;
+  const padding = { top: 28, right: 28, bottom: 54, left: 62 };
+  const series = profile.series.filter((item) => item.points.some((point) => Number.isFinite(point.value)));
+  const allValues = series.flatMap((item) => item.points.map((point) => point.value).filter(Number.isFinite));
+
+  if (allValues.length === 0) {
+    return (
+      <ViewEmptyState
+        icon={<Activity size={24} />}
+        title="Dati non ancora disponibili"
+        text="Quando arrivano finestre sufficienti, qui comparira il confronto con la giornata tipo."
+      />
+    );
+  }
+
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
+  const spread = max - min || 1;
+  const xStep = profile.bands.length > 1 ? (width - padding.left - padding.right) / (profile.bands.length - 1) : 0;
+  const yForValue = (value) => height - padding.bottom - ((value - min) / spread) * (height - padding.top - padding.bottom);
+  const yTicks = [
+    { value: max, label: formatFeatureValue(max, metric.unit) },
+    { value: (min + max) / 2, label: formatFeatureValue((min + max) / 2, metric.unit) },
+    { value: min, label: formatFeatureValue(min, metric.unit) },
+  ];
+
+  return (
+    <div className="day-profile-chart-card">
+      <div className="day-profile-legend">
+        {series.map((item) => (
+          <span key={item.key}><i style={{ background: item.color }} />{item.label}</span>
+        ))}
+      </div>
+      <svg className="day-profile-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Giornata tipo ${metric.label}`}>
+        {yTicks.map((tick) => {
+          const y = yForValue(tick.value);
+          return (
+            <g key={`${tick.label}-${y}`}>
+              <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} className="chart-grid-line" />
+              <text x={padding.left - 8} y={y + 4} className="chart-tick-label" textAnchor="end">{tick.label}</text>
+            </g>
+          );
+        })}
+        <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} className="chart-axis" />
+        <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} className="chart-axis" />
+        {profile.bands.map((band, index) => {
+          const x = padding.left + index * xStep;
+          return (
+            <g key={band}>
+              <line x1={x} y1={height - padding.bottom} x2={x} y2={height - padding.bottom + 6} className="chart-axis" />
+              <text x={x} y={height - 22} className="chart-tick-label" textAnchor="middle">{band}</text>
+            </g>
+          );
+        })}
+        {series.map((item) => {
+          const points = item.points
+            .map((point, index) => Number.isFinite(point.value)
+              ? `${padding.left + index * xStep},${yForValue(point.value)}`
+              : null)
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <g key={item.key}>
+              <polyline
+                points={points}
+                fill="none"
+                stroke={item.color}
+                strokeWidth={item.key === "baseline" ? 2.6 : 3.4}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray={item.key === "baseline" ? "8 7" : undefined}
+              />
+              {item.points.map((point, index) => Number.isFinite(point.value) && (
+                <circle
+                  key={`${item.key}-${profile.bands[index]}`}
+                  cx={padding.left + index * xStep}
+                  cy={yForValue(point.value)}
+                  r={4.2}
+                  fill={item.color}
+                />
+              ))}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
@@ -1675,7 +1989,7 @@ function WindowIntervalFilters({ value, onChange, onClear }) {
   );
 }
 
-function AiExplanationPanel({ decision, system, current }) {
+function AiExplanationPanel({ decision, system, current, decisions = [], modelMetrics, onApproveRetraining }) {
   const fusion = fusionFromDecision(decision);
   const models = modelSummaries(fusion);
   const baseline = baselineFromSystem(system);
@@ -1685,6 +1999,7 @@ function AiExplanationPanel({ decision, system, current }) {
   const personalAvailable = personalModel?.available === true || system?.ai?.personal_model_available === true;
   const activeModels = models.filter((model) => model.available).length;
   const normalizedExplanation = decision?.ai_explanation ?? current?.ai_explanation ?? null;
+  const confidence = confidenceFromPayload(decision, current, system);
 
   if (!decision) {
     return (
@@ -1709,7 +2024,10 @@ function AiExplanationPanel({ decision, system, current }) {
       </div>
 
       <section className={`clinical-ai-summary ${finalLevel}`}>
-        <ScoreGauge score={finalScore} level={finalLevel} />
+        <div className="score-with-confidence">
+          <ScoreGauge score={finalScore} level={finalLevel} />
+          <ConfidenceMiniBadge confidence={confidence} />
+        </div>
         <div className="clinical-summary-copy">
           <span className="clinical-kicker">Valutazione corrente</span>
           <h4>{decisionHeadline(finalLevel)}</h4>
@@ -1723,6 +2041,18 @@ function AiExplanationPanel({ decision, system, current }) {
       </section>
 
       <AdvancedAiExplanation explanation={normalizedExplanation} finalScore={finalScore} />
+
+      <div className="ai-support-grid">
+        <ConfidenceQualityPanel confidence={confidence} system={system} />
+        <ModelReliabilityPanel metrics={modelMetrics ?? decision?.model_metrics ?? system?.ai?.model_metrics} baseline={baseline} />
+      </div>
+
+      <TrendDriftPanel
+        decision={decision}
+        decisions={decisions}
+        system={system}
+        onApproveRetraining={onApproveRetraining}
+      />
 
       <section className="ai-section-block">
         <div className="ai-section-heading">
@@ -1795,6 +2125,18 @@ function ScoreGauge({ score, level }) {
         <em>{band.label}</em>
       </div>
     </div>
+  );
+}
+
+function ConfidenceMiniBadge({ confidence }) {
+  const score = Number(confidence?.score);
+  const level = reliabilityLabel(confidence?.level ?? confidenceLevelFromScore(score));
+  return (
+    <span className={`confidence-mini-badge reliability-${level}`}>
+      <ShieldCheck size={15} />
+      Affidabilita {level}
+      {Number.isFinite(score) ? ` ${Math.round(score)}%` : ""}
+    </span>
   );
 }
 
@@ -1876,6 +2218,113 @@ function AdvancedAiExplanation({ explanation, finalScore }) {
   );
 }
 
+function ConfidenceQualityPanel({ confidence, system }) {
+  const score = Number(confidence?.score);
+  const bounded = Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : null;
+  const level = confidence?.level ?? confidenceLevelFromScore(bounded);
+  const reasons = Array.isArray(confidence?.reasons) ? confidence.reasons : [];
+  const sensors = system?.sensors ?? {};
+  const missingHints = [
+    sensors.watch?.present === false ? "wearable non rilevato" : "",
+    ["missing", "stale"].includes(String(sensors.ble?.status)) ? "BLE non aggiornato" : "",
+    ["missing", "stale"].includes(String(sensors.google_health?.status)) ? "Google Health non aggiornato" : "",
+  ].filter(Boolean);
+
+  return (
+    <section className="ai-support-section confidence-panel">
+      <div className="ai-section-heading compact-heading">
+        <div>
+          <h4>Affidabilita' del dato</h4>
+          <p>Confidenza separata dallo score AI.</p>
+        </div>
+        <span className={`badge reliability-${reliabilityLabel(level)}`}>{reliabilityLabel(level)}</span>
+      </div>
+      <div className="confidence-meter" style={{ "--confidence": bounded ?? 0 }}>
+        <strong>{bounded === null ? "n/d" : `${Math.round(bounded)}%`}</strong>
+        <span><i /></span>
+      </div>
+      <ul className="compact-reason-list">
+        {(reasons.length ? reasons : missingHints.length ? missingHints : ["confidenza non ancora calcolata dal backend"]).map((reason) => (
+          <li key={reason}>{decisionReasonLabel(reason)}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ModelReliabilityPanel({ metrics, baseline }) {
+  const rows = normalizeModelMetrics(metrics);
+  const lastTraining = metrics?.last_training_at ?? metrics?.trained_at ?? metrics?.generated_at;
+
+  return (
+    <section className="ai-support-section model-reliability-panel">
+      <div className="ai-section-heading compact-heading">
+        <div>
+          <h4>Affidabilita' modello</h4>
+          <p>Metriche di validazione, quando disponibili.</p>
+        </div>
+        <span className="badge">{rows.length ? "validazione disponibile" : "in attesa"}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="baseline-empty compact-empty">
+          <BrainCircuit size={20} />
+          <div>
+            <strong>Metriche non ancora disponibili</strong>
+            <p>Quando Daniel produrra i report D21, qui saranno mostrati precision, recall, F1 e finestre usate.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="model-metrics-grid">
+          {rows.map((row) => (
+            <div key={row.key} className="model-metric-row">
+              <strong>{modelContributionLabel(row.key)}</strong>
+              <span>F1 {formatModelMetric(row.f1)}</span>
+              <span>Precision {formatModelMetric(row.precision)}</span>
+              <span>Recall {formatModelMetric(row.recall)}</span>
+              <small>{formatNumber(row.validation_rows, "0")} righe validation</small>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="model-reliability-meta">
+        <span>Ultimo training: <strong>{formatDateTime(lastTraining)}</strong></span>
+        <span>Finestre baseline: <strong>{formatNumber(baseline?.accepted_windows, "0")}</strong></span>
+      </div>
+    </section>
+  );
+}
+
+function TrendDriftPanel({ decision, decisions, system, onApproveRetraining }) {
+  const trend = decision?.trend ?? system?.ai?.trend ?? trendFromDecisions(decisions);
+  const drift = system?.ai?.drift ?? decision?.drift ?? decision?.payload?.drift ?? {};
+  const direction = trend?.direction ?? trendDirectionFromSlope(trend?.score_slope_per_day ?? trend?.slope);
+  const needsApproval = ["needs_review", "possible_drift"].includes(String(drift.status ?? "").toLowerCase()) || drift.requires_approval === true;
+
+  return (
+    <section className="ai-section-block trend-drift-panel">
+      <div className="ai-section-heading">
+        <div>
+          <h4>Andamento nel tempo</h4>
+          <p>{trendText(direction, trend)}</p>
+        </div>
+        <span className={`badge drift-${String(drift.status ?? "stable").toLowerCase()}`}>{driftStatusLabel(drift.status)}</span>
+      </div>
+      <div className="trend-drift-grid">
+        <Metric icon={<ArrowDownUp size={18} />} label="Direzione indice" value={trendDirectionLabel(direction)} />
+        <Metric icon={<Gauge size={18} />} label="Pendenza stimata" value={trend?.score_slope_per_day === undefined ? "n/d" : `${formatNumber(trend.score_slope_per_day)} punti/giorno`} />
+        <Metric icon={<CalendarClock size={18} />} label="Finestra trend" value={trend?.window_days ? `${trend.window_days} giorni` : "storico disponibile"} />
+        <Metric icon={<UserRoundCheck size={18} />} label="Drift modello" value={driftStatusLabel(drift.status)} />
+      </div>
+      {needsApproval && (
+        <button className="secondary-button" type="button" onClick={onApproveRetraining}>
+          <CheckCircle2 size={17} />
+          Approva aggiornamento modello
+        </button>
+      )}
+    </section>
+  );
+}
+
 function FactorColumn({ title, items, tone }) {
   return (
     <div className={`factor-column ${tone}`}>
@@ -1886,7 +2335,7 @@ function FactorColumn({ title, items, tone }) {
         <ul>
           {items.slice(0, 5).map((item, index) => (
             <li key={`${title}-${index}`}>
-              <span>{item.label ?? clinicalFeatureName(item.feature ?? item.name)}</span>
+              <span>{clinicalFactorSentence(item, tone)}</span>
               <small>{factorValueText(item)}</small>
             </li>
           ))}
@@ -2606,6 +3055,21 @@ function FeatureStatusBadge({ status, compact = false }) {
 }
 
 const roomKeys = ["kitchen", "bedroom", "bathroom", "living_room"];
+const defaultDayBands = [
+  { label: "00-06", start: 0, end: 6 },
+  { label: "06-10", start: 6, end: 10 },
+  { label: "10-14", start: 10, end: 14 },
+  { label: "14-18", start: 14, end: 18 },
+  { label: "18-22", start: 18, end: 22 },
+  { label: "22-24", start: 22, end: 24 },
+];
+const dayProfileMetricOptions = [
+  { key: "ai", label: "Indice AI", feature: "anomaly_score", unit: "" },
+  { key: "heart", label: "Battito", feature: "heart_rate_mean", unit: "bpm" },
+  { key: "steps", label: "Passi", feature: "steps", unit: "" },
+  { key: "sedentary", label: "Sedentarieta", feature: "sedentary_minutes", unit: "min" },
+  { key: "movement", label: "Movimento indoor", feature: "room_changes", unit: "" },
+];
 const modelOrder = [
   {
     key: "generic_spatial",
@@ -2796,6 +3260,13 @@ function decisionReasonLabel(reason) {
     "Available models report routine-compatible behavior": "Le fonti disponibili indicano un andamento compatibile con i riferimenti correnti.",
     "Other available models do not confirm the anomaly at alert level": "Le altre fonti disponibili non confermano la variazione a livello di allarme.",
     "Model scores differ, but all remain below alert threshold": "Le fonti mostrano differenze, ma restano sotto la soglia di allarme.",
+    "BLE completo": "Il flusso BLE risulta completo per la finestra osservata.",
+    "Google Health parziale": "Google Health ha fornito solo una parte dei dati attesi.",
+    "modello personale disponibile": "Il profilo personale del paziente e' disponibile.",
+    "wearable non rilevato": "Il wearable non risulta rilevato nella finestra corrente.",
+    "BLE non aggiornato": "Il flusso BLE non risulta aggiornato.",
+    "Google Health non aggiornato": "Google Health non risulta aggiornato.",
+    "confidenza non ancora calcolata dal backend": "Il backend non ha ancora inviato un indice di confidenza dedicato.",
   };
   if (exactLabels[reason]) return exactLabels[reason];
   if (reason?.includes("generic_spatial reports an anomaly")) return "La routine negli ambienti mostra uno scostamento dal riferimento.";
@@ -2874,6 +3345,199 @@ function decisionScoreWindows(decisions) {
       };
     })
     .filter(Boolean);
+}
+
+function morningBriefFallback(windows, decisions) {
+  const nightWindows = (windows ?? []).filter((window) => {
+    const timestamp = new Date(window.window_end ?? window.window_start);
+    if (Number.isNaN(timestamp.getTime())) return false;
+    const hour = timestamp.getHours();
+    return hour >= 22 || hour < 8;
+  });
+  const nightDecisions = (decisions ?? []).filter((decision) => {
+    const timestamp = new Date(decision.window_end ?? decision.timestamp ?? decision.created_at);
+    if (Number.isNaN(timestamp.getTime())) return false;
+    const hour = timestamp.getHours();
+    return hour >= 22 || hour < 8;
+  });
+  const sleepMinutes = averageWindowFeature(nightWindows, "sleep_minutes");
+  const nightRoomChanges = sumWindowFeature(nightWindows, "night_room_changes");
+  const heartRate = averageWindowFeature(nightWindows, "heart_rate_mean");
+  const scores = nightDecisions.map((decision) => Number(decision.anomaly_score)).filter(Number.isFinite);
+  const maxScore = scores.length ? Math.max(...scores) : null;
+  return {
+    summary: nightWindows.length
+      ? "Sintesi notturna ricavata dai dati gia' caricati in dashboard."
+      : "Brief notturno in attesa: servono finestre tra le 22:00 e le 08:00.",
+    sleep_minutes: sleepMinutes,
+    night_room_changes: nightRoomChanges,
+    heart_rate_mean: heartRate,
+    max_score: maxScore,
+    confidence: nightWindows.length ? "media" : "bassa",
+  };
+}
+
+function buildDayProfileData(data, metric) {
+  const apiProfile = data.dayProfile ?? {};
+  const bands = normalizeDayBands(apiProfile.bands);
+  const apiSeries = [
+    {
+      key: "today",
+      label: "Oggi",
+      color: "#147776",
+      points: normalizeDayProfileSource(apiProfile.today, metric, bands),
+    },
+    {
+      key: "yesterday",
+      label: "Ieri",
+      color: "#c58b13",
+      points: normalizeDayProfileSource(apiProfile.yesterday, metric, bands),
+    },
+    {
+      key: "baseline",
+      label: "Giornata tipo",
+      color: "#4d58a6",
+      points: normalizeDayProfileSource(apiProfile.baseline_day ?? apiProfile.baseline, metric, bands),
+    },
+  ];
+  if (apiSeries.some((series) => series.points.some((point) => Number.isFinite(point.value)))) {
+    return {
+      bands,
+      series: apiSeries,
+      baselineAvailable: apiProfile.baseline_available !== false,
+    };
+  }
+
+  const rows = metric.key === "ai" ? decisionScoreWindows(data.decisions ?? []) : data.windows ?? [];
+  const latestDate = latestLocalDate(rows);
+  const yesterdayDate = shiftLocalDate(latestDate, -1);
+  return {
+    bands,
+    baselineAvailable: false,
+    series: [
+      {
+        key: "today",
+        label: "Oggi",
+        color: "#147776",
+        points: aggregateRowsByBands(rows, metric.feature, bands, { onlyDate: latestDate }),
+      },
+      {
+        key: "yesterday",
+        label: "Ieri",
+        color: "#c58b13",
+        points: aggregateRowsByBands(rows, metric.feature, bands, { onlyDate: yesterdayDate }),
+      },
+      {
+        key: "baseline",
+        label: "Media storica",
+        color: "#4d58a6",
+        points: aggregateRowsByBands(rows, metric.feature, bands, { excludeDates: [latestDate, yesterdayDate] }),
+      },
+    ],
+  };
+}
+
+function normalizeDayBands(bands) {
+  if (Array.isArray(bands) && bands.length > 0) {
+    return bands.map((band) => String(band?.label ?? band?.band ?? band?.name ?? band));
+  }
+  return defaultDayBands.map((band) => band.label);
+}
+
+function normalizeDayProfileSource(source, metric, bands) {
+  const rows = Array.isArray(source) ? source : [];
+  return bands.map((band, index) => {
+    const row = rows.find((item) => String(item?.band ?? item?.label ?? item?.hour_band ?? "") === band) ?? rows[index] ?? {};
+    const value = row?.[metric.key]
+      ?? row?.[metric.feature]
+      ?? row?.metrics?.[metric.key]
+      ?? row?.metrics?.[metric.feature]
+      ?? row?.value;
+    const numeric = Number(value);
+    return { band, value: Number.isFinite(numeric) ? numeric : null };
+  });
+}
+
+function aggregateRowsByBands(rows, feature, bands, { onlyDate = "", excludeDates = [] } = {}) {
+  return bands.map((band) => {
+    const matching = (rows ?? []).filter((row) => {
+      const timestamp = rowDate(row);
+      if (!timestamp) return false;
+      const localDate = toLocalDateInputValue(timestamp);
+      if (onlyDate && localDate !== onlyDate) return false;
+      if (excludeDates.includes(localDate)) return false;
+      return dayBandLabel(timestamp) === band;
+    });
+    return { band, value: averageWindowFeature(matching, feature) };
+  });
+}
+
+function latestLocalDate(rows) {
+  const timestamps = (rows ?? [])
+    .map(rowDate)
+    .filter(Boolean)
+    .map((date) => date.getTime())
+    .filter(Number.isFinite);
+  if (timestamps.length === 0) return toLocalDateInputValue(new Date());
+  return toLocalDateInputValue(new Date(Math.max(...timestamps)));
+}
+
+function shiftLocalDate(dateValue, days) {
+  if (!dateValue) return "";
+  const date = new Date(`${dateValue}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + days);
+  return toLocalDateInputValue(date);
+}
+
+function rowDate(row) {
+  const timestamp = row?.window_end ?? row?.timestamp ?? row?.created_at ?? row?.window_start;
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dayBandLabel(date) {
+  const hour = date.getHours();
+  const band = defaultDayBands.find((item) => hour >= item.start && hour < item.end) ?? defaultDayBands.at(-1);
+  return band.label;
+}
+
+function averageWindowFeature(rows, feature) {
+  const values = (rows ?? [])
+    .map((row) => numericFeature(row.features ?? row, feature))
+    .filter((value) => value !== null);
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function sumWindowFeature(rows, feature) {
+  const values = (rows ?? [])
+    .map((row) => numericFeature(row.features ?? row, feature))
+    .filter((value) => value !== null);
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function dayProfileInsight(profile, metric) {
+  const today = profile.series.find((series) => series.key === "today");
+  const baseline = profile.series.find((series) => series.key === "baseline");
+  if (!today?.points.some((point) => Number.isFinite(point.value))) {
+    return "Non ci sono ancora valori sufficienti per descrivere la giornata corrente.";
+  }
+  if (!baseline?.points.some((point) => Number.isFinite(point.value))) {
+    return "Il confronto con la routine personale sara' piu' utile quando Daniel avra' esposto la baseline circadiana.";
+  }
+  const deltas = today.points
+    .map((point, index) => ({
+      band: point.band,
+      delta: Number(point.value) - Number(baseline.points[index]?.value),
+    }))
+    .filter((item) => Number.isFinite(item.delta));
+  if (deltas.length === 0) return "Il confronto non e' ancora calcolabile per questa metrica.";
+  const relevant = deltas.sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta))[0];
+  const direction = relevant.delta >= 0 ? "piu' alto" : "piu' basso";
+  const amount = formatFeatureValue(Math.abs(relevant.delta), metric.unit);
+  return `Nella fascia ${relevant.band} il valore risulta ${direction} della routine di circa ${amount}. Da leggere insieme a qualita' dati e contesto clinico.`;
 }
 
 function latestFeatureValue(windows, feature) {
@@ -3081,7 +3745,7 @@ function TimelineView({ data }) {
       ) : (
         <div className="timeline-list">
           {events.map((event) => (
-            <article key={event.event_id ?? `${event.event_type}-${event.timestamp}`} className={`timeline-item ${event.severity ?? "green"}`}>
+            <article key={event.event_id ?? `${event.event_type}-${event.timestamp}`} className={`timeline-item ${event.severity ?? "green"} ${timelineEventLowConfidence(event) ? "low-confidence" : ""}`}>
               <span className={`timeline-icon ${event.event_type}`}>{timelineIcon(event.event_type)}</span>
               <div>
                 <div className="timeline-item-head">
@@ -3092,6 +3756,7 @@ function TimelineView({ data }) {
                 <div className="timeline-meta">
                   <span>{eventTypeLabel(event.event_type)}</span>
                   <span>{categoryLabel(event.source)}</span>
+                  {timelineEventLowConfidence(event) && <span>Affidabilita bassa</span>}
                   {event.linked_resource?.id && <span>ID {event.linked_resource.id}</span>}
                 </div>
               </div>
@@ -3113,6 +3778,7 @@ function EvaluationsView({ data, session, patientId, onChanged }) {
     priority: "normal",
     nextRunAt: "",
   });
+  const offline = data._offline === true;
 
   useEffect(() => {
     if (!scheduleForm.templateId && data.questionnaireTemplates?.[0]?.template_id) {
@@ -3121,6 +3787,10 @@ function EvaluationsView({ data, session, patientId, onChanged }) {
   }, [data.questionnaireTemplates, scheduleForm.templateId]);
 
   async function createSchedule() {
+    if (offline) {
+      setError("Dashboard offline: impossibile programmare questionari finche' il backend non torna raggiungibile.");
+      return;
+    }
     if (!scheduleForm.templateId) {
       setError("Seleziona un questionario da programmare.");
       return;
@@ -3145,6 +3815,10 @@ function EvaluationsView({ data, session, patientId, onChanged }) {
   }
 
   async function suspendSchedule(schedule) {
+    if (offline) {
+      setError("Dashboard offline: impossibile sospendere programmazioni finche' il backend non torna raggiungibile.");
+      return;
+    }
     setBusy(`suspend:${schedule.schedule_id}`);
     setError("");
     setSuccess("");
@@ -3160,6 +3834,10 @@ function EvaluationsView({ data, session, patientId, onChanged }) {
   }
 
   async function generateNow(schedule) {
+    if (offline) {
+      setError("Dashboard offline: impossibile generare task finche' il backend non torna raggiungibile.");
+      return;
+    }
     setBusy(`generate:${schedule.schedule_id}`);
     setError("");
     setSuccess("");
@@ -3188,6 +3866,7 @@ function EvaluationsView({ data, session, patientId, onChanged }) {
       </div>
       {error && <p className="inline-feedback error"><AlertTriangle size={17} />{error}</p>}
       {success && <p className="inline-feedback success"><CheckCircle2 size={17} />{success}</p>}
+      {offline && <p className="inline-feedback error"><Info size={17} />Vista offline: programmazione e generazione questionari sono sospese.</p>}
       <div className="evaluation-grid">
         <section className="evaluation-card">
           <h4>Programma questionario</h4>
@@ -3215,7 +3894,7 @@ function EvaluationsView({ data, session, patientId, onChanged }) {
               <input type="datetime-local" value={scheduleForm.nextRunAt} onChange={(event) => setScheduleForm((previous) => ({ ...previous, nextRunAt: event.target.value }))} />
             </label>
           </div>
-          <button className="primary-button" type="button" onClick={createSchedule} disabled={busy === "schedule"}>
+          <button className="primary-button" type="button" onClick={createSchedule} disabled={offline || busy === "schedule"}>
             {busy === "schedule" ? <LoaderCircle className="spin" size={17} /> : <CalendarClock size={17} />}
             Salva programmazione
           </button>
@@ -3244,10 +3923,10 @@ function EvaluationsView({ data, session, patientId, onChanged }) {
                   <p>{categoryLabel(schedule.frequency)} - prossimo invio {formatDateTime(schedule.next_run_at)}</p>
                 </div>
                 <div className="inline-actions">
-                  <button className="secondary-button" type="button" onClick={() => generateNow(schedule)} disabled={Boolean(busy)}>
+                  <button className="secondary-button" type="button" onClick={() => generateNow(schedule)} disabled={offline || Boolean(busy)}>
                     Genera ora
                   </button>
-                  <button className="secondary-button danger-soft" type="button" onClick={() => suspendSchedule(schedule)} disabled={Boolean(busy) || schedule.status === "suspended"}>
+                  <button className="secondary-button danger-soft" type="button" onClick={() => suspendSchedule(schedule)} disabled={offline || Boolean(busy) || schedule.status === "suspended"}>
                     Sospendi
                   </button>
                 </div>
@@ -3387,6 +4066,25 @@ function ReportView({ data, patient }) {
           <Metric icon={<AlertTriangle size={18} />} label="Segnalazioni recenti" value={formatNumber(printable.recent_alerts?.length)} />
         </div>
         <section>
+          <h4>Brief del mattino</h4>
+          <p>{(data.morningBrief ?? morningBriefFallback(data.windows, data.decisions)).summary}</p>
+        </section>
+        <section>
+          <h4>Affidabilita modello</h4>
+          {normalizeModelMetrics(data.modelMetrics).length === 0 ? (
+            <p>Metriche di validazione non ancora disponibili dal backend.</p>
+          ) : (
+            <ul className="report-list">
+              {normalizeModelMetrics(data.modelMetrics).slice(0, 3).map((metric) => (
+                <li key={metric.key}>
+                  {modelContributionLabel(metric.key)} - F1 {formatModelMetric(metric.f1)}, precision {formatModelMetric(metric.precision)}, recall {formatModelMetric(metric.recall)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <DayProfileReportSection data={data} />
+        <section>
           <h4>Decisioni recenti</h4>
           {(printable.recent_decisions ?? []).length === 0 ? <p>Nessuna decisione recente.</p> : (
             <ul className="report-list">
@@ -3403,7 +4101,70 @@ function ReportView({ data, patient }) {
           <p>{formatNumber(printable.recent_tasks?.length)} attivita recenti, {formatNumber(printable.recent_alerts?.length)} segnalazioni recenti.</p>
           <p className="report-disclaimer">{report?.disclaimer ?? "Documento dimostrativo: supporta il triage, la decisione finale resta al personale sanitario."}</p>
         </section>
+        <WeeklyReportsSection reports={data.weeklyReports ?? []} />
       </article>
+    </section>
+  );
+}
+
+function DayProfileReportSection({ data }) {
+  const metric = dayProfileMetricOptions[0];
+  const profile = buildDayProfileData(data, metric);
+  return (
+    <section className="day-profile-report-section">
+      <h4>Giornata tipo</h4>
+      <p>{dayProfileInsight(profile, metric)}</p>
+    </section>
+  );
+}
+
+function WeeklyReportsSection({ reports }) {
+  const items = Array.isArray(reports) ? reports : [];
+  const [selectedReportId, setSelectedReportId] = useState(items[0]?.report_id ?? items[0]?.week_start ?? "0");
+  const selected = items.find((report, index) => String(report.report_id ?? report.week_start ?? index) === String(selectedReportId)) ?? items[0] ?? null;
+  return (
+    <section className="weekly-report-section">
+      <h4>Report settimanali</h4>
+      {items.length === 0 ? (
+        <p>Report settimanali non ancora generati dal backend.</p>
+      ) : (
+        <>
+          <div className="weekly-report-toolbar">
+            <label>
+              Settimana
+              <select value={selectedReportId} onChange={(event) => setSelectedReportId(event.target.value)}>
+                {items.map((report, index) => {
+                  const id = String(report.report_id ?? report.week_start ?? index);
+                  return (
+                    <option key={id} value={id}>
+                      {report.title ?? formatWeekLabel(report)}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <button className="secondary-button compact-action" type="button" onClick={() => window.print()}>
+              <DatabaseZap size={16} />
+              Esporta settimana
+            </button>
+          </div>
+          {selected && (
+            <article className="weekly-report-selected">
+              <strong>{selected.title ?? formatWeekLabel(selected)}</strong>
+              <span>
+                Media AI {scoreBandText(selected.mean_score ?? selected.ai?.mean_score)} -
+                massimo {scoreBandText(selected.max_score ?? selected.ai?.max_score)}
+              </span>
+              <small>{selected.summary ?? "Sintesi settimanale disponibile per export e revisione."}</small>
+              <div className="report-grid compact-summary-grid">
+                <Metric icon={<AlertTriangle size={17} />} label="Giorni attenzione" value={formatNumber(selected.attention_days ?? selected.ai?.attention_days, "0")} />
+                <Metric icon={<ClipboardList size={17} />} label="Task completati" value={formatNumber(selected.completed_tasks ?? selected.tasks?.completed, "0")} />
+                <Metric icon={<HeartPulse size={17} />} label="Sonno medio" value={formatFeatureValue(selected.sleep_mean ?? selected.sleep?.mean_minutes, "min")} />
+              </div>
+            </article>
+          )}
+        </>
+      )}
     </section>
   );
 }
@@ -3421,6 +4182,7 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
   const [dialog, setDialog] = useState(null);
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [workflowDetails, setWorkflowDetails] = useState({});
+  const offline = data._offline === true;
 
   const filteredAlerts = useMemo(
     () => filterAlerts(data.alerts, { levelFilter, statusFilter, rangeFilter })
@@ -3438,6 +4200,10 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
   }
 
   async function acknowledge(alert) {
+    if (offline) {
+      setError("Dashboard offline: impossibile prendere in carico finche' il backend non torna raggiungibile.");
+      return;
+    }
     setBusy(`${alert.alert_id}:ack`);
     setError("");
     setSuccess("");
@@ -3454,6 +4220,10 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
   }
 
   async function resolve(alert) {
+    if (offline) {
+      setError("Dashboard offline: impossibile risolvere finche' il backend non torna raggiungibile.");
+      return;
+    }
     const note = noteFor(alert.alert_id).trim();
     if (!note) {
       setError("Inserisci una nota clinica prima di risolvere l'alert.");
@@ -3476,6 +4246,10 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
   }
 
   async function createAlertTask(alert) {
+    if (offline) {
+      setError("Dashboard offline: impossibile creare attivita operative finche' il backend non torna raggiungibile.");
+      return;
+    }
     setBusy(`${alert.alert_id}:task`);
     setError("");
     setSuccess("");
@@ -3507,6 +4281,77 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
     }
   }
 
+  async function sendCaregiverAlertMessage(alert) {
+    if (offline) {
+      setError("Dashboard offline: impossibile avvisare il caregiver finche' il backend non torna raggiungibile.");
+      return;
+    }
+    setBusy(`${alert.alert_id}:caregiver`);
+    setError("");
+    setSuccess("");
+    try {
+      const details = absenceAlertDetails(alert, data.current, data.system);
+      await api.createCaregiverMessage(alert.patient_id ?? patientId, {
+        title: isAbsenceAlert(alert) ? "Verifica movimento paziente" : `Verifica segnalazione ${levelLabel(alert.level)}`,
+        body: isAbsenceAlert(alert)
+          ? `Per favore verifica il paziente: il sistema segnala assenza di movimento. Ultima stanza: ${details.room}. Durata stimata: ${details.duration}.`
+          : `Per favore verifica il paziente e aggiorna il team di cura se noti qualcosa di insolito. Segnalazione: ${alertTitleLabel(alert)}.`,
+        priority: taskPriorityForAlert(alert.level),
+        source_alert_id: alert.alert_id,
+      }, session);
+      setSuccess("Caregiver avvisato con messaggio operativo.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function sendPatientAlertMessage(alert) {
+    if (offline) {
+      setError("Dashboard offline: impossibile inviare messaggi finche' il backend non torna raggiungibile.");
+      return;
+    }
+    setBusy(`${alert.alert_id}:patient-message`);
+    setError("");
+    setSuccess("");
+    try {
+      const details = absenceAlertDetails(alert, data.current, data.system);
+      const title = isAbsenceAlert(alert) ? "Ti va di confermare come stai?" : "Messaggio dal medico";
+      const body = isAbsenceAlert(alert)
+        ? `Il team di cura vorrebbe una conferma sul tuo stato. Se riesci, apri l'app e indica come stai. Ultima stanza rilevata: ${details.room}.`
+        : `Il team di cura ti chiede un rapido controllo dopo una segnalazione. Apri l'app quando puoi.`;
+      await api.createTask(alert.patient_id ?? patientId, {
+        type: "custom",
+        schema_version: 1,
+        priority: taskPriorityForAlert(alert.level),
+        assigned_to: "patient",
+        title,
+        instructions: body,
+        payload: {
+          kind: "patient_message",
+          source_alert_id: alert.alert_id,
+          delivery: {
+            push_notification: true,
+            in_app_banner: true,
+          },
+          message: {
+            title,
+            body,
+            tone: taskPriorityForAlert(alert.level),
+          },
+        },
+      }, session);
+      setSuccess("Messaggio operativo inviato al paziente.");
+      onChanged();
+    } catch (apiError) {
+      setError(readableApiError(apiError));
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function loadAlertWorkflow(alert) {
     const alertId = alert.alert_id;
     if (workflowDetails[alertId]?.details) {
@@ -3526,6 +4371,10 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
   }
 
   async function deleteAlertPermanently(alert) {
+    if (offline) {
+      setError("Dashboard offline: impossibile eliminare definitivamente finche' il backend non torna raggiungibile.");
+      return;
+    }
     setBusy(`${alert.alert_id}:delete`);
     setError("");
     setSuccess("");
@@ -3600,6 +4449,7 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
       )}
       {error && <p className="inline-feedback error" role="alert"><AlertTriangle size={17} />{error}</p>}
       {success && <p className="inline-feedback success" role="status"><CheckCircle2 size={17} />{success}</p>}
+      {offline && <p className="inline-feedback error"><Info size={17} />Vista offline: prendi in carico, risoluzione, messaggi e cancellazioni sono sospesi.</p>}
       {data.alerts.length === 0 ? (
         <ViewEmptyState icon={<CheckCircle2 size={24} />} title="Nessuna segnalazione" text="Non risultano eventi che richiedono revisione." />
       ) : filteredAlerts.length === 0 ? (
@@ -3645,6 +4495,9 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
                     <strong>{alert.alert_id}</strong>
                   </div>
                 </div>
+                {isAbsenceAlert(alert) && (
+                  <AbsenceAlertContext alert={alert} current={data.current} system={data.system} />
+                )}
                 {reasons.length > 0 && (
                   <ul className="reason-list" aria-label="Motivi alert">
                     {reasons.map((reason) => (
@@ -3680,17 +4533,25 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
                   <strong>Azioni medico</strong>
                   <span>Revisione richiesta</span>
                 </div>
-                <button className="secondary-button" type="button" disabled={busyForAlert || alert.status === "acknowledged"} onClick={() => setDialog({ type: "acknowledge", alert })}>
+                <button className="secondary-button" type="button" disabled={offline || busyForAlert || alert.status === "acknowledged"} onClick={() => setDialog({ type: "acknowledge", alert })}>
                   <CheckCircle2 size={16} />
                   Prendi in carico
                 </button>
-                <button className="primary-button" type="button" disabled={busyForAlert} onClick={() => setDialog({ type: "resolve", alert })}>
+                <button className="primary-button" type="button" disabled={offline || busyForAlert} onClick={() => setDialog({ type: "resolve", alert })}>
                   <CheckCircle2 size={16} />
                   Risolvi
                 </button>
-                <button className="text-button" type="button" disabled={busyForAlert} onClick={() => createAlertTask(alert)}>
+                <button className="text-button" type="button" disabled={offline || busyForAlert} onClick={() => createAlertTask(alert)}>
                   <ClipboardList size={16} />
                   Crea attivita di follow-up
+                </button>
+                <button className="text-button" type="button" disabled={offline || busyForAlert} onClick={() => sendPatientAlertMessage(alert)}>
+                  <Send size={16} />
+                  Messaggio paziente
+                </button>
+                <button className="text-button" type="button" disabled={offline || busyForAlert} onClick={() => sendCaregiverAlertMessage(alert)}>
+                  <MessageSquare size={16} />
+                  Avvisa caregiver
                 </button>
                 </div>
               ) : (
@@ -3699,7 +4560,7 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
                     <strong>Storico</strong>
                     <span>Segnalazione chiusa</span>
                   </div>
-                  <button className="secondary-button danger-soft" type="button" onClick={() => setDeleteDialog(alert)}>
+                  <button className="secondary-button danger-soft" type="button" disabled={offline} onClick={() => setDeleteDialog(alert)}>
                     <Trash2 size={16} />
                     Elimina definitivamente
                   </button>
@@ -3754,6 +4615,21 @@ function AlertsView({ data, session, patientId, onChanged, onTaskCreated }) {
         )}
       </ActionDialog>
     </section>
+  );
+}
+
+function AbsenceAlertContext({ alert, current, system }) {
+  const details = absenceAlertDetails(alert, current, system);
+  return (
+    <div className="absence-alert-context">
+      <span className="absence-alert-icon"><Home size={18} /></span>
+      <dl className="mini-detail-list">
+        <Detail label="Ultima stanza" value={details.room} />
+        <Detail label="Ultima transizione" value={details.transition} />
+        <Detail label="Durata assenza" value={details.duration} />
+        <Detail label="Qualita BLE" value={details.bleQuality} />
+      </dl>
+    </div>
   );
 }
 
@@ -3842,6 +4718,7 @@ function TasksView({ data, session, patientId, onChanged }) {
   const cancelledTasks = data.tasks.filter((task) => task.status === "cancelled").length;
   const selectedTask = selectedTaskId ? visibleTasks.find((task) => task.task_id === selectedTaskId) ?? null : null;
   const selectedTemplate = taskTemplates[taskForm.template] ?? taskTemplates.wellbeing;
+  const offline = data._offline === true;
 
   useEffect(() => {
     if (!composerOpen) return undefined;
@@ -3919,6 +4796,10 @@ function TasksView({ data, session, patientId, onChanged }) {
   }
 
   async function sendPatientMessage() {
+    if (offline) {
+      setError("Dashboard offline: impossibile inviare messaggi finche' il backend non torna raggiungibile.");
+      return;
+    }
     const title = messageForm.title.trim() || "Messaggio dal medico";
     const body = messageForm.body.trim();
     if (!body) {
@@ -3971,6 +4852,10 @@ function TasksView({ data, session, patientId, onChanged }) {
   }
 
   async function sendCaregiverMessage() {
+    if (offline) {
+      setError("Dashboard offline: impossibile inviare messaggi al caregiver finche' il backend non torna raggiungibile.");
+      return;
+    }
     const title = caregiverMessageForm.title.trim() || "Messaggio dal medico";
     const body = caregiverMessageForm.body.trim();
     if (!body) {
@@ -4004,6 +4889,10 @@ function TasksView({ data, session, patientId, onChanged }) {
   }
 
   async function createTask() {
+    if (offline) {
+      setError("Dashboard offline: impossibile creare attivita finche' il backend non torna raggiungibile.");
+      return;
+    }
     if (!taskForm.title.trim()) {
       setError("Inserisci un titolo per l'attivita.");
       return;
@@ -4047,6 +4936,10 @@ function TasksView({ data, session, patientId, onChanged }) {
   }
 
   async function saveMedicalNote(task) {
+    if (offline) {
+      setError("Dashboard offline: impossibile salvare note finche' il backend non torna raggiungibile.");
+      return;
+    }
     const draft = (noteDrafts[task.task_id] ?? task.medical_note ?? "").trim();
     if (!draft) {
       setError("Inserisci una nota prima di salvarla.");
@@ -4067,6 +4960,10 @@ function TasksView({ data, session, patientId, onChanged }) {
   }
 
   async function cancelTask(task) {
+    if (offline) {
+      setError("Dashboard offline: impossibile annullare attivita finche' il backend non torna raggiungibile.");
+      return;
+    }
     const note = (noteDrafts[`cancel:${task.task_id}`] ?? "").trim();
     setBusy(`cancel:${task.task_id}`);
     setError("");
@@ -4084,6 +4981,10 @@ function TasksView({ data, session, patientId, onChanged }) {
   }
 
   async function deleteTaskPermanently(task) {
+    if (offline) {
+      setError("Dashboard offline: impossibile eliminare definitivamente finche' il backend non torna raggiungibile.");
+      return;
+    }
     setBusy(`delete:${task.task_id}`);
     setError("");
     setSuccess("");
@@ -4111,15 +5012,15 @@ function TasksView({ data, session, patientId, onChanged }) {
           </div>
         </div>
         <div className="view-heading-actions">
-        <button className="secondary-button compact-action" type="button" onClick={() => setCaregiverMessageComposerOpen(true)} disabled={Boolean(busy)}>
+        <button className="secondary-button compact-action" type="button" onClick={() => setCaregiverMessageComposerOpen(true)} disabled={offline || Boolean(busy)}>
           <MessageSquare size={17} />
           Caregiver
         </button>
-        <button className="secondary-button compact-action" type="button" onClick={() => setMessageComposerOpen(true)} disabled={Boolean(busy)}>
+        <button className="secondary-button compact-action" type="button" onClick={() => setMessageComposerOpen(true)} disabled={offline || Boolean(busy)}>
           <MessageSquare size={17} />
           Paziente
         </button>
-        <button className="primary-button compact-action" type="button" onClick={() => setComposerOpen(true)} disabled={Boolean(busy)}>
+        <button className="primary-button compact-action" type="button" onClick={() => setComposerOpen(true)} disabled={offline || Boolean(busy)}>
           <Plus size={17} />
           Nuova
         </button>
@@ -4173,6 +5074,7 @@ function TasksView({ data, session, patientId, onChanged }) {
       )}
       {error && <p className="inline-feedback error" role="alert"><AlertTriangle size={17} />{error}</p>}
       {success && <p className="inline-feedback success" role="status"><CheckCircle2 size={17} />{success}</p>}
+      {offline && <p className="inline-feedback error"><Info size={17} />Vista offline: creazione, invio, note, annullamento e cancellazione sono sospesi.</p>}
       {messageComposerOpen && createPortal(
         <div
           className="task-composer-backdrop"
@@ -4239,7 +5141,7 @@ function TasksView({ data, session, patientId, onChanged }) {
               <button className="secondary-button" type="button" onClick={() => !busy && setMessageComposerOpen(false)} disabled={Boolean(busy)}>
                 Annulla
               </button>
-              <button className="primary-button" type="button" onClick={sendPatientMessage} disabled={busy === "message"}>
+              <button className="primary-button" type="button" onClick={sendPatientMessage} disabled={offline || busy === "message"}>
                 {busy === "message" ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />}
                 {busy === "message" ? "Invio" : "Invia messaggio"}
               </button>
@@ -4305,7 +5207,7 @@ function TasksView({ data, session, patientId, onChanged }) {
               <button className="secondary-button" type="button" onClick={() => !busy && setCaregiverMessageComposerOpen(false)} disabled={Boolean(busy)}>
                 Annulla
               </button>
-              <button className="primary-button" type="button" onClick={sendCaregiverMessage} disabled={busy === "caregiver-message"}>
+              <button className="primary-button" type="button" onClick={sendCaregiverMessage} disabled={offline || busy === "caregiver-message"}>
                 {busy === "caregiver-message" ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />}
                 {busy === "caregiver-message" ? "Invio" : "Invia al caregiver"}
               </button>
@@ -4376,7 +5278,7 @@ function TasksView({ data, session, patientId, onChanged }) {
             <button className="secondary-button" type="button" onClick={() => !busy && setComposerOpen(false)} disabled={Boolean(busy)}>
               Annulla
             </button>
-            <button className="primary-button" type="button" onClick={createTask} disabled={busy === "create"}>
+            <button className="primary-button" type="button" onClick={createTask} disabled={offline || busy === "create"}>
               {busy === "create" ? <LoaderCircle className="spin" size={17} /> : <CheckCircle2 size={17} />}
               {busy === "create" ? "Salvataggio" : "Crea e invia"}
             </button>
@@ -4426,7 +5328,7 @@ function TasksView({ data, session, patientId, onChanged }) {
                       event.stopPropagation();
                       setCancelDialog(task);
                     }}
-                    disabled={Boolean(busy)}
+                    disabled={offline || Boolean(busy)}
                   >
                     <X size={14} />
                     Annulla
@@ -4439,7 +5341,7 @@ function TasksView({ data, session, patientId, onChanged }) {
                     event.stopPropagation();
                     setDeleteTaskDialog(task);
                   }}
-                  disabled={Boolean(busy)}
+                  disabled={offline || Boolean(busy)}
                 >
                   <Trash2 size={14} />
                   Elimina
@@ -4461,6 +5363,7 @@ function TasksView({ data, session, patientId, onChanged }) {
               task={selectedTask}
               noteDraft={noteDrafts[selectedTask.task_id] ?? selectedTask.medical_note ?? ""}
               busy={busy}
+              offline={offline}
               onClose={() => setSelectedTaskId(null)}
               onNoteChange={(value) => updateNoteDraft(selectedTask.task_id, value)}
               onSaveNote={() => saveMedicalNote(selectedTask)}
@@ -4513,7 +5416,7 @@ function TasksView({ data, session, patientId, onChanged }) {
   );
 }
 
-function TaskDetailPanel({ task, noteDraft, busy, onClose, onNoteChange, onSaveNote }) {
+function TaskDetailPanel({ task, noteDraft, busy, offline = false, onClose, onNoteChange, onSaveNote }) {
   const result = task.result ?? task.latest_result ?? task.task_result ?? null;
   const answers = taskResultAnswers(result);
   return (
@@ -4571,10 +5474,10 @@ function TaskDetailPanel({ task, noteDraft, busy, onClose, onNoteChange, onSaveN
 
       <label className="task-note-box">
         Nota medico sul risultato
-        <textarea value={noteDraft} onChange={(event) => onNoteChange(event.target.value)} placeholder="Aggiungi una nota clinica o operativa per lo storico" />
+        <textarea value={noteDraft} onChange={(event) => onNoteChange(event.target.value)} placeholder="Aggiungi una nota clinica o operativa per lo storico" disabled={offline} />
       </label>
       <div className="task-detail-actions">
-        <button className="secondary-button" type="button" onClick={onSaveNote} disabled={Boolean(busy)}>
+        <button className="secondary-button" type="button" onClick={onSaveNote} disabled={offline || Boolean(busy)}>
           <CheckCircle2 size={16} />
           Salva nota
         </button>
@@ -4629,17 +5532,7 @@ function ActionDialog({ open, icon, title, description, confirmLabel, busy, wide
   );
 }
 
-function ViewEmptyState({ icon, title, text }) {
-  return (
-    <div className="view-empty-state">
-      <span>{icon}</span>
-      <strong>{title}</strong>
-      <p>{text}</p>
-    </div>
-  );
-}
-
-function SystemView({ data, events, wsStatus }) {
+function SystemView({ data, events, wsStatus, session }) {
   const status = data.system ?? {};
   const edge = status.edge ?? {};
   const sensors = status.sensors ?? {};
@@ -4653,6 +5546,25 @@ function SystemView({ data, events, wsStatus }) {
     ? googleHealth.available_features
     : [];
   const mqttErrors = Array.isArray(mqtt.errors) ? mqtt.errors.filter(Boolean) : [];
+  const [diagnosticsState, setDiagnosticsState] = useState({
+    loading: false,
+    error: "",
+    payload: data.operationalMetrics,
+  });
+
+  async function runQuickDiagnostics() {
+    setDiagnosticsState((previous) => ({ ...previous, loading: true, error: "" }));
+    try {
+      const payload = await api.metrics(session);
+      setDiagnosticsState({ loading: false, error: "", payload });
+    } catch (apiError) {
+      setDiagnosticsState((previous) => ({
+        ...previous,
+        loading: false,
+        error: readableApiError(apiError),
+      }));
+    }
+  }
 
   return (
     <div className="content-grid system-board">
@@ -4667,7 +5579,13 @@ function SystemView({ data, events, wsStatus }) {
               </p>
             </div>
           </div>
-          <span className={`system-health-badge ${health.tone}`}>{health.label}</span>
+          <div className="panel-actions">
+            <button className="secondary-button compact-action" type="button" onClick={runQuickDiagnostics} disabled={diagnosticsState.loading}>
+              {diagnosticsState.loading ? <LoaderCircle className="spin" size={16} /> : <MonitorCog size={16} />}
+              Diagnostica rapida
+            </button>
+            <span className={`system-health-badge ${health.tone}`}>{health.label}</span>
+          </div>
         </div>
         <div className="system-hero-grid">
           <SystemStatusCard
@@ -4699,6 +5617,15 @@ function SystemView({ data, events, wsStatus }) {
             tone={Number(edge.mqtt_queue_depth ?? 0) > 0 ? "warning" : statusTone(mqtt.status)}
           />
         </div>
+      </section>
+
+      <section className="panel span-2">
+        <OperationalDiagnosticsPanel
+          metrics={diagnosticsState.payload ?? data.operationalMetrics}
+          error={diagnosticsState.error}
+          status={status}
+          wsStatus={wsStatus}
+        />
       </section>
 
       <section className="panel span-2">
@@ -4768,6 +5695,10 @@ function SystemView({ data, events, wsStatus }) {
       </section>
 
       <section className="panel">
+        <PrivacySafetyPanel />
+      </section>
+
+      <section className="panel">
         <div className="panel-heading">
           <h3>MQTT e coda locale</h3>
           <span className={`feature-status compact-status ${Number(edge.mqtt_queue_depth ?? 0) > 0 ? "imputed" : "acquired"}`}>
@@ -4831,6 +5762,57 @@ function SystemView({ data, events, wsStatus }) {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function OperationalDiagnosticsPanel({ metrics, error, status, wsStatus }) {
+  const counters = metrics?.counters ?? {};
+  const suggestions = operationalSuggestions(status, wsStatus, metrics);
+  return (
+    <div className="operational-diagnostics">
+      <div className="panel-heading compact-heading">
+        <div>
+          <h3>Diagnostica operativa</h3>
+          <p className="panel-subtitle">Controllo rapido di backend, database, MQTT, Firebase, Edge e realtime.</p>
+        </div>
+        <span className={`badge ${metrics?.status === "ok" ? "green" : "technical"}`}>
+          {metrics ? "metriche ricevute" : "in attesa"}
+        </span>
+      </div>
+      {error && <p className="inline-feedback error"><AlertTriangle size={16} />{error}</p>}
+      <div className="diagnostic-grid">
+        <Metric icon={<Server size={18} />} label="Backend" value={metrics?.status === "ok" ? "Operativo" : "Da verificare"} tone={metrics?.status === "ok" ? "green" : "technical"} />
+        <Metric icon={<DatabaseZap size={18} />} label="Database" value={`${formatNumber(counters.feature_windows_received, "0")} finestre`} />
+        <Metric icon={<Wifi size={18} />} label="MQTT ricevuti" value={`${formatNumber(counters.edge_cycles_received, "0")} cicli Edge`} />
+        <Metric icon={<Bell size={18} />} label="Notifiche" value={formatNumber(counters.notifications_total, "0")} />
+        <Metric icon={<Users size={18} />} label="Device app" value={formatNumber(counters.patient_app_devices, "0")} />
+        <Metric icon={<Activity size={18} />} label="WebSocket" value={`${formatNumber(counters.websocket_clients_connected, "0")} attivi`} tone={wsStatus === "connected" ? "green" : "yellow"} />
+      </div>
+      <div className="diagnostic-suggestions">
+        {suggestions.map((suggestion) => (
+          <span key={suggestion}><Info size={15} />{suggestion}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PrivacySafetyPanel() {
+  return (
+    <div className="privacy-safety-panel">
+      <div className="panel-heading compact-heading">
+        <div>
+          <h3>Privacy interfaccia</h3>
+          <p className="panel-subtitle">Messaggi brevi per mantenere la demo adatta al contesto sanitario.</p>
+        </div>
+        <ShieldCheck size={20} />
+      </div>
+      <ul className="compact-reason-list">
+        <li>La dashboard non mostra token, password, certificati o refresh token.</li>
+        <li>L'app caregiver deve ricevere solo messaggi operativi, senza feature AI grezze.</li>
+        <li>I report esportati includono solo dati utili al triage e note cliniche essenziali.</li>
+      </ul>
     </div>
   );
 }
@@ -4974,6 +5956,32 @@ function systemIssueGroups(status, wsStatus) {
   }
 
   return { warning, persistent };
+}
+
+function operationalSuggestions(status, wsStatus, metrics) {
+  const edge = status?.edge ?? {};
+  const sensors = status?.sensors ?? {};
+  const mqtt = edge.mqtt ?? {};
+  const suggestions = [];
+  if (edge.online === false) {
+    suggestions.push("Raspberry offline: controllare receiver Edge, rete locale e avvio del servizio.");
+  }
+  if (Number(edge.mqtt_queue_depth ?? mqtt.queue_depth ?? 0) > 0 || statusTone(mqtt.status) === "error") {
+    suggestions.push("MQTT non pubblica correttamente: controllare broker, credenziali Edge e certificato CA.");
+  }
+  if (sensors.watch?.present === false) {
+    suggestions.push("Wearable assente: verificare che sia indossato e sincronizzato con Google Health.");
+  }
+  if (["missing", "stale"].includes(String(sensors.ble?.status))) {
+    suggestions.push("BLE non aggiornato: verificare beacon, permessi Android e receiver locale.");
+  }
+  if (wsStatus !== "connected") {
+    suggestions.push("Realtime non connesso: aggiornare token o riavviare backend/dashboard.");
+  }
+  if (!metrics) {
+    suggestions.push("Metriche operative non ancora lette: usa Diagnostica rapida.");
+  }
+  return suggestions.length ? suggestions : ["Nessun intervento tecnico immediato suggerito dai dati disponibili."];
 }
 
 function statusTone(status) {
@@ -5159,6 +6167,9 @@ function alertResolutionNote(alert) {
 function alertTitleLabel(alert) {
   const score = alertScore(alert);
   const band = aiScoreBand(score);
+  if (isAbsenceAlert(alert)) {
+    return "Assenza di movimento da verificare";
+  }
   if (String(alert.title ?? "").toLowerCase().startsWith("decision ai")) {
     return `Segnalazione ${band.label.toLowerCase()} - indice ${scoreText(score)}`;
   }
@@ -5167,11 +6178,48 @@ function alertTitleLabel(alert) {
 
 function alertDescriptionLabel(alert) {
   const description = String(alert.description ?? "").trim();
+  if (isAbsenceAlert(alert)) {
+    return "Il sistema segnala una permanenza o assenza di transizioni superiore all'atteso. Verificare con paziente o caregiver.";
+  }
   if (!description) return "Evento da revisionare nel contesto clinico del paziente.";
   if (description.toLowerCase().startsWith("decision ai")) {
     return decisionReasonLabel(description.split(" - ").at(-1));
   }
   return decisionReasonLabel(description);
+}
+
+function isAbsenceAlert(alert) {
+  const text = [
+    alert?.title,
+    alert?.description,
+    alert?.category,
+    alert?.type,
+    alert?.payload?.kind,
+    alert?.payload?.reason,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return [
+    "absence",
+    "assenza",
+    "no_movement",
+    "no movement",
+    "nessun movimento",
+    "permanenza",
+    "inactivity",
+    "inattivita",
+  ].some((token) => text.includes(token));
+}
+
+function absenceAlertDetails(alert, current, system) {
+  const payload = alert?.payload?.content ?? alert?.payload ?? {};
+  const ble = system?.sensors?.ble ?? {};
+  const durationMinutes = payload.duration_minutes ?? payload.no_movement_minutes ?? payload.still_minutes;
+  const transitionAt = payload.last_transition_at ?? payload.last_room_change_at ?? ble.last_transition_at ?? ble.last_seen_at;
+  return {
+    room: roomLabel(payload.last_room ?? payload.current_room ?? current?.current_room ?? ble.current_room),
+    transition: transitionAt ? formatDateTime(transitionAt) : "non disponibile",
+    duration: durationMinutes === null || durationMinutes === undefined ? "non disponibile" : formatDurationMinutes(Number(durationMinutes) * 60),
+    bleQuality: qualityStatusLabel(payload.ble_quality ?? payload.quality_status ?? ble.status ?? system?.edge?.quality_status),
+  };
 }
 
 function alertStatusLabel(status) {
@@ -5189,6 +6237,8 @@ function categoryLabel(category) {
     technical: "Tecnica",
     wandering: "Spostamenti notturni",
     inactivity: "Riduzione dell'attivita",
+    absence: "Assenza insolita",
+    no_movement: "Assenza di movimento",
     wearable: "Parametri wearable",
     spatial: "Routine spaziale",
   };
@@ -5289,6 +6339,13 @@ function formatTaskDuration(seconds) {
   return rest ? `${minutes} min ${rest} sec` : `${minutes} min`;
 }
 
+function formatWeekLabel(report) {
+  const start = report?.week_start ?? report?.range?.start ?? report?.generated_at;
+  const end = report?.week_end ?? report?.range?.end;
+  if (!start) return "Settimana disponibile";
+  return end ? `${formatShortDateTime(start)} - ${formatShortDateTime(end)}` : `Settimana ${formatDateTime(start)}`;
+}
+
 function reliabilityFromCompleteness(completeness) {
   const values = Object.values(completeness ?? {})
     .map((value) => Number(typeof value === "object" ? value?.ratio ?? value?.percentage : value))
@@ -5299,6 +6356,113 @@ function reliabilityFromCompleteness(completeness) {
   if (average >= 0.8) return { key: "alta", label: "alta" };
   if (average >= 0.5) return { key: "media", label: "media" };
   return { key: "bassa", label: "bassa" };
+}
+
+function confidenceFromPayload(decision, current, system) {
+  const payload = decision?.confidence
+    ?? decision?.payload?.confidence
+    ?? current?.confidence
+    ?? current?.ai_confidence
+    ?? system?.ai?.confidence
+    ?? null;
+  if (payload && typeof payload === "object") return payload;
+  const completeness = system?.data_completeness ?? system?.edge?.data_completeness ?? {};
+  const reliability = reliabilityFromCompleteness(completeness);
+  return {
+    score: reliability.key === "alta" ? 82 : reliability.key === "media" ? 58 : 34,
+    level: reliability.label,
+    reasons: [],
+  };
+}
+
+function confidenceLevelFromScore(score) {
+  if (!Number.isFinite(score)) return "media";
+  if (score >= 75) return "alta";
+  if (score >= 45) return "media";
+  return "bassa";
+}
+
+function normalizeModelMetrics(metrics) {
+  if (!metrics || typeof metrics !== "object") return [];
+  const source = metrics.models ?? metrics.items ?? metrics;
+  if (Array.isArray(source)) {
+    return source.map((item, index) => ({
+      key: item.model ?? item.key ?? item.name ?? `model-${index}`,
+      ...item,
+    }));
+  }
+  return Object.entries(source)
+    .filter(([, value]) => value && typeof value === "object")
+    .map(([key, value]) => ({ key, ...value }));
+}
+
+function formatModelMetric(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "n/d";
+  return numeric <= 1 ? numeric.toFixed(2) : `${numeric.toFixed(1)}%`;
+}
+
+function trendFromDecisions(decisions) {
+  const rows = (decisions ?? [])
+    .map((decision) => ({
+      score: Number(decision.anomaly_score),
+      time: new Date(decision.window_end ?? decision.timestamp ?? decision.created_at).getTime(),
+    }))
+    .filter((row) => Number.isFinite(row.score) && Number.isFinite(row.time))
+    .slice(-40);
+  if (rows.length < 2) {
+    return { direction: "unknown", score_slope_per_day: null, window_days: null };
+  }
+  const first = rows[0];
+  const last = rows.at(-1);
+  const days = Math.max(1 / 24, (last.time - first.time) / (24 * 60 * 60 * 1000));
+  const slope = (last.score - first.score) / days;
+  return {
+    direction: trendDirectionFromSlope(slope),
+    score_slope_per_day: slope,
+    window_days: Number(days.toFixed(1)),
+  };
+}
+
+function trendDirectionFromSlope(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "unknown";
+  if (numeric > 2) return "in_aumento";
+  if (numeric < -2) return "in_diminuzione";
+  return "stabile";
+}
+
+function trendDirectionLabel(direction) {
+  return {
+    in_aumento: "In aumento",
+    increasing: "In aumento",
+    in_diminuzione: "In diminuzione",
+    decreasing: "In diminuzione",
+    stabile: "Stabile",
+    stable: "Stabile",
+    unknown: "Non calcolabile",
+  }[direction] ?? categoryLabel(direction);
+}
+
+function trendText(direction, trend) {
+  if (!trend || direction === "unknown") return "Servono piu decisioni storiche per stimare una direzione affidabile.";
+  if (["in_aumento", "increasing"].includes(direction)) {
+    return "L'indice mostra una crescita progressiva: da leggere insieme a qualita' dei dati, alert e andamento funzionale.";
+  }
+  if (["in_diminuzione", "decreasing"].includes(direction)) {
+    return "L'indice appare in riduzione nel periodo osservato, pur mantenendo la necessita' di controllo clinico.";
+  }
+  return "L'indice appare stabile nel periodo osservato.";
+}
+
+function driftStatusLabel(status) {
+  return {
+    stable: "Stabile",
+    possible_drift: "Possibile drift",
+    needs_review: "Richiede revisione",
+    retrained: "Aggiornato",
+    blocked: "Bloccato",
+  }[String(status ?? "stable").toLowerCase()] ?? "Stabile";
 }
 
 function reliabilityLabel(value) {
@@ -5341,6 +6505,14 @@ function timelineIcon(eventType) {
   return <Clock3 size={18} />;
 }
 
+function timelineEventLowConfidence(event) {
+  const confidence = event?.confidence ?? event?.details?.confidence ?? event?.payload?.confidence;
+  if (!confidence) return false;
+  const level = String(confidence.level ?? confidence.label ?? "").toLowerCase();
+  const score = Number(confidence.score ?? confidence.value);
+  return ["bassa", "low", "poor", "critical"].includes(level) || (Number.isFinite(score) && score < 45);
+}
+
 function normalizeTransitions(transitions) {
   if (Array.isArray(transitions)) {
     return transitions.map((transition) => ({
@@ -5363,6 +6535,24 @@ function factorValueText(item) {
   return parts.join(" - ") || "Dettaglio non disponibile";
 }
 
+function clinicalFactorSentence(item, tone) {
+  const feature = item.feature ?? item.name;
+  const label = item.label ?? clinicalFeatureName(feature);
+  const direction = String(item.impact ?? item.direction ?? "").toLowerCase();
+  if (tone === "missing" || item.imputed === true) {
+    return `${label}: dato mancante o stimato dal sistema.`;
+  }
+  if (direction.includes("below") || direction.includes("sotto") || direction.includes("low")) {
+    return `${label}: valore sotto il riferimento atteso.`;
+  }
+  if (direction.includes("above") || direction.includes("sopra") || direction.includes("high")) {
+    return `${label}: valore sopra il riferimento atteso.`;
+  }
+  if (tone === "risk") return `${label}: contribuisce ad aumentare l'indice.`;
+  if (tone === "protective") return `${label}: contribuisce a ridurre l'indice.`;
+  return `${label}: elemento rilevante per la valutazione.`;
+}
+
 function modelContributionLabel(value) {
   return {
     generic_spatial: "Routine ambientale",
@@ -5375,36 +6565,6 @@ function taskResultAnswers(result) {
   if (!result) return [];
   const answers = result.answers ?? result.content?.answers ?? [];
   return Array.isArray(answers) ? answers.filter(Boolean) : [];
-}
-
-function Metric({ icon, label, value, tone }) {
-  return (
-    <div className={`metric ${tone ?? ""}`}>
-      {icon && <span className="metric-icon">{icon}</span>}
-      <div><span>{label}</span><strong>{value}</strong></div>
-    </div>
-  );
-}
-
-function Detail({ label, value, suffix = "" }) {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{value ?? "n/d"}{suffix}</dd>
-    </>
-  );
-}
-
-function StatusPill({ status }) {
-  const label = {
-    idle: "Realtime inattivo",
-    connecting: "Connessione realtime",
-    connected: "Realtime attivo",
-    reconnecting: "Riconnessione realtime",
-    error: "Errore realtime",
-    invalid_event: "Evento non valido",
-  }[status] ?? status;
-  return <span className={`status-pill ${status}`}>{label}</span>;
 }
 
 function severityRank(level) {

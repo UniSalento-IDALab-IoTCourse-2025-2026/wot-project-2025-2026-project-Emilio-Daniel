@@ -74,6 +74,22 @@ export const api = {
     request(`/patients/${patientId}/report-data?days=${encodeURIComponent(String(options.days ?? 7))}`, {
       token: session?.access_token,
     }),
+  modelMetrics: (patientId, session) =>
+    request(`/patients/${patientId}/ai/model-metrics`, { token: session?.access_token }),
+  dayProfile: (patientId, session) =>
+    request(`/patients/${patientId}/day-profile`, { token: session?.access_token }),
+  weeklyReports: (patientId, session, options = {}) =>
+    request(`/patients/${patientId}/reports/weekly?limit=${encodeURIComponent(String(options.limit ?? 8))}`, {
+      token: session?.access_token,
+    }),
+  morningBrief: (patientId, session) =>
+    request(`/patients/${patientId}/morning-brief`, { token: session?.access_token }),
+  approveModelRetraining: (patientId, session) =>
+    request(`/patients/${patientId}/ai/retraining/approve`, {
+      method: "POST",
+      token: session?.access_token,
+    }),
+  metrics: (session) => request("/metrics", { token: session?.access_token }),
   windows: (patientId, session, options = {}) => {
     const params = new URLSearchParams({ limit: String(options.limit ?? 200) });
     if (options.date_from) params.set("date_from", options.date_from);
