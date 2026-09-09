@@ -166,6 +166,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Runtime status JSON path. Use an empty value to disable.",
     )
     parser.add_argument(
+        "--absence-output",
+        default=None,
+        help="Absence signal JSON path. Defaults to outputs/<patient_id>-absence.json.",
+    )
+    parser.add_argument(
+        "--absence-state",
+        default=None,
+        help="Absence debounce state path. Defaults to data/state/<patient_id>-absence-debounce.json.",
+    )
+    parser.add_argument(
         "--quality-output",
         default="outputs/last-quality-report.json",
         help="Data quality report JSON path. Use an empty value to disable.",
@@ -383,6 +393,7 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
             state_path=state_path,
             decision_output=decision_output,
             timezone_name=config.window.timezone,
+            ble_samples=len(ble_samples) if args.collect_ble else None,
         )
         inference_status = str(decision_payload.get("inference_status", "completed"))
     elif args.require_model:
@@ -452,6 +463,15 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "fusion_mode": _fusion_mode(decision_payload),
     }
 
+    absence_status = _run_absence_check(
+        config=config,
+        patient_id=patient_id,
+        args=args,
+    )
+    status["absence_checked"] = absence_status["checked"]
+    status["absence_signal"] = absence_status.get("signal")
+    status["absence_file"] = str(absence_status["file"]) if absence_status.get("signal") else None
+
     baseline_session = update_session_from_cycle(
         config=config,
         cycle_status=status,
@@ -503,6 +523,80 @@ def run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     return status
 
 
+def _run_absence_check(
+    config: Any,
+    patient_id: str,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Verifica l'assenza insolita (D24) da BLE e finestre storiche.
+
+    Il controllo produce un segnale dedicato con motivo esplicito, usa un
+    debounce dedicato e scrive il file JSON che edge-mqtt pubblica come alert.
+    Se il BLE e' assente o non affidabile non genera un alert di assenza ma un
+    guasto tecnico del sensore.
+    """
+    from edge_ai.absence import (
+        AbsenceConfig,
+        AbsenceDebouncer,
+        absence_message_id,
+        build_absence_indicators,
+        evaluate_absence,
+    )
+    from edge_ai.features import load_feature_frame
+
+    now = datetime.now(timezone.utc)
+    if not (getattr(config, "absence", None) and config.absence.enabled):
+        return {"checked": False, "signal": None, "file": None}
+
+    detection_config = AbsenceConfig(
+        no_movement_hours=config.absence.no_movement_hours,
+        no_amenity_hours=config.absence.no_amenity_hours,
+        room_stay_multiplier=config.absence.room_stay_multiplier,
+        room_stay_min_minutes=config.absence.room_stay_min_minutes,
+        ble_stale_minutes=config.absence.ble_stale_minutes,
+    )
+    absence_output = (
+        Path(args.absence_output)
+        if getattr(args, "absence_output", None)
+        else Path("outputs") / f"{patient_id}-absence.json"
+    )
+    absence_state = (
+        Path(args.absence_state)
+        if getattr(args, "absence_state", None)
+        else Path("data") / "state" / f"{patient_id}-absence-debounce.json"
+    )
+
+    baseline_frame = None
+    if config.paths.baseline_csv.exists():
+        try:
+            baseline_frame = load_feature_frame(config.paths.baseline_csv)
+        except Exception:
+            baseline_frame = None
+
+    indicators = build_absence_indicators(
+        config.ble.raw_csv,
+        now,
+        ble_stale_minutes=config.absence.ble_stale_minutes,
+        baseline_frame=baseline_frame,
+    )
+    raw_signal = evaluate_absence(indicators, detection_config)
+
+    debouncer = AbsenceDebouncer.load(absence_state, detection_config)
+    debouncer.update(raw_signal, now)
+    debouncer.save(absence_state)
+
+    if raw_signal is None:
+        if absence_output.exists():
+            absence_output.unlink(missing_ok=True)
+        return {"checked": True, "signal": None, "file": absence_output}
+
+    payload = raw_signal.to_dict()
+    payload["message_id"] = absence_message_id(patient_id, raw_signal, max(debouncer.episode, 1))
+    payload["patient_id"] = patient_id
+    _write_json(absence_output, payload)
+    return {"checked": True, "signal": payload, "file": absence_output}
+
+
 def _run_inference(
     generic_spatial_model_path: Path,
     generic_wearable_model_path: Path,
@@ -511,6 +605,9 @@ def _run_inference(
     state_path: Path,
     decision_output: Path,
     timezone_name: str,
+    *,
+    ble_samples: int | None = None,
+    mqtt_queue_depth: int | None = None,
 ) -> dict[str, Any]:
     """Carica i modelli disponibili, fonde i risultati e salva la decisione.
 
@@ -528,18 +625,22 @@ def _run_inference(
     generic_spatial_result = None
     generic_wearable_result = None
     personal_result = None
+    primary_detector = None
     if generic_spatial_model_path.exists():
         generic_spatial_detector = EdgeAnomalyDetector.load(generic_spatial_model_path)
         generic_spatial_result = generic_spatial_detector.predict_record(record)
+        primary_detector = generic_spatial_detector
     if generic_wearable_model_path.exists():
         from edge_ai.wearable_quality import has_wearable_core_signal
 
         if has_wearable_core_signal(record):
             generic_wearable_detector = EdgeAnomalyDetector.load(generic_wearable_model_path)
             generic_wearable_result = generic_wearable_detector.predict_record(record)
+            primary_detector = generic_wearable_detector
     if personal_model_path.exists():
         personal_detector = EdgeAnomalyDetector.load(personal_model_path)
         personal_result = personal_detector.predict_record(record)
+        primary_detector = personal_detector
 
     fused_result = fuse_model_results(
         generic_spatial_result=generic_spatial_result,
@@ -554,6 +655,16 @@ def _run_inference(
     payload = decision_to_json(decision)
     payload["window_start_local"] = _to_local_iso(payload["window_start"], timezone_name)
     payload["window_end_local"] = _to_local_iso(payload["window_end"], timezone_name)
+    payload["confidence"] = _decision_confidence(
+        record=record,
+        personal_model_available=personal_model_path.exists(),
+        ble_samples=ble_samples,
+        mqtt_queue_depth=mqtt_queue_depth,
+    )
+    payload["feature_importance"] = _decision_feature_importance(
+        primary_detector=primary_detector,
+        record=record,
+    )
     payload["inference_status"] = _inference_status(
         {
             "generic_spatial": generic_spatial_result,
@@ -563,6 +674,44 @@ def _run_inference(
     )
     _write_json(decision_output, payload)
     return payload
+
+
+def _decision_feature_importance(primary_detector: Any, record: Any) -> dict[str, Any]:
+    """Calcola la feature importance della decisione in formato dashboard.
+
+    La spiegazione quantitativa usa la sostituzione con la mediana del training
+    sul modello con priorita' piu' alta della fusione (personale, poi generico
+    wearable, poi spaziale).
+    """
+    if primary_detector is None:
+        return {"available": False, "reason": "no_primary_model"}
+    from edge_ai.feature_importance import compute_feature_importance
+
+    return compute_feature_importance(primary_detector, record, top_k=6)
+
+
+def _decision_confidence(
+    record: Any,
+    *,
+    personal_model_available: bool,
+    ble_samples: int | None,
+    mqtt_queue_depth: int | None,
+) -> dict[str, Any]:
+    """Calcola la confidenza della decisione in formato dashboard.
+
+    La confidenza resta separata dallo score AI: misura la qualita' del dato
+    (feature disponibili, sorgenti complete, wearable presente, modello
+    personale disponibile) e non la gravita' dell'anomalia.
+    """
+    from edge_ai.confidence import compute_confidence
+
+    result = compute_confidence(
+        record,
+        personal_model_available=personal_model_available,
+        ble_samples=ble_samples,
+        mqtt_queue_depth=mqtt_queue_depth,
+    )
+    return result.to_dict()
 
 
 def _ensure_auto_baseline_session(

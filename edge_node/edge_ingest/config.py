@@ -82,6 +82,18 @@ class BleConfig:
 
 
 @dataclass(frozen=True)
+class AbsenceConfig:
+    """Soglie prudenti per l'assenza insolita (D24)."""
+
+    enabled: bool = True
+    no_movement_hours: float = 4.0
+    no_amenity_hours: float = 12.0
+    room_stay_multiplier: float = 2.5
+    room_stay_min_minutes: float = 120.0
+    ble_stale_minutes: float = 30.0
+
+
+@dataclass(frozen=True)
 class ShellyConfig:
     enabled: bool = False
     raw_csv: Path = Path("data/raw/shelly_samples.csv")
@@ -124,6 +136,7 @@ class EdgeIngestConfig:
     ble: BleConfig
     shelly: ShellyConfig
     mqtt: MqttConfig
+    absence: AbsenceConfig
 
 
 def load_config(path: str | Path) -> EdgeIngestConfig:
@@ -330,6 +343,24 @@ def load_config(path: str | Path) -> EdgeIngestConfig:
                 _section(payload, "mqtt").get("max_flush_messages", 50)
             ),
             retain_status=bool(_section(payload, "mqtt").get("retain_status", True)),
+        ),
+        absence=AbsenceConfig(
+            enabled=bool(_section(payload, "absence").get("enabled", True)),
+            no_movement_hours=float(
+                _section(payload, "absence").get("no_movement_hours", 4.0)
+            ),
+            no_amenity_hours=float(
+                _section(payload, "absence").get("no_amenity_hours", 12.0)
+            ),
+            room_stay_multiplier=float(
+                _section(payload, "absence").get("room_stay_multiplier", 2.5)
+            ),
+            room_stay_min_minutes=float(
+                _section(payload, "absence").get("room_stay_min_minutes", 120.0)
+            ),
+            ble_stale_minutes=float(
+                _section(payload, "absence").get("ble_stale_minutes", 30.0)
+            ),
         ),
     )
 

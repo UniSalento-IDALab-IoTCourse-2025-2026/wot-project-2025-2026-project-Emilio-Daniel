@@ -55,6 +55,19 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--patient-id", required=True, help="Patient identifier in the dataset")
     train.add_argument("--output", required=True, help="Model artifact path")
     train.add_argument("--contamination", type=float, default=0.05)
+    train.add_argument(
+        "--validation-ratio",
+        type=float,
+        default=0.0,
+        help="Temporal holdout fraction (0.0-0.5). When > 0, the most recent "
+        "windows are kept out of training and used to compute validation metrics.",
+    )
+    train.add_argument(
+        "--metrics-output",
+        default="",
+        help="Metrics JSON output path (auto-derived from --output when "
+        "--validation-ratio is set and this is omitted).",
+    )
 
     train_generic = subparsers.add_parser(
         "train-generic",
@@ -87,6 +100,31 @@ def build_parser() -> argparse.ArgumentParser:
     infer.add_argument("--state", required=True, help="Debounce state JSON path")
     infer.add_argument("--output", required=True, help="Decision JSON output path")
 
+    evaluate = subparsers.add_parser(
+        "evaluate",
+        help="Evaluate a trained model and save validation metrics",
+    )
+    evaluate.add_argument("--model", required=True, help="Trained model artifact path (.pkl)")
+    evaluate.add_argument("--input", required=True, help="CSV/JSON dataset for evaluation")
+    evaluate.add_argument("--output", required=True, help="Metrics JSON output path")
+    evaluate.add_argument(
+        "--ambiguous-margin",
+        type=float,
+        default=15.0,
+        help="Margin around the yellow zone to exclude ambiguous records (default: 15)",
+    )
+    evaluate.add_argument(
+        "--no-synthetic",
+        action="store_true",
+        help="Do not add synthetic anomalies to the test set",
+    )
+    evaluate.add_argument(
+        "--synthetic-count",
+        type=int,
+        default=100,
+        help="Number of synthetic anomalous records to add (default: 100)",
+    )
+
     return parser
 
 
@@ -94,10 +132,47 @@ def train_model(args: argparse.Namespace) -> None:
     """Esegue il training del modello paziente-specifico a partire dalla baseline.
 
     La funzione legge il dataset di finestre reali, filtra il paziente indicato
-    e salva su disco l'artefatto `.pkl`. Nel progetto questo comando viene usato
-    dopo la fase di baseline, quindi non deve essere alimentato con dati casuali
-    o simulati se si vuole ottenere un modello realistico.
+    e salva su disco l'artefatto `.pkl`. Con `--validation-ratio` attivo usa un
+    holdout temporale: le finestre piu' recenti restano fuori dal training e il
+    report metriche viene salvato automaticamente (D21).
     """
+    if args.validation_ratio > 0:
+        from edge_ai.validation import train_with_validation
+
+        metrics_output = args.metrics_output or str(
+            Path(args.output).with_name(
+                f"{Path(args.output).stem}_metrics.json"
+            )
+        )
+        detector, metrics = train_with_validation(
+            dataset_path=args.input,
+            patient_id=args.patient_id,
+            model_output=args.output,
+            metrics_output=metrics_output,
+            validation_ratio=args.validation_ratio,
+            contamination=args.contamination,
+            add_synthetic_anomalies=True,
+        )
+        print(
+            json.dumps(
+                {
+                    "status": "trained_with_validation",
+                    "patient_id": detector.metadata.patient_id,
+                    "training_rows": detector.metadata.training_rows,
+                    "validation_rows": metrics.validation_rows,
+                    "model": args.output,
+                    "metrics": metrics_output,
+                    "f1": metrics.f1,
+                    "precision": metrics.precision,
+                    "recall": metrics.recall,
+                    "roc_auc": metrics.roc_auc,
+                    "validation_ratio": args.validation_ratio,
+                },
+                indent=2,
+            )
+        )
+        return
+
     frame = load_feature_frame(args.input)
     detector = EdgeAnomalyDetector.train(
         frame=frame,
@@ -217,6 +292,25 @@ def _technical_wearable_skip_payload(
     }
 
 
+def run_evaluate(args: argparse.Namespace) -> None:
+    """Esegue la validazione di un modello addestrato su un dataset di test.
+
+    Calcola precision, recall, F1, ROC-AUC e altre metriche. Salva le metriche
+    in un file JSON leggibile dalla dashboard e dal backend.
+    """
+    from edge_ai.validation import evaluate_and_save
+
+    metrics = evaluate_and_save(
+        model_path=args.model,
+        dataset_path=args.input,
+        output_path=args.output,
+        ambiguous_margin=args.ambiguous_margin,
+        add_synthetic_anomalies=not args.no_synthetic,
+        synthetic_count=args.synthetic_count,
+    )
+    print(json.dumps(metrics.to_dict(), indent=2, ensure_ascii=False))
+
+
 def _parse_feature_list(value: str) -> list[str] | None:
     """Converte una lista CLI separata da virgole in feature columns."""
     items = [item.strip() for item in str(value or "").split(",") if item.strip()]
@@ -239,6 +333,8 @@ def main() -> None:
         train_generic_model(args)
     elif args.command == "infer":
         run_inference(args)
+    elif args.command == "evaluate":
+        run_evaluate(args)
     else:
         parser.error(f"Unknown command: {args.command}")
 

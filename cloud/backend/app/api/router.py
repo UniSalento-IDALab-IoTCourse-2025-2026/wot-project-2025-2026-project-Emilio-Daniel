@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.routes import admin, alerts, auth, health, notifications, patients, questionnaires, realtime, tasks, telemetry
+from app.api.routes import admin, ai, alerts, auth, health, notifications, patients, questionnaires, realtime, tasks, telemetry
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["system"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(patients.router, prefix="/patients", tags=["patients"])
+api_router.include_router(ai.router, prefix="/patients", tags=["ai"])
 api_router.include_router(telemetry.router, prefix="/telemetry", tags=["telemetry"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])

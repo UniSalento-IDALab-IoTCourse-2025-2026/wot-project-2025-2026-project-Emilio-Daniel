@@ -20,7 +20,21 @@ def configure_logging(level: str) -> None:
 
 
 class JsonLogFormatter(logging.Formatter):
-    """Format records as JSON while preserving only explicit non-sensitive fields."""
+    """Format records as JSON while preserving only explicit non-sensitive fields.
+
+    I campi sensibili (token, password, authorization, secret, credentials)
+    vengono redatti automaticamente per evitare che finiscano nei log, anche
+    quando qualcuno passa un dizionario di extra-fields con dati riservati.
+    """
+
+    _SENSITIVE_KEYS = {"token", "access_token", "refresh_token", "password", "password_hash", "secret", "authorization", "credentials", "api_key", "client_secret", "firebase_credentials_file"}
+
+    def _redact(self, value: Any) -> Any:
+        if isinstance(value, str):
+            if len(value) > 8:
+                return value[:3] + "***" + value[-2:]
+            return "***"
+        return value
 
     def format(self, record: logging.LogRecord) -> str:
         log_data: dict[str, Any] = {
@@ -32,6 +46,8 @@ class JsonLogFormatter(logging.Formatter):
         for key, value in record.__dict__.items():
             if key in _STANDARD_LOG_RECORD_KEYS or key.startswith("_"):
                 continue
+            if key.lower() in self._SENSITIVE_KEYS:
+                value = self._redact(value)
             log_data[key] = value
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)

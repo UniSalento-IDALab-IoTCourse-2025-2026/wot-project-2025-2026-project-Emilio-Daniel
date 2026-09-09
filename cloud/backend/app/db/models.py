@@ -194,6 +194,7 @@ class Alert(TimestampMixin, Base):
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class AlertEvent(TimestampMixin, Base):
@@ -332,3 +333,97 @@ class Notification(TimestampMixin, Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class PatientModelDrift(TimestampMixin, Base):
+    """Stato di drift del modello personale (D27).
+
+    Tiene traccia della distribuzione degli score del paziente: media/varianza
+    su una finestra baseline e una recente, con stati stable/possible_drift/
+    needs_review/retrained e il ciclo di approvazione del medico.
+    """
+
+    __tablename__ = "patient_model_drift"
+    __table_args__ = (
+        Index("ix_patient_model_drift_patient_status", "patient_id", "status"),
+        UniqueConstraint("patient_id", name="uq_patient_model_drift_patient"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_id: Mapped[str] = mapped_column(
+        ForeignKey("patients.patient_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="stable", nullable=False)
+    requires_approval: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    drift_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    baseline_mean: Mapped[float | None] = mapped_column(Float)
+    baseline_std: Mapped[float | None] = mapped_column(Float)
+    recent_mean: Mapped[float | None] = mapped_column(Float)
+    recent_std: Mapped[float | None] = mapped_column(Float)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    baseline_available: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    drift_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retrained_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class ModelRetrainingLog(TimestampMixin, Base):
+    """Log delle azioni di retraining del modello personale (D27)."""
+
+    __tablename__ = "model_retraining_logs"
+    __table_args__ = (Index("ix_model_retraining_logs_patient", "patient_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_id: Mapped[str] = mapped_column(
+        ForeignKey("patients.patient_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_role: Mapped[str | None] = mapped_column(String(32))
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    note: Mapped[str | None] = mapped_column(Text)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class WeeklyReport(TimestampMixin, Base):
+    """Report settimanale automatico per paziente (D28).
+
+    Riepilogo clinico-operativo di una settimana: score AI medi/massimi,
+    giorni con attenzione/rischio/allerta, alert creati e risolti, task
+    inviati e completati, sonno e passi medi, stanza prevalente e cambi
+    notturni, sempre confrontati con la settimana precedente quando
+    disponibile.
+    """
+
+    __tablename__ = "weekly_reports"
+    __table_args__ = (
+        UniqueConstraint("patient_id", "week_start", name="uq_weekly_reports_patient_week_start"),
+        Index("ix_weekly_reports_patient_week_start", "patient_id", "week_start"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_id: Mapped[str] = mapped_column(
+        ForeignKey("patients.patient_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    week_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    week_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    mean_score: Mapped[float | None] = mapped_column(Float)
+    max_score: Mapped[float | None] = mapped_column(Float)
+    attention_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    risk_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    alert_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    alerts_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    alerts_resolved: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tasks_sent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tasks_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sleep_mean_minutes: Mapped[float | None] = mapped_column(Float)
+    steps_mean: Mapped[float | None] = mapped_column(Float)
+    prevalent_room: Mapped[str | None] = mapped_column(String(64))
+    night_room_changes: Mapped[float | None] = mapped_column(Float)
+    vs_previous_mean_score: Mapped[float | None] = mapped_column(Float)
+    vs_previous_attention_days: Mapped[int | None] = mapped_column(Integer)
+    summary: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)

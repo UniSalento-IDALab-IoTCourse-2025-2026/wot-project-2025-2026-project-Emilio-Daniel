@@ -38,6 +38,7 @@ def build_cycle_messages(
     latest_window_csv: Path,
     decision_json: Path,
     retain_status: bool,
+    absence_json: Path | None = None,
 ) -> list[MqttMessage]:
     """Costruisce i messaggi MQTT del ciclo Edge coerenti con il backend D4."""
     messages: list[MqttMessage] = [
@@ -73,7 +74,67 @@ def build_cycle_messages(
         if alert_message is not None:
             messages.append(alert_message)
 
+    if absence_json is not None and absence_json.exists():
+        try:
+            absence_message = _absence_alert_message(
+                patient_id=patient_id,
+                edge_id=edge_id,
+                absence_json=absence_json,
+            )
+        except (OSError, ValueError):
+            absence_message = None
+        if absence_message is not None:
+            messages.append(absence_message)
+
     return messages
+
+
+def _absence_alert_message(
+    *,
+    patient_id: str,
+    edge_id: str,
+    absence_json: Path,
+) -> MqttMessage:
+    """Pubblica un alert di assenza insolita con il message_id stabile dell'episodio.
+
+    Il message_id viene dal file scritto dal runtime (include tipo, stanza ed
+    episodio): il backend lo usa per evitare duplicati dello stesso episodio.
+    """
+    with absence_json.open("r", encoding="utf-8") as handle:
+        signal = json.load(handle)
+
+    payload = {
+        "level": str(signal.get("level") or "orange"),
+        "status": "new",
+        "category": str(signal.get("category") or "absence"),
+        "source": "edge",
+        "title": str(signal.get("title") or "Assenza insolita da verificare"),
+        "description": str(signal.get("description") or signal.get("reason") or ""),
+        "opened_at": utc_now_iso(),
+        "reason": signal.get("reason"),
+        "duration_minutes": signal.get("duration_minutes"),
+        "no_movement_minutes": signal.get("no_movement_minutes"),
+        "last_room": signal.get("last_room"),
+        "last_transition_at": signal.get("last_transition_at"),
+        "ble_quality": signal.get("ble_quality"),
+        "kind": signal.get("kind"),
+    }
+    message_id = str(signal.get("message_id") or f"absence-{uuid.uuid4().hex}")
+    envelope = {
+        "schema_version": SCHEMA_VERSION,
+        "message_id": message_id,
+        "event_type": "alert_created",
+        "patient_id": patient_id,
+        "edge_id": edge_id,
+        "timestamp": utc_now_iso(),
+        "payload": clean_for_json(payload),
+    }
+    return MqttMessage(
+        topic=f"iot/patients/{patient_id}/alerts/critical",
+        qos=1,
+        retain=False,
+        payload=envelope,
+    )
 
 
 def build_last_will_message(*, patient_id: str, edge_id: str) -> MqttMessage:

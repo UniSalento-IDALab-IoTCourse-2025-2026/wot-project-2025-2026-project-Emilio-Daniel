@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pickle
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import ceil
 from pathlib import Path
 from typing import Any, Union
@@ -28,6 +28,7 @@ class ModelMetadata:
     training_rows: int
     model_scope: str = "personal"
     training_source: str = "patient_baseline"
+    feature_medians: dict[str, float] = field(default_factory=dict)
 
 
 class PhysiologicalFeatureClipper(BaseEstimator, TransformerMixin):
@@ -240,6 +241,11 @@ class EdgeAnomalyDetector:
         pipeline = Pipeline(steps=pipeline_steps)
         features = select_features(training_frame, feature_columns)
         pipeline.fit(features)
+        feature_medians = {
+            column: float(features[column].median())
+            for column in feature_columns
+            if np.isfinite(features[column].median())
+        }
         decision_values = pipeline.decision_function(features)
         normal_anchor = float(np.percentile(decision_values, 50))
         severe_anchor = float(np.percentile(decision_values, 1))
@@ -255,6 +261,7 @@ class EdgeAnomalyDetector:
             training_rows=len(training_frame),
             model_scope=model_scope,
             training_source=training_source,
+            feature_medians=feature_medians,
         )
         return cls(pipeline=pipeline, metadata=metadata)
 

@@ -17,6 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default="config/edge.yml")
     parser.add_argument("--status", default="outputs/last-cycle.json")
     parser.add_argument("--decision", default=None)
+    parser.add_argument("--absence", default=None)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -36,12 +37,18 @@ def main() -> None:
         if args.decision
         else Path("outputs") / f"{config.patient.patient_id}-decision.json"
     )
+    absence_path = (
+        Path(args.absence)
+        if args.absence
+        else Path("outputs") / f"{config.patient.patient_id}-absence.json"
+    )
     messages = build_cycle_messages(
         patient_id=config.patient.patient_id,
         edge_id=config.mqtt.edge_id,
         status_payload=status_payload,
         latest_window_csv=config.paths.latest_window_csv,
         decision_json=decision_path,
+        absence_json=absence_path,
         retain_status=config.mqtt.retain_status,
     )
 

@@ -54,26 +54,27 @@ sono stati valutati e non solo addestrati.
 
 Cosa fare:
 
-- aggiungere split train/validation per i dataset generici;
-- salvare un report JSON per ogni modello addestrato;
-- calcolare metriche almeno su dataset sintetici/controllati: precision, recall, F1,
+- [x] aggiungere split train/validation per i dataset generici;
+- [x] salvare un report JSON per ogni modello addestrato;
+- [x] calcolare metriche almeno su dataset sintetici/controllati: precision, recall, F1,
   falsi positivi e falsi negativi;
-- per il modello personale, usare holdout temporale: una parte delle finestre baseline
+- [x] per il modello personale, usare holdout temporale: una parte delle finestre baseline
   resta fuori dal training e viene usata per controllo;
-- rendere configurabile `contamination` invece di lasciarlo fisso;
-- salvare in `models/` anche un file tipo `generic_wearable_metrics.json`,
+- [x] rendere configurabile `contamination` invece di lasciarlo fisso;
+- [x] salvare in `models/` anche un file tipo `generic_wearable_metrics.json`,
   `generic_spatial_metrics.json`, `patient-001_metrics.json`;
-- aggiungere comando CLI tipo:
+- [x] aggiungere comando CLI tipo:
 
 ```powershell
 python -m edge_ai.cli evaluate --model models/generic_wearable.pkl --input data/processed/... --output outputs/model_metrics.json
+python -m edge_ai.cli train --patient-id patient-001 --input data/... --model models/patient-001.pkl --validation-ratio 0.2
 ```
 
 Output atteso:
 
-- ogni modello ha un file metriche leggibile;
-- il progetto puo' dire: "questo modello e' stato valutato su dati non visti";
-- i test dimostrano che un caso normale resta normale e un caso critico viene rilevato.
+- [x] ogni modello ha un file metriche leggibile;
+- [x] il progetto puo' dire: "questo modello e' stato valutato su dati non visti";
+- [x] i test dimostrano che un caso normale resta normale e un caso critico viene rilevato.
 
 ### E21 - Visualizzazione metriche AI nella Dashboard
 
@@ -106,15 +107,15 @@ score calcolato con dati completi.
 
 Cosa fare:
 
-- calcolare percentuale di feature disponibili nella finestra;
-- calcolare completezza per sorgente: BLE, Google Health, Shelly, app paziente;
-- penalizzare la confidenza quando:
-  - mancano troppe feature;
-  - il wearable non e' presente;
-  - i campioni BLE sono pochi;
-  - MQTT e' in coda da troppo tempo;
-  - il modello personale non esiste ancora;
-- aggiungere al JSON decisionale:
+- [x] calcolare percentuale di feature disponibili nella finestra;
+- [x] calcolare completezza per sorgente: BLE, Google Health, Shelly, app paziente;
+- [x] penalizzare la confidenza quando:
+  - [x] mancano troppe feature;
+  - [x] il wearable non e' presente;
+  - [x] i campioni BLE sono pochi;
+  - [x] MQTT e' in coda da troppo tempo;
+  - [x] il modello personale non esiste ancora;
+- [x] aggiungere al JSON decisionale:
 
 ```json
 {
@@ -130,12 +131,12 @@ Cosa fare:
 }
 ```
 
-- salvare il campo anche nel backend;
-- esporlo su decisioni, current, timeline e report.
+- [x] salvare il campo anche nel backend;
+- [x] esporlo su decisioni, current, timeline e report.
 
 Output atteso:
 
-- ogni decisione ha un indice di affidabilita' separato dall'indice AI.
+- [x] ogni decisione ha un indice di affidabilita' separato dall'indice AI.
 
 ### E22 - UI confidenza e dati mancanti
 
@@ -170,12 +171,12 @@ Perche' serve: il modello non deve essere percepito come una scatola nera.
 
 Cosa fare:
 
-- implementare una feature importance compatibile con Isolation Forest;
-- usare una prima versione basata su:
-  - z-score rispetto al training;
-  - differenza dello score se una feature viene sostituita con valore mediano;
-  - ranking delle feature piu' influenti;
-- salvare nel decision JSON:
+- [x] implementare una feature importance compatibile con Isolation Forest;
+- [x] usare una prima versione basata su:
+  - [x] z-score rispetto al training;
+  - [x] differenza dello score se una feature viene sostituita con valore mediano;
+  - [x] ranking delle feature piu' influenti;
+- [x] salvare nel decision JSON:
 
 ```json
 {
@@ -192,13 +193,13 @@ Cosa fare:
 }
 ```
 
-- distinguere feature spaziali, wearable, personali e NILM;
-- aggiungere test su casi controllati: HR alto, SpO2 basso, isolamento in camera,
+- [x] distinguere feature spaziali, wearable, personali e NILM;
+- [x] aggiungere test su casi controllati: HR alto, SpO2 basso, isolamento in camera,
   assenza movimento.
 
 Output atteso:
 
-- lo score AI viene accompagnato da una spiegazione quantitativa.
+- [x] lo score AI viene accompagnato da una spiegazione quantitativa.
 
 ### E23 - Spiegazione clinica in linguaggio naturale
 
@@ -236,22 +237,22 @@ un segnale importante da verificare.
 
 Cosa fare:
 
-- calcolare da BLE e finestre storiche:
-  - tempo senza cambi stanza;
-  - tempo senza accesso a cucina;
-  - tempo senza accesso a bagno;
-  - permanenza continua nella stessa stanza;
-- definire regole iniziali prudenti:
-  - nessun movimento per oltre 4 ore durante il giorno;
-  - nessun accesso a bagno/cucina per oltre 12 ore;
-  - permanenza in camera molto oltre baseline;
-- generare alert tecnico/comportamentale con motivo esplicito;
-- evitare duplicati con debounce dedicato;
-- non generare alert se il BLE e' assente o non affidabile: in quel caso creare guasto tecnico.
+- [x] calcolare da BLE e finestre storiche:
+  - [x] tempo senza cambi stanza;
+  - [x] tempo senza accesso a cucina;
+  - [x] tempo senza accesso a bagno;
+  - [x] permanenza continua nella stessa stanza;
+- [x] definire regole iniziali prudenti:
+  - [x] nessun movimento per oltre 4 ore durante il giorno;
+  - [x] nessun accesso a bagno/cucina per oltre 12 ore;
+  - [x] permanenza in camera molto oltre baseline;
+- [x] generare alert tecnico/comportamentale con motivo esplicito;
+- [x] evitare duplicati con debounce dedicato;
+- [x] non generare alert se il BLE e' assente o non affidabile: in quel caso creare guasto tecnico.
 
 Output atteso:
 
-- il sistema segnala "assenza insolita da verificare" anche quando lo score AI non supera
+- [x] il sistema segnala "assenza insolita da verificare" anche quando lo score AI non supera
   soglia critica.
 
 ### E24 - Visualizzazione alert assenza e workflow caregiver
@@ -292,22 +293,22 @@ Perche' serve: in geriatria il confronto piu' utile e' "oggi e' simile al solito
 
 Cosa fare:
 
-- calcolare profilo medio per fascia oraria usando le finestre storiche;
-- creare aggregazioni per:
-  - score AI;
-  - battito medio;
-  - passi;
-  - sedentarieta';
-  - stanza prevalente;
-  - cambi stanza;
-  - sonno se disponibile;
-- esporre endpoint:
+- [x] calcolare profilo medio per fascia oraria usando le finestre storiche;
+- [x] creare aggregazioni per:
+  - [x] score AI;
+  - [x] battito medio;
+  - [x] passi;
+  - [x] sedentarieta';
+  - [x] stanza prevalente;
+  - [x] cambi stanza;
+  - [x] sonno se disponibile;
+- [x] esporre endpoint:
 
 ```text
 GET /api/v1/patients/{patient_id}/day-profile
 ```
 
-- payload consigliato:
+- [x] payload consigliato:
 
 ```json
 {
@@ -318,11 +319,11 @@ GET /api/v1/patients/{patient_id}/day-profile
 }
 ```
 
-- gestire baseline non disponibile con `baseline_available: false`.
+- [x] gestire baseline non disponibile con `baseline_available: false`.
 
 Output atteso:
 
-- il backend restituisce dati pronti per grafici "oggi vs giornata tipo".
+- [x] il backend restituisce dati pronti per grafici "oggi vs giornata tipo".
 
 ### E25 - Grafici overlay giornata tipo
 
@@ -360,15 +361,15 @@ giorni puo' essere piu' interessante di un singolo picco.
 
 Cosa fare:
 
-- calcolare trend lineare dello score AI sugli ultimi 3, 7 e 14 giorni;
-- calcolare trend di:
-  - passi;
-  - sedentarieta';
-  - sonno;
-  - permanenza in camera;
-  - HR medio;
-- generare alert se il trend supera soglie configurabili;
-- aggiungere campo:
+- [x] calcolare trend lineare dello score AI sugli ultimi 3, 7 e 14 giorni;
+- [x] calcolare trend di:
+  - [x] passi;
+  - [x] sedentarieta';
+  - [x] sonno;
+  - [x] permanenza in camera;
+  - [x] HR medio;
+- [x] generare alert se il trend supera soglie configurabili;
+- [x] aggiungere campo:
 
 ```json
 {
@@ -380,11 +381,11 @@ Cosa fare:
 }
 ```
 
-- evitare alert se i dati hanno bassa confidenza.
+- [x] evitare alert se i dati hanno bassa confidenza.
 
 Output atteso:
 
-- il sistema segnala peggioramenti progressivi prima della soglia rossa.
+- [x] il sistema segnala peggioramenti progressivi prima della soglia rossa.
 
 ### D27 - Drift detection e retraining controllato
 
@@ -395,20 +396,20 @@ personale deve capire quando non e' piu' aggiornato.
 
 Cosa fare:
 
-- monitorare distribuzione degli score personali;
-- rilevare drift se media e varianza cambiano stabilmente;
-- non fare retraining automatico cieco su finestre sospette;
-- introdurre stato:
-  - `stable`;
-  - `possible_drift`;
-  - `needs_review`;
-  - `retrained`;
-- salvare log del retraining;
-- permettere al medico di approvare o bloccare un retraining.
+- [x] monitorare distribuzione degli score personali;
+- [x] rilevare drift se media e varianza cambiano stabilmente;
+- [x] non fare retraining automatico cieco su finestre sospette;
+- [x] introdurre stato:
+  - [x] `stable`;
+  - [x] `possible_drift`;
+  - [x] `needs_review`;
+  - [x] `retrained`;
+- [x] salvare log del retraining;
+- [x] permettere al medico di approvare o bloccare un retraining.
 
 Output atteso:
 
-- il sistema non diventa obsoleto dopo il periodo iniziale.
+- [x] il sistema non diventa obsoleto dopo il periodo iniziale.
 
 ### E26 - UI trend e drift
 
@@ -442,19 +443,19 @@ automatico.
 
 Cosa fare:
 
-- creare job settimanale o comando manuale che genera report;
-- calcolare:
-  - media e massimo score AI;
-  - numero giorni con attenzione/rischio/allerta;
-  - alert creati e risolti;
-  - task inviati e completati;
-  - sonno medio;
-  - passi medi;
-  - stanza prevalente;
-  - cambi notturni;
-- confrontare con settimana precedente;
-- salvare report in tabella o JSON persistente;
-- esporre endpoint:
+- [x] creare job settimanale o comando manuale che genera report;
+- [x] calcolare:
+  - [x] media e massimo score AI;
+  - [x] numero giorni con attenzione/rischio/allerta;
+  - [x] alert creati e risolti;
+  - [x] task inviati e completati;
+  - [x] sonno medio;
+  - [x] passi medi;
+  - [x] stanza prevalente;
+  - [x] cambi notturni;
+- [x] confrontare con settimana precedente;
+- [x] salvare report in tabella o JSON persistente;
+- [x] esporre endpoint:
 
 ```text
 GET /api/v1/patients/{patient_id}/reports/weekly
@@ -462,7 +463,7 @@ GET /api/v1/patients/{patient_id}/reports/weekly
 
 Output atteso:
 
-- ogni settimana esiste un riepilogo clinico-operativo pronto.
+- [x] ogni settimana esiste un riepilogo clinico-operativo pronto.
 
 ### D29 - Morning brief
 
@@ -473,15 +474,15 @@ notte.
 
 Cosa fare:
 
-- calcolare dalle 22:00 alle 08:00:
-  - sonno;
-  - risvegli;
-  - HR notturno;
-  - SpO2 se disponibile;
-  - movimenti notturni;
-  - permanenza fuori camera;
-- confrontare con baseline personale;
-- esporre endpoint:
+- [x] calcolare dalle 22:00 alle 08:00:
+  - [x] sonno;
+  - [x] risvegli;
+  - [x] HR notturno;
+  - [x] SpO2 se disponibile;
+  - [x] movimenti notturni;
+  - [x] permanenza fuori camera;
+- [x] confrontare con baseline personale;
+- [x] esporre endpoint:
 
 ```text
 GET /api/v1/patients/{patient_id}/morning-brief
@@ -489,7 +490,7 @@ GET /api/v1/patients/{patient_id}/morning-brief
 
 Output atteso:
 
-- la dashboard mostra una frase del tipo:
+- [x] la dashboard mostra una frase del tipo:
   "Notte complessivamente stabile, con 2 movimenti notturni e sonno leggermente ridotto".
 
 ### E27 - UI report settimanale e morning brief
@@ -523,16 +524,16 @@ Perche' serve: il progetto deve essere dimostrabile senza paura di rompere qualc
 
 Cosa fare:
 
-- aumentare copertura test su:
-  - edge_ai training/inference/fusion/debounce;
-  - edge_ingest aggregazione finestre;
-  - edge_quality controlli dati;
-  - edge_mqtt coda offline e retry;
-  - backend auth, MQTT ingest, WebSocket, alerts, tasks, questionnaires;
-- aggiungere test per duplicati `message_id`;
-- aggiungere test per utente non autorizzato;
-- aggiungere dati fixture realistici ma non personali;
-- documentare comando unico:
+- [x] aumentare copertura test su:
+  - [x] edge_ai training/inference/fusion/debounce;
+  - [x] edge_ingest aggregazione finestre;
+  - [x] edge_quality controlli dati;
+  - [x] edge_mqtt coda offline e retry;
+  - [x] backend auth, MQTT ingest, WebSocket, alerts, tasks, questionnaires;
+- [x] aggiungere test per duplicati `message_id`;
+- [x] aggiungere test per utente non autorizzato;
+- [x] aggiungere dati fixture realistici ma non personali;
+- [x] documentare comando unico:
 
 ```powershell
 python -m pytest edge_node/tests cloud/backend/tests
@@ -540,7 +541,7 @@ python -m pytest edge_node/tests cloud/backend/tests
 
 Output atteso:
 
-- il progetto ha una suite minima ma credibile.
+- [x] il progetto ha una suite minima ma credibile.
 
 ### E28 - Test frontend e mobile
 
@@ -645,17 +646,17 @@ Perche' serve: le finestre ogni 4 minuti crescono rapidamente.
 
 Cosa fare:
 
-- definire retention:
-  - raw data BLE/Google/Shelly: conservazione breve;
-  - feature windows: conservazione completa per periodo dimostrativo, poi archivio;
-  - decisioni, alert, task e report: conservazione lunga;
-- creare job/manual command per archiviare dati vecchi;
-- documentare cosa viene cancellato e cosa no;
-- evitare cancellazione di audit, alert e task clinici.
+- [x] definire retention:
+  - [x] raw data BLE/Google/Shelly: conservazione breve (dati CSV su edge, gestiti dalle policy edge);
+  - [x] feature windows: conservazione completa per periodo dimostrativo, poi archivio (30 giorni di default);
+  - [x] decisioni, alert, task e report: conservazione lunga;
+- [x] creare job/manual command per archiviare dati vecchi;
+- [x] documentare cosa viene cancellato e cosa no;
+- [x] evitare cancellazione di audit, alert e task clinici.
 
 Output atteso:
 
-- il database non cresce senza controllo.
+- [x] il database non cresce senza controllo.
 
 ### D32 - Backup automatico e restore testato
 
@@ -665,15 +666,15 @@ Perche' serve: senza backup, un sistema con dati paziente non e' credibile.
 
 Cosa fare:
 
-- creare script backup PostgreSQL automatico;
-- conservare ultimi 7 backup;
-- aggiungere comando restore su database temporaneo;
-- documentare test di restore;
-- evitare che i backup finiscano su Git.
+- [x] creare script backup PostgreSQL automatico;
+- [x] conservare ultimi 7 backup;
+- [x] aggiungere comando restore su database temporaneo;
+- [x] documentare test di restore;
+- [x] evitare che i backup finiscano su Git.
 
 Output atteso:
 
-- si puo' dimostrare che i dati sono recuperabili.
+- [x] si puo' dimostrare che i dati sono recuperabili.
 
 ### D33 - Monitoring e health operativo
 
@@ -684,19 +685,19 @@ funzionando.
 
 Cosa fare:
 
-- verificare `/health/live` e `/health/ready`;
-- aggiungere metriche essenziali:
-  - cicli Edge completati;
-  - messaggi MQTT ricevuti;
-  - messaggi in coda;
-  - WebSocket attivi;
-  - errori Firebase;
-- creare endpoint o pagina backend per stato operativo;
-- mantenere log senza token o password.
+- [x] verificare `/health/live` e `/health/ready`;
+- [x] aggiungere metriche essenziali:
+  - [x] cicli Edge completati;
+  - [x] messaggi MQTT ricevuti;
+  - [x] messaggi in coda;
+  - [x] WebSocket attivi;
+  - [x] errori Firebase;
+- [x] creare endpoint o pagina backend per stato operativo;
+- [x] mantenere log senza token o password.
 
 Output atteso:
 
-- si capisce subito perche' un dato non arriva.
+- [x] si capisce subito perche' un dato non arriva.
 
 ### E31 - Stato sistema migliorato nella Dashboard
 

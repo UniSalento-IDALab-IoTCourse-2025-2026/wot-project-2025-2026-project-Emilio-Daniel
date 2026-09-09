@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.telemetry import increment_mqtt_messages_received
 from app.db.models import (
     Alert,
     Decision,
@@ -40,6 +42,7 @@ class IngestResult:
 
 def ingest_mqtt_message(db: Session, topic: str, raw_payload: bytes) -> IngestResult:
     """Legge, valida, deduplica e salva un singolo messaggio MQTT."""
+    increment_mqtt_messages_received()
     try:
         parsed_topic = parse_topic(topic)
         payload = decode_payload(raw_payload, parsed_topic)
@@ -173,6 +176,7 @@ def store_decision(db: Session, payload: EdgeMqttPayload) -> None:
     db.add(decision)
     db.flush()
     create_alert_from_decision_if_needed(db, decision)
+    _check_trend_degradation_alert(db, decision)
 
 
 def create_alert_from_decision_if_needed(db: Session, decision: Decision) -> None:
@@ -202,6 +206,7 @@ def create_alert_from_decision_if_needed(db: Session, decision: Decision) -> Non
         title=alert_title_from_decision(decision),
         description=alert_description_from_decision(decision),
         opened_at=decision.timestamp,
+        payload=decision.payload,
     )
     db.add(alert)
     db.flush()
@@ -276,6 +281,10 @@ def alert_description_from_decision(decision: Decision) -> str:
 
 
 def store_alert(db: Session, payload: EdgeMqttPayload) -> None:
+    """Archivia un alert arrivato via MQTT, ignorando i duplicati per message_id."""
+    existing = db.execute(select(Alert.id).where(Alert.message_id == payload.message_id)).first()
+    if existing is not None:
+        return
     level = str(payload.payload.get("level") or payload.model_extra.get("level") or "red")
     category = str(payload.payload.get("category") or "behavioral")
     alert = Alert(
@@ -290,6 +299,7 @@ def store_alert(db: Session, payload: EdgeMqttPayload) -> None:
         title=str(payload.payload.get("title") or "Edge alert"),
         description=optional_str(payload.payload.get("description")),
         opened_at=parse_optional_datetime(payload.payload.get("opened_at")) or payload.timestamp,
+        payload=payload.payload,
     )
     db.add(alert)
     db.flush()
@@ -384,3 +394,95 @@ def normalize_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+TREND_ALERT_MIN_POINTS = 4
+TREND_ALERT_SLOPE_THRESHOLD = 3.0
+TREND_ALERT_WINDOW_DAYS = 7
+TREND_ALERT_COOLDOWN_MINUTES = 60 * 24
+
+
+def _check_trend_degradation_alert(db: Session, decision: Decision) -> None:
+    """Genera un alert se lo score AI mostra un peggioramento progressivo.
+
+    Controlla la pendenza lineare dello score sugli ultimi giorni. Se supera
+    la soglia e ci sono abbastanza dati, crea un alert 'comportamentale' con
+    motivo esplicito, evitando duplicati.
+    """
+    since = decision.timestamp - timedelta(days=TREND_ALERT_WINDOW_DAYS + 1)
+    rows = (
+        db.execute(
+            select(Decision)
+            .where(
+                Decision.patient_id == decision.patient_id,
+                Decision.timestamp >= since,
+                Decision.anomaly_score.isnot(None),
+            )
+            .order_by(Decision.timestamp, Decision.id)
+        )
+        .scalars()
+        .all()
+    )
+    points: list[tuple[float, float]] = []
+    for row in rows:
+        if row.anomaly_score is None or isinstance(row.anomaly_score, bool):
+            continue
+        try:
+            value = float(row.anomaly_score)
+        except (TypeError, ValueError):
+            continue
+        days_ago = (decision.timestamp - row.timestamp).total_seconds() / 86400.0
+        if days_ago >= 0:
+            points.append((days_ago, value))
+
+    if len(points) < TREND_ALERT_MIN_POINTS:
+        return
+
+    points.sort(key=lambda p: p[0], reverse=True)
+    x_offset = points[0][0] if points else 0.0
+    ascending = [(x_offset - x, y) for x, y in points]
+    n = len(ascending)
+    sum_x = sum(x for x, _ in ascending)
+    sum_y = sum(y for _, y in ascending)
+    sum_xx = sum(x * x for x, _ in ascending)
+    sum_xy = sum(x * y for x, y in ascending)
+    denominator = n * sum_xx - sum_x * sum_x
+    if abs(denominator) < 1e-9:
+        return
+    slope = (n * sum_xy - sum_x * sum_y) / denominator
+    if slope < TREND_ALERT_SLOPE_THRESHOLD:
+        return
+
+    category = "behavioral"
+    source = "trend"
+    existing_trend = db.execute(
+        select(Alert.id).where(
+            Alert.patient_id == decision.patient_id,
+            Alert.status != "resolved",
+            Alert.source == "trend",
+        )
+    ).first()
+    if existing_trend is not None:
+        return
+
+    message_id = hashlib.sha256(
+        f"trend-degradation-{decision.patient_id}-{decision.timestamp.isoformat()}".encode("utf-8")
+    ).hexdigest()[:24]
+    alert = Alert(
+        message_id=f"alert-trend-{message_id}",
+        patient_id=decision.patient_id,
+        level="orange",
+        status="new",
+        category=category,
+        source=source,
+        clinical_severity="orange",
+        title="Peggioramento progressivo dello score AI",
+        description=(
+            f"Lo score AI e' in crescita costante (+{slope:.1f} punti/giorno) "
+            f"sugli ultimi {TREND_ALERT_WINDOW_DAYS} giorni. Verificare con il paziente."
+        ),
+        opened_at=decision.timestamp,
+    )
+    db.add(alert)
+    db.flush()
+    notify_alert_created(db, alert)

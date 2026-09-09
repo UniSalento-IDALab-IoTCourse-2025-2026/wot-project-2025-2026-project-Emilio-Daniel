@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 import re
 from typing import Any
@@ -18,10 +19,17 @@ from app.auth.dependencies import (
     write_audit,
 )
 from app.core.config import get_settings
-from app.db.models import Alert, AlertEvent, AuditLog, Decision, EdgeCycle, EdgeDevice, FeatureWindow, Notification, Patient, PatientAppStatus, SensorStatus, Task, TaskResult
+from app.db.models import Alert, AlertEvent, AuditLog, Decision, EdgeCycle, EdgeDevice, FeatureWindow, ModelRetrainingLog, Notification, Patient, PatientAppStatus, PatientModelDrift, SensorStatus, Task, TaskResult
 from app.db.session import get_db
 from app.mqtt.events import InternalEvent, event_bus
+from app.services.drift import drift_state_payload as compute_drift_state
+from app.services.morning_brief import morning_brief_payload
 from app.services.push_notifications import notify_caregiver_message, notify_task_created
+from app.services.weekly_report import (
+    generate_weekly_report,
+    week_bounds,
+    weekly_reports_payload,
+)
 
 router = APIRouter()
 ALERT_ESCALATION_MINUTES = 30
@@ -190,6 +198,101 @@ def patient_report_data(
     return report
 
 
+@router.get("/{patient_id}/reports/weekly", summary="Weekly automatic reports (D28)")
+def patient_weekly_reports(
+    patient_id: str,
+    limit: int = Query(default=8, ge=1, le=52),
+    auto_generate: bool = Query(default=True),
+    current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Restituisce i riepiloghi settimanali del paziente (dal piu' recente).
+
+    Se `auto_generate` e' true, genera al volo il report della settimana in
+    corso quando non e' ancora stato creato, cosi' il medico trova sempre un
+    riepilogo pronto senza passare per un job esplicito.
+    """
+    if current_user.role not in {"doctor", "admin"}:
+        raise HTTPException(status_code=403, detail="Only doctor or admin can read weekly reports.")
+    get_patient_or_404(db, patient_id)
+    reports = weekly_reports_payload(db, patient_id, limit=limit)
+    if auto_generate and (not reports or not _current_week_report_present(reports)):
+        report = generate_weekly_report(db, patient_id)
+        write_audit(
+            db,
+            actor=current_user,
+            action="weekly_report.generated_auto",
+            patient_id=patient_id,
+            target_type="weekly_report",
+            target_id=report["report_id"],
+            details={"week_start": report["week_start"]},
+        )
+        db.commit()
+        reports = weekly_reports_payload(db, patient_id, limit=limit)
+    return {
+        "patient_id": patient_id,
+        "items": reports,
+        "reports": reports,
+    }
+
+
+@router.post("/{patient_id}/reports/generate", summary="Generate weekly report manually (D28)")
+def patient_generate_weekly_report(
+    patient_id: str,
+    body: dict[str, Any] = {},
+    current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Comando manuale per generare o rigenerare il report della settimana."""
+    if current_user.role not in {"doctor", "admin"}:
+        raise HTTPException(status_code=403, detail="Only doctor or admin can generate weekly reports.")
+    get_patient_or_404(db, patient_id)
+    force = bool(body.get("force", False))
+    report = generate_weekly_report(db, patient_id, force=force)
+    write_audit(
+        db,
+        actor=current_user,
+        action="weekly_report.generated_manual",
+        patient_id=patient_id,
+        target_type="weekly_report",
+        target_id=report["report_id"],
+        details={
+            "force": force,
+            "week_start": report["week_start"],
+        },
+    )
+    db.commit()
+    return {
+        "patient_id": patient_id,
+        "generated": True,
+        "report": report,
+    }
+
+
+def _current_week_report_present(reports: list[dict[str, Any]]) -> bool:
+    """Verifica se esiste gia' il report della settimana corrente."""
+    if not reports:
+        return False
+    week_start, _week_end = week_bounds(datetime.now(PATIENT_TIMEZONE))
+    target = week_start.isoformat()
+    return any(report.get("week_start") == target for report in reports)
+
+
+@router.get("/{patient_id}/morning-brief", summary="Morning brief (D29)")
+def patient_morning_brief(
+    patient_id: str,
+    current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Riepilogo notturno 22:00-08:00 confrontato con la baseline personale.
+
+    Il medico apre la dashboard al mattino e vede subito come e' andata la
+    notte, con una sintesi prudente non diagnostica (E27).
+    """
+    get_patient_or_404(db, patient_id)
+    return morning_brief_payload(db, patient_id)
+
+
 @router.get("/{patient_id}/audit-trail", summary="Patient readable audit trail")
 def patient_audit_trail(
     patient_id: str,
@@ -280,7 +383,8 @@ def patient_decisions(
     if date_to is not None:
         query = query.where(Decision.timestamp <= date_to)
     rows = db.execute(query.order_by(desc(Decision.timestamp), desc(Decision.id)).limit(limit)).scalars().all()
-    items = [decision_payload(row, db) for row in reversed(rows)]
+    patient_trend = compute_patient_trend(db, patient_id)
+    items = [decision_payload(row, db, patient_trend=patient_trend) for row in reversed(rows)]
     return paginated(items, page=page, page_size=page_size or limit)
 
 
@@ -309,6 +413,22 @@ def patient_alerts(
         query = query.where(Alert.opened_at <= date_to)
     rows = db.execute(query.order_by(desc(Alert.opened_at), desc(Alert.id))).scalars().all()
     return paginated([alert_payload(db, row) for row in rows], page=page, page_size=page_size)
+
+
+@router.get("/{patient_id}/day-profile", summary="Day profile today vs yesterday vs baseline")
+def patient_day_profile(
+    patient_id: str,
+    _current_user: CurrentUser = Depends(require_patient_access),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Profilo circadiano pronto per i grafici "oggi vs giornata tipo" (D25).
+
+    Aggrega le finestre storiche del paziente per fascia oraria in tre serie:
+    oggi, ieri e giornata tipo (media storica escludendo oggi e ieri). Le fasce
+    sono calcolate nel fuso locale del paziente.
+    """
+    get_patient_or_404(db, patient_id)
+    return day_profile_payload(db, patient_id)
 
 
 @router.get("/{patient_id}/tasks", summary="Patient tasks")
@@ -500,6 +620,9 @@ def patient_system_status(
             "inference": cycle_status.get("inference"),
             "personal_model_available": cycle_status.get("personal_model_exists"),
             "baseline": baseline_status_from_cycle(cycle_status),
+            "confidence": confidence_from_payload(latest_decision(db, patient.patient_id)),
+            "trend": compute_patient_trend(db, patient.patient_id),
+            "drift": drift_from_db(db, patient.patient_id),
         },
         "sensors": {
             "watch": {
@@ -619,6 +742,11 @@ def current_payload(db: Session, patient: Patient) -> dict[str, Any]:
         "should_publish": bool(decision.should_publish) if decision else False,
         "anomaly_score": decision.anomaly_score if decision else 0.0,
         "ai_explanation": decision_ai_explanation(db, decision, features) if decision else empty_ai_explanation(features),
+        "trend": compute_patient_trend(db, patient.patient_id),
+        "drift": drift_from_db(db, patient.patient_id),
+        "confidence": confidence_from_payload(decision),
+        "ai_confidence": confidence_from_payload(decision),
+        "feature_importance": feature_importance_from_payload(decision),
         "current_room": current_room,
         "watch": {
             "present": bool(features.get("wearable_present")) if features else False,
@@ -863,6 +991,342 @@ def dominant_room_from_window(window: FeatureWindow) -> str | None:
     return room if minutes > 0 else None
 
 
+ROOM_MINUTE_FEATURES = ("bedroom_minutes", "kitchen_minutes", "bathroom_minutes", "living_room_minutes")
+
+
+def dominant_room_across(windows: list[FeatureWindow]) -> str | None:
+    """Stanza prevalente in un gruppo di finestre, in base ai minuti totali."""
+    totals: dict[str, float] = {}
+    for window in windows:
+        for room in ROOM_MINUTE_FEATURES:
+            value = numeric_or_none(window.features.get(room))
+            if value is None:
+                continue
+            totals[room] = totals.get(room, 0.0) + value
+    if not totals:
+        return None
+    room, minutes = max(totals.items(), key=lambda item: item[1])
+    return room.removesuffix("_minutes") if minutes > 0 else None
+
+
+from zoneinfo import ZoneInfo  # noqa: E402
+
+PATIENT_TIMEZONE = ZoneInfo("Europe/Rome")
+DAY_PROFILE_BANDS = ["00-06", "06-10", "10-14", "14-18", "18-22", "22-24"]
+DAY_PROFILE_FEATURES = [
+    "heart_rate_mean",
+    "steps",
+    "sedentary_minutes",
+    "room_changes",
+    "sleep_minutes",
+]
+DAY_PROFILE_STALE_DAYS = 90
+
+
+def drift_from_db(db: Session, patient_id: str) -> dict[str, Any]:
+    """Legge lo stato di drift direttamente dalla riga di persistenza (sola lettura)."""
+    state = (
+        db.execute(select(PatientModelDrift).where(PatientModelDrift.patient_id == patient_id))
+        .scalars()
+        .first()
+    )
+    if state is None:
+        return {"status": "stable", "requires_approval": False}
+    return {
+        "status": state.status,
+        "requires_approval": state.requires_approval,
+        "detected_at": state.detected_at.isoformat() if state.detected_at else None,
+        "drift_count": state.drift_count,
+        "retrained_at": state.retrained_at.isoformat() if state.retrained_at else None,
+        "approved_at": state.approved_at.isoformat() if state.approved_at else None,
+        "baseline_available": state.baseline_available,
+        "note": state.note,
+    }
+TREND_MIN_POINTS = 4
+TREND_SLOPE_ALERT_THRESHOLD = 3.0
+TREND_SLOPE_DIRECTION_THRESHOLDS = {"in_aumento": 2.0, "in_diminuzione": -2.0}
+TREND_FEATURES = ["steps", "sedentary_minutes", "sleep_minutes", "bedroom_minutes", "heart_rate_mean"]
+
+
+def _linear_slope(points: list[tuple[float, float]]) -> tuple[float | None, int]:
+    """Regressione lineare per minimi quadrati: restituisce (slope, n_punti)."""
+    n = len(points)
+    if n < 2:
+        return None, n
+    sum_x = sum(x for x, _ in points)
+    sum_y = sum(y for _, y in points)
+    sum_xx = sum(x * x for x, _ in points)
+    sum_xy = sum(x * y for x, y in points)
+    denominator = n * sum_xx - sum_x * sum_x
+    if abs(denominator) < 1e-9:
+        return 0.0, n
+    slope = (n * sum_xy - sum_x * sum_y) / denominator
+    return slope, n
+
+
+def _trend_direction(slope_per_day: float | None) -> str:
+    if slope_per_day is None or not math.isfinite(slope_per_day):
+        return "unknown"
+    if slope_per_day > TREND_SLOPE_DIRECTION_THRESHOLDS["in_aumento"]:
+        return "in_aumento"
+    if slope_per_day < TREND_SLOPE_DIRECTION_THRESHOLDS["in_diminuzione"]:
+        return "in_diminuzione"
+    return "stabile"
+
+
+def _trend_dict(slope_per_day: float | None, n_points: int, window_days: int) -> dict[str, Any]:
+    return {
+        "score_slope_per_day": (
+            round(slope_per_day, 2) if slope_per_day is not None and math.isfinite(slope_per_day) else None
+        ),
+        "direction": _trend_direction(slope_per_day),
+        "window_days": window_days if n_points >= TREND_MIN_POINTS else None,
+        "n_points": n_points,
+    }
+
+
+def _feature_trend_dict(slope_per_day: float | None, n_points: int, window_days: int) -> dict[str, Any]:
+    return {
+        "slope_per_day": (
+            round(slope_per_day, 3) if slope_per_day is not None and math.isfinite(slope_per_day) else None
+        ),
+        "direction": _trend_direction(slope_per_day),
+        "window_days": window_days if n_points >= TREND_MIN_POINTS else None,
+        "n_points": n_points,
+    }
+
+
+def compute_feature_trends(
+    db: Session,
+    patient_id: str,
+    *,
+    reference: datetime | None = None,
+    window_days: int = 14,
+) -> dict[str, Any]:
+    """Calcola il trend lineare delle principali submetriche del paziente."""
+    ref = normalize_aware(reference or datetime.now(timezone.utc))
+    since = ref - timedelta(days=window_days + 1)
+    windows = (
+        db.execute(
+            select(FeatureWindow)
+            .where(
+                FeatureWindow.patient_id == patient_id,
+                FeatureWindow.window_end >= since,
+            )
+            .order_by(FeatureWindow.window_end, FeatureWindow.id)
+        )
+        .scalars()
+        .all()
+    )
+    buckets: dict[str, list[tuple[float, float]]] = {feature: [] for feature in TREND_FEATURES}
+    for row in windows:
+        days_ago = (ref - normalize_aware(row.window_start)).total_seconds() / 86400.0
+        if days_ago < 0:
+            continue
+        for feature in TREND_FEATURES:
+            value = row.features.get(feature)
+            if not is_number(value):
+                continue
+            buckets[feature].append((days_ago, float(value)))
+
+    results: dict[str, Any] = {}
+    for feature, points in buckets.items():
+        if not points:
+            results[feature] = _feature_trend_dict(None, 0, window_days)
+            continue
+        ordered = sorted(points, key=lambda p: p[0], reverse=True)
+        x_offset = ordered[0][0]
+        ascending = [(x_offset - x, y) for x, y in ordered if (x_offset - x) <= window_days]
+        slope, n = _linear_slope(ascending)
+        results[feature] = _feature_trend_dict(slope, n, window_days)
+    return results
+
+
+def compute_patient_trend(
+    db: Session,
+    patient_id: str,
+    *,
+    reference: datetime | None = None,
+) -> dict[str, Any]:
+    """Calcola il trend dello score AI per le ultime 14 giorni.
+
+    Restituisce il dizionario compatibile con TrendDriftPanel (D26): migliore
+    finestra disponibile + slopes per 3, 7, 14 giorni.
+    """
+    ref = normalize_aware(reference or datetime.now(timezone.utc))
+    since = ref - timedelta(days=15)
+    decisions = (
+        db.execute(
+            select(Decision)
+            .where(
+                Decision.patient_id == patient_id,
+                Decision.timestamp >= since,
+                Decision.anomaly_score.isnot(None),
+            )
+            .order_by(Decision.timestamp)
+        )
+        .scalars()
+        .all()
+    )
+    valid = [(d.timestamp, float(d.anomaly_score)) for d in decisions if is_number(d.anomaly_score)]
+    if not valid:
+        return _trend_dict(None, 0, 0)
+
+    base_points: list[tuple[float, float]] = []
+    for ts, value in valid:
+        ts_utc = normalize_aware(ts)
+        days_ago = (ref - ts_utc).total_seconds() / 86400.0
+        if days_ago >= 0:
+            base_points.append((days_ago, value))
+
+    if not base_points:
+        return _trend_dict(None, 0, 0)
+
+    all_sorted = sorted(base_points, key=lambda p: p[0], reverse=True)
+    x_offset = all_sorted[0][0] if all_sorted else 0.0
+    ascending = [(x_offset - x, y) for x, y in all_sorted]
+    results: dict[str, dict[str, Any]] = {}
+    best: dict[str, Any] | None = None
+
+    for window in (3, 7, 14):
+        cutoff = float(window)
+        filtered = [(x, y) for x, y in ascending if (x_offset - x) <= cutoff]
+        slope, n = _linear_slope(filtered)
+        trend = _trend_dict(slope, n, window)
+        results[str(window)] = trend
+        if best is None or n > best.get("_n", 0):
+            best = {**trend, "_n": n}
+
+    best_trend = {k: v for k, v in (best or _trend_dict(None, 0, 0)).items() if k != "_n"}
+    return {
+        "best": best_trend,
+        "windows": results,
+        "features": compute_feature_trends(db, patient_id, reference=reference),
+    }
+
+
+def trend_should_trigger_alert(trend: dict[str, Any]) -> bool:
+    """Verifica se il trend segnala un peggioramento che merita un alert."""
+    best = trend.get("best", {})
+    slope = best.get("score_slope_per_day")
+    direction = best.get("direction", "unknown")
+    window = best.get("window_days")
+    if direction not in {"in_aumento"}:
+        return False
+    if window is None or window < 5:
+        return False
+    return slope is not None and slope >= TREND_SLOPE_ALERT_THRESHOLD
+
+
+def day_band_for_local_hour(hour: int) -> str:
+    """Mappa un'ora locale alla fascia oraria del profilo circadiano."""
+    if hour < 6:
+        return "00-06"
+    if hour < 10:
+        return "06-10"
+    if hour < 14:
+        return "10-14"
+    if hour < 18:
+        return "14-18"
+    if hour < 22:
+        return "18-22"
+    return "22-24"
+
+
+def day_profile_payload(
+    db: Session,
+    patient_id: str,
+    *,
+    reference: datetime | None = None,
+) -> dict[str, Any]:
+    """Costruisce il payload del profilo circadiano per oggi/ieri/baseline."""
+    now = normalize_aware(reference or datetime.now(timezone.utc))
+    local_now = now.astimezone(PATIENT_TIMEZONE)
+    today_date = local_now.strftime("%Y-%m-%d")
+    yesterday_date = (local_now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    since = now - timedelta(days=DAY_PROFILE_STALE_DAYS)
+    windows = (
+        db.execute(
+            select(FeatureWindow)
+            .where(
+                FeatureWindow.patient_id == patient_id,
+                FeatureWindow.window_end >= since,
+            )
+            .order_by(FeatureWindow.window_end, FeatureWindow.id)
+        )
+        .scalars()
+        .all()
+    )
+    decisions = (
+        db.execute(
+            select(Decision)
+            .where(
+                Decision.patient_id == patient_id,
+                Decision.window_start >= since,
+            )
+            .order_by(Decision.window_start, Decision.id)
+        )
+        .scalars()
+        .all()
+    )
+
+    def local_partition(value: datetime) -> tuple[str, str]:
+        local = normalize_aware(value).astimezone(PATIENT_TIMEZONE)
+        return local.strftime("%Y-%m-%d"), day_band_for_local_hour(local.hour)
+
+    def date_group(local_date: str) -> str:
+        if local_date == today_date:
+            return "today"
+        if local_date == yesterday_date:
+            return "yesterday"
+        return "baseline"
+
+    groups = ("today", "yesterday", "baseline")
+    band_windows: dict[str, dict[str, list[FeatureWindow]]] = {
+        group: {band: [] for band in DAY_PROFILE_BANDS} for group in groups
+    }
+    band_scores: dict[str, dict[str, list[float]]] = {
+        group: {band: [] for band in DAY_PROFILE_BANDS} for group in groups
+    }
+
+    for window in windows:
+        local_date, band = local_partition(window.window_start)
+        band_windows[date_group(local_date)][band].append(window)
+
+    for decision in decisions:
+        if not is_number(decision.anomaly_score):
+            continue
+        local_date, band = local_partition(decision.window_start)
+        band_scores[date_group(local_date)][band].append(float(decision.anomaly_score))
+
+    def band_row(group: str, band: str) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "band": band,
+            "ai": average(band_scores[group][band]),
+            "dominant_room": dominant_room_across(band_windows[group][band]),
+        }
+        for feature in DAY_PROFILE_FEATURES:
+            row[feature] = average_feature_values(band_windows[group][band], feature)
+        return row
+
+    today_rows = [band_row("today", band) for band in DAY_PROFILE_BANDS]
+    yesterday_rows = [band_row("yesterday", band) for band in DAY_PROFILE_BANDS]
+    baseline_rows = [band_row("baseline", band) for band in DAY_PROFILE_BANDS]
+
+    baseline_available = any(
+        band_windows["baseline"][band] or band_scores["baseline"][band] for band in DAY_PROFILE_BANDS
+    )
+
+    return {
+        "today": today_rows,
+        "yesterday": yesterday_rows,
+        "baseline_day": baseline_rows,
+        "bands": DAY_PROFILE_BANDS,
+        "baseline_available": baseline_available,
+    }
+
+
 def expected_window_count(start: datetime, end: datetime, window_minutes: int = 4) -> int:
     """Calcola quante finestre Edge ci si aspetta nel periodo."""
     seconds = max((normalize_aware(end) - normalize_aware(start)).total_seconds(), 0)
@@ -933,6 +1397,7 @@ def report_data_payload(db: Session, patient: Patient, current_user: CurrentUser
     alerts = recent_alerts(db, patient.patient_id, limit=8)
     tasks = recent_tasks(db, patient.patient_id, limit=8)
     timeline = report_timeline(db, patient.patient_id, now=now, days=days)
+    patient_trend = compute_patient_trend(db, patient.patient_id)
     return {
         "schema_version": 1,
         "report_type": "patient_triage_summary",
@@ -956,7 +1421,7 @@ def report_data_payload(db: Session, patient: Patient, current_user: CurrentUser
             "current": current_payload(db, patient),
             "summary_24h": summary,
             "spatial_summary": spatial,
-            "recent_decisions": [decision_payload(row, db) for row in decisions],
+            "recent_decisions": [decision_payload(row, db, patient_trend=patient_trend) for row in decisions],
             "recent_alerts": [alert_payload(db, row) for row in alerts],
             "recent_tasks": [task_payload(row, db) for row in tasks],
             "timeline": timeline,
@@ -1310,25 +1775,27 @@ def decision_timeline_events(rows: list[Decision]) -> list[dict[str, Any]]:
     events = []
     for row in rows:
         score = round(row.anomaly_score, 3) if is_number(row.anomaly_score) else None
-        events.append(
-            timeline_event(
-                event_id=f"decision-{row.id}",
-                event_type="decision_updated",
-                timestamp=row.timestamp,
-                title=f"Decisione AI {levelLabel_backend(row.level)}",
-                summary=f"Score {score}" if score is not None else "Score non disponibile",
-                severity=row.level,
-                source="ai",
-                linked_resource={
-                    "type": "decision",
-                    "id": f"decision-{row.id}",
-                    "message_id": row.message_id,
-                    "window_start": utc_iso(row.window_start),
-                    "window_end": utc_iso(row.window_end),
-                },
-                dedupe_key=f"decision:{row.message_id}",
-            )
+        event = timeline_event(
+            event_id=f"decision-{row.id}",
+            event_type="decision_updated",
+            timestamp=row.timestamp,
+            title=f"Decisione AI {levelLabel_backend(row.level)}",
+            summary=f"Score {score}" if score is not None else "Score non disponibile",
+            severity=row.level,
+            source="ai",
+            linked_resource={
+                "type": "decision",
+                "id": f"decision-{row.id}",
+                "message_id": row.message_id,
+                "window_start": utc_iso(row.window_start),
+                "window_end": utc_iso(row.window_end),
+            },
+            dedupe_key=f"decision:{row.message_id}",
         )
+        confidence = confidence_from_payload(row)
+        if confidence is not None:
+            event["confidence"] = confidence
+        events.append(event)
     return events
 
 
@@ -1894,7 +2361,7 @@ def window_payload(row: FeatureWindow) -> dict[str, Any]:
     }
 
 
-def decision_payload(row: Decision, db: Session | None = None) -> dict[str, Any]:
+def decision_payload(row: Decision, db: Session | None = None, *, patient_trend: dict[str, Any] | None = None) -> dict[str, Any]:
     """Serializza una decisione AI in formato dashboard."""
     payload = row.payload or {}
     inner_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload
@@ -1911,9 +2378,13 @@ def decision_payload(row: Decision, db: Session | None = None) -> dict[str, Any]
         "model_label": row.model_label,
         "reasons": inner_payload.get("reasons", []),
         "evidence": inner_payload.get("evidence", {}),
+        "confidence": confidence_from_payload(row),
+        "feature_importance": feature_importance_from_payload(row),
         "message_id": row.message_id,
         "created_at": utc_iso(row.created_at),
     }
+    if patient_trend is not None:
+        result["trend"] = patient_trend
     if db is not None:
         result["ai_explanation"] = decision_ai_explanation(db, row, latest_feature_window_for_decision(db, row))
     return result
@@ -2260,6 +2731,7 @@ def alert_payload(db: Session, alert: Alert) -> dict[str, Any]:
         "resolved_role": resolved_note.get("role") if resolved_note else None,
         "resolution_note": resolved_note.get("note") if resolved_note else None,
         "message_id": alert.message_id,
+        "payload": alert.payload or {},
     }
 
 
@@ -2393,3 +2865,36 @@ def mqtt_queue_depth(decision: Decision | None) -> int:
         value = mqtt_payload.get("queue_depth")
         return int(value) if isinstance(value, int | float) else 0
     return 0
+
+
+def confidence_from_payload(decision: Decision | None) -> dict[str, Any] | None:
+    """Estrae la confidenza dalla decisione, se presente nel payload edge.
+
+    Il formato atteso e' `{"score": int, "level": str, "reasons": [str]}`.
+    Puo' trovarsi sia a livello radice del payload sia dentro una chiave
+    `payload` annidata, a seconda della versione dello schema edge.
+    """
+    if decision is None:
+        return None
+    raw = decision.payload or {}
+    inner = raw.get("payload") if isinstance(raw.get("payload"), dict) else raw
+    confidence = inner.get("confidence")
+    if not isinstance(confidence, dict):
+        return None
+    return confidence
+
+
+def feature_importance_from_payload(decision: Decision | None) -> dict[str, Any] | None:
+    """Estrae la feature importance dal payload edge, se presente.
+
+    Il formato atteso e' `{"available": bool, "items": [{"feature", "label",
+    "impact", "weight", "value", "reference"}]}`.
+    """
+    if decision is None:
+        return None
+    raw = decision.payload or {}
+    inner = raw.get("payload") if isinstance(raw.get("payload"), dict) else raw
+    importance = inner.get("feature_importance")
+    if not isinstance(importance, dict):
+        return None
+    return importance

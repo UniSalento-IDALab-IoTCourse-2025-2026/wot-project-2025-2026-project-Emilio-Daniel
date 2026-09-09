@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     demo_patient_email: str = ""
     demo_admin_email: str = ""
 
+    ai_models_dir: str = ""
+
     mqtt_host: str = "localhost"
     mqtt_port: int = Field(default=8883, ge=1, le=65535)
     mqtt_use_tls: bool = True

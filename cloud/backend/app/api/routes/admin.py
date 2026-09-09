@@ -133,3 +133,43 @@ def user_payload(user: User) -> dict[str, Any]:
         "display_name": user.display_name,
         "is_active": user.is_active,
     }
+
+
+# ── D31: Database retention ─────────────────────────────────────────────────
+
+
+@router.get("/retention", summary="Retention status (D31)")
+def retention_status(
+    current_user: CurrentUser = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Mostra conteggi record e quanti sarebbero eliminati dalla retention attiva."""
+    from app.services.retention import retention_summary
+    return retention_summary(db)
+
+
+@router.post("/retention/purge", summary="Execute retention purge (D31)")
+def execute_retention_purge(
+    body: dict[str, Any] = {},
+    current_user: CurrentUser = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Esegue il purge completo dei dati piu' vecchi della retention.
+
+    Solo gli admin possono eseguire questa operazione. Viene registrata
+    nell'audit trail.
+    """
+    from app.services.retention import run_full_purge
+    from app.auth.dependencies import write_audit
+    result = run_full_purge(db)
+    write_audit(
+        db,
+        actor=current_user,
+        action="retention.purge_executed",
+        patient_id=None,
+        target_type="retention",
+        target_id="full_purge",
+        details=result["deleted"],
+    )
+    db.commit()
+    return result

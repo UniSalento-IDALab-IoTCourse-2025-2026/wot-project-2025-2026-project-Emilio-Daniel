@@ -91,6 +91,99 @@ def test_alert_message_is_created_only_when_decision_should_publish(tmp_path) ->
     assert alert_message.payload["payload"]["decision"]["anomaly_score"] == 88.0
 
 
+def test_absence_alert_message_is_published(tmp_path) -> None:
+    latest = tmp_path / "latest_window.csv"
+    latest.write_text(
+        "patient_id,window_start,window_end,bedroom_minutes\n"
+        "patient-001,2026-07-11T10:00:00+00:00,2026-07-11T10:04:00+00:00,4\n",
+        encoding="utf-8",
+    )
+    decision = tmp_path / "patient-001-decision.json"
+    decision.write_text(
+        json.dumps(
+            {
+                "patient_id": "patient-001",
+                "level": "green",
+                "should_publish": False,
+                "anomaly_score": 0.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    absence = tmp_path / "patient-001-absence.json"
+    absence.write_text(
+        json.dumps(
+            {
+                "patient_id": "patient-001",
+                "kind": "no_movement",
+                "level": "orange",
+                "category": "no_movement",
+                "title": "Assenza di movimento da verificare",
+                "description": "Nessun cambio stanza da oltre 4 ore.",
+                "reason": "Nessun movimento per oltre 4 ore.",
+                "duration_minutes": 300.0,
+                "no_movement_minutes": 300.0,
+                "last_room": "living_room",
+                "last_transition_at": "2026-07-11T05:00:00Z",
+                "ble_quality": "ok",
+                "message_id": "absence-abc123",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    messages = build_cycle_messages(
+        patient_id="patient-001",
+        edge_id="edge-rpi5-001",
+        status_payload={"status": "cycle_completed"},
+        latest_window_csv=latest,
+        decision_json=decision,
+        absence_json=absence,
+        retain_status=True,
+    )
+
+    absence_messages = [
+        message for message in messages if message.topic.endswith("/alerts/critical")
+    ]
+    assert len(absence_messages) == 1
+    message = absence_messages[0]
+    assert message.payload["event_type"] == "alert_created"
+    assert message.payload["message_id"] == "absence-abc123"
+    assert message.payload["payload"]["level"] == "orange"
+    assert message.payload["payload"]["category"] == "no_movement"
+    assert message.payload["payload"]["last_room"] == "living_room"
+    assert message.payload["payload"]["duration_minutes"] == 300.0
+    assert message.payload["payload"]["ble_quality"] == "ok"
+
+
+def test_absence_alert_skipped_when_file_absent(tmp_path) -> None:
+    latest = tmp_path / "latest_window.csv"
+    latest.write_text(
+        "patient_id,window_start,window_end,bedroom_minutes\n"
+        "patient-001,2026-07-11T10:00:00+00:00,2026-07-11T10:04:00+00:00,4\n",
+        encoding="utf-8",
+    )
+    decision = tmp_path / "patient-001-decision.json"
+    decision.write_text(
+        json.dumps({"patient_id": "patient-001", "level": "green", "should_publish": False}),
+        encoding="utf-8",
+    )
+    missing = tmp_path / "missing-absence.json"
+
+    messages = build_cycle_messages(
+        patient_id="patient-001",
+        edge_id="edge-rpi5-001",
+        status_payload={"status": "cycle_completed"},
+        latest_window_csv=latest,
+        decision_json=decision,
+        absence_json=missing,
+        retain_status=True,
+    )
+
+    alerts = [message for message in messages if message.topic.endswith("/alerts/critical")]
+    assert alerts == []
+
+
 def test_disk_queue_roundtrip(tmp_path) -> None:
     latest = tmp_path / "latest_window.csv"
     latest.write_text(
@@ -121,3 +214,60 @@ def test_disk_queue_roundtrip(tmp_path) -> None:
     assert queued[0].message.payload["message_id"] == message.payload["message_id"]
     queue.remove(queued[0])
     assert queue.depth() == 0
+
+def test_offline_queue_survives_process_restart(tmp_path) -> None:
+    from edge_mqtt.messages import MqttMessage
+
+    message = MqttMessage(
+        topic="iot/patients/patient-001/telemetry/window",
+        qos=1,
+        payload={
+            "schema_version": 1,
+            "message_id": "offline-window-001",
+            "event_type": "patient_window_updated",
+            "patient_id": "patient-001",
+            "edge_id": "edge-rpi5-001",
+            "timestamp": "2026-07-11T10:00:00Z",
+        },
+    )
+    queue_dir = tmp_path / "queue"
+    DiskMqttQueue(queue_dir).enqueue(message)
+
+    restarted = DiskMqttQueue(queue_dir)
+    assert restarted.depth() == 1
+    queued = restarted.iter_messages(limit=5)
+    assert len(queued) == 1
+    assert queued[0].message.topic == "iot/patients/patient-001/telemetry/window"
+    assert queued[0].message.payload["message_id"] == "offline-window-001"
+
+
+def test_failed_publish_keeps_message_for_retry(tmp_path) -> None:
+    from edge_mqtt.messages import MqttMessage
+
+    message = MqttMessage(
+        topic="iot/patients/patient-001/telemetry/decision",
+        payload={"message_id": "retry-decision-001", "level": "orange"},
+    )
+    queue = DiskMqttQueue(tmp_path / "queue")
+    queue.enqueue(message)
+
+    attempts = queue.iter_messages(limit=5)
+    assert len(attempts) == 1
+    queue.remove(attempts[0])
+    assert queue.depth() == 0
+
+
+def test_fifo_order_is_preserved(tmp_path) -> None:
+    from edge_mqtt.messages import MqttMessage
+
+    queue = DiskMqttQueue(tmp_path / "queue")
+    for index in range(3):
+        queue.enqueue(
+            MqttMessage(
+                topic="iot/patients/patient-001/telemetry/window",
+                payload={"message_id": f"fifo-{index:03d}"},
+            )
+        )
+    queued = queue.iter_messages(limit=10)
+    ids = [item.message.payload["message_id"] for item in queued]
+    assert ids == ["fifo-000", "fifo-001", "fifo-002"]

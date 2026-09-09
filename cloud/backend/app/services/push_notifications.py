@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.telemetry import increment_firebase_errors
 from app.db.models import Alert, Notification, PatientAppStatus, Task
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ class FirebasePushSender:
             provider_message_id = messaging.send(message)
         except Exception as exc:  # noqa: BLE001 - Firebase usa eccezioni diverse in base all'errore.
             code = firebase_error_code(exc)
+            increment_firebase_errors()
             return PushSendResult(success=False, error_code=code, invalid_token=is_invalid_fcm_token(code, exc))
         return PushSendResult(success=True, provider_message_id=provider_message_id)
 

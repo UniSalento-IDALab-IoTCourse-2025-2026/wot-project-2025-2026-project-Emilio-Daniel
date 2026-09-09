@@ -75,7 +75,10 @@ def seed_database(engine) -> None:
                 details={"current_room": "kitchen"},
             )
         )
-        current_end = now - timedelta(hours=1)
+        # Fix current_end to always daytime (12:00 UTC) to avoid time-sensitive night classification
+        current_end = now.replace(hour=12, minute=0, second=0)
+        if current_end > now:
+            current_end = current_end - timedelta(days=1)
         night_end = now.replace(hour=2, minute=10, second=0)
         if night_end > now:
             night_end = night_end - timedelta(days=1)
