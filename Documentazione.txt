@@ -1,0 +1,3176 @@
+\documentclass[12pt,twoside]{extarticle}
+
+% --- Pacchetti di base ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[italian]{babel}
+
+% --- Matematica ---
+\usepackage{amsmath, amsfonts, amssymb, mathrsfs, latexsym, dsfont, physics}
+\usepackage{mathtools}
+
+% --- Tabelle ---
+\usepackage{array, booktabs, multirow, float}
+\usepackage{tabularx}
+
+% --- Grafica e colori ---
+\usepackage{graphicx, subcaption}
+\usepackage[dvipsnames]{xcolor}
+
+% --- Codice ---
+\usepackage{listings}
+\usepackage{minted}
+
+% --- Altro ---
+\usepackage{caption, enumitem, ulem, cancel, titlesec, eucal, pifont}
+\graphicspath{{static/}}
+
+% --- Layout ---
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{setspace, parskip}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=cyan,
+}
+
+% --- Quadrati belli di Andrea ---
+\usepackage{tcolorbox}
+\tcbuselibrary{skins, breakable}
+
+\newtcolorbox{definizione}{colback=red!5!white, colframe=red!70!black, title=\textbf{Definizione:}, breakable}
+\newtcolorbox{osservazione}{colback=green!5!white, colframe=green!70!black, title=\textbf{Osservazione:}, breakable}
+\newtcolorbox{osservazione2}{colback=violet!5!white, colframe=violet!70!black, title=\textbf{Osservazione:}, breakable}
+\newtcolorbox{esempio}{colback=yellow!5!white, colframe=yellow!70!black, title=\textbf{Esempio:}, breakable}
+\newtcolorbox{esempio2}[1]{colback=yellow!5!white, colframe=yellow!70!black, title=\textbf{Esempio: #1}, breakable, fonttitle=\bfseries, enhanced}
+\newtcolorbox{domanda}[1]{colback=blue!5!white, colframe=blue!70!black, title=\textbf{Domanda esame: #1}, breakable}
+
+% --- Intestazioni ---
+\usepackage{fancyhdr}
+\setlength{\headheight}{17pt}
+\addtolength{\topmargin}{-2.5pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+
+% Pagine PARI
+\fancyhead[LE]{\leftmark}
+\fancyhead[RE]{}
+
+% Pagine DISPARI
+\fancyhead[RO]{Università del Salento}
+\fancyfoot[LE]{\thepage}
+\fancyfoot[RO]{\thepage}
+
+% Ridefinizione marcatura sezioni
+\renewcommand{\sectionmark}[1]{\markboth{\thesection\space|\space#1}{}}
+
+% Centrare i titoli delle sezioni
+\titleformat{\section}
+{\centering\Large\bfseries}
+{}{0pt}{}
+
+% --- Copertina ---
+\title{
+    \vspace{0.1cm}
+    {\scshape\huge UNIVERSITÀ DEL SALENTO \par}
+    \vspace{1cm}
+    {\Large\bfseries Progetto IoT \par}
+    \vspace{0.3cm}
+    {\huge\itshape di Emilio Pascadopoli e Daniel Spedicato \par}
+    \vspace{0.3cm}
+    {Docente: Luigi Patrono \par}
+    \vspace{0.3cm}
+    {\huge Anno Accademico 2025 - 2026 \par}
+    \vspace{0.5cm}
+    \includegraphics[width=0.5\textwidth]{Immagini/logo.png}\par
+    \vfill
+    {\Large Corso di Laurea Magistrale - Ingegneria Informatica \par}
+    {\Large Dipartimento di Ingegneria dell'Innovazione \par}
+}
+\author{}
+\date{}
+
+\begin{document}
+
+% --- Pagina del titolo ---
+\begin{titlepage}
+    \maketitle
+    \thispagestyle{empty}
+\end{titlepage}
+
+% --- Indice ---
+\newpage
+\pagenumbering{roman}
+\tableofcontents
+
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+% Resto del documento
+% Nota aggiunta nella revisione tecnica del 25 settembre 2026.
+\begin{osservazione}
+Le prime due sezioni conservano la proposta iniziale del progetto, con le
+tecnologie e gli scenari allora ipotizzati. Non costituiscono un elenco di
+funzionalità già validate. A partire dalla sezione
+\ref{sec:perimetro-reale} viene descritta la realizzazione effettivamente
+riscontrata nel repository: questa seconda parte precisa le scelte definitive,
+le differenze rispetto alla proposta e le attività ancora da completare.
+\end{osservazione}
+
+\section{Stato dell'Arte}
+\subsection{Introduzione}
+L'invecchiamento progressivo della popolazione globale ha reso la gestione delle patologie croniche, con particolare riferimento alle malattie neurodegenerative (come Alzheimer e Parkinson) e ai disturbi depressivi, una delle sfide principali per i moderni sistemi sanitari. Le attuali soluzioni proposte dallo stato dell'arte in ambito \textit{Internet of Things} (IoT) ed Edge Computing si concentrano prevalentemente sul monitoraggio di parametri fisiologici e vitali grezzi (come frequenza cardiaca ed elettrocardiogramma) attraverso dispositivi hardware complessi e spesso invasivi. Tuttavia, l'approccio puramente fisiologico presenta evidenti limiti pratici e clinici. Da un lato, l'impiego di hardware sperimentale o fortemente cablato riduce drasticamente il comfort e l'accettabilità da parte del paziente anziano. Dall'altro, in ambito geriatrico e psichiatrico, i principali sintomi prodromici del declino cognitivo o dell'insorgenza depressiva non si manifestano con un'immediata alterazione dei parametri vitali, bensì con un progressivo mutamento delle abitudini quotidiane e un aumento dell'isolamento sociale. Per superare queste criticità, il presente progetto propone un cambio di paradigma: la transizione da un monitoraggio strettamente fisiologico a un \textbf{monitoraggio comportamentale e spaziale basato sulle Attività della Vita Quotidiana (\textit{Activities of Daily Living})}. Il sistema progettato consiste in un'architettura IoT ibrida che sfrutta dispositivi commerciali indossabili, un'infrastruttura di localizzazione \textit{indoor} basata su Beacon \textit{Bluetooth Low Energy} (BLE) e l'analisi non intrusiva dei consumi elettrici (NILM). L'obiettivo è analizzare passivamente la routine domestica del paziente garantendo la totale privacy (assenza di telecamere o microfoni), elaborando i dati tramite modelli di Intelligenza Artificiale implementati in ottica \textit{Edge Computing}. Il fine ultimo non è sostituire la diagnosi medica, ma fornire al personale sanitario uno strumento di ``triage predittivo'', capace di segnalare anomalie comportamentali e facilitare un intervento clinico tempestivo.
+
+\subsection{Architettura del Sistema e Tecnologie Impiegate}
+L'architettura progettata si fonda su tre livelli operativi: l'acquisizione multisensoriale \textit{indoor}, l'elaborazione locale (\textit{Edge AI}) per la tutela della privacy, e la gestione clinica interattiva basata su Cloud.
+
+\subsubsection{Livello di Acquisizione Dati: Sensoristica Ibrida}
+Per garantire l'usabilità e superare i limiti di accettabilità clinica legati ai prototipi \textit{custom}, il sistema si avvale di un ecosistema hardware robusto e minimamente intrusivo:
+\begin{itemize}
+    \item \textbf{Wearable Clinico/Prosumer:} rappresenta il nodo mobile dell'acquisizione parametrica. Si prediligono dispositivi dotati di SDK aperti (es. Empatica EmbracePlus o Garmin tramite Health API) in grado di trasmettere dati grezzi via BLE al Gateway locale, garantendo un'autonomia prolungata. I parametri acquisiti includono:
+    \begin{itemize}
+        \item \textbf{Attività Elettrodermica Continua (cEDA / GSR):} per la valutazione dell'attivazione del sistema nervoso autonomo, identificando picchi di stress, ansia o appiattimento da apatia in background.
+        \item \textbf{Dati Biometrici (PPG):} acquisizione di frequenza cardiaca, saturazione ($SpO_2$) e Variabilità della Frequenza Cardiaca (HRV), parametro cruciale per l'identificazione di stati depressivi.
+        \item \textbf{Dati Inerziali (IMU):} accelerometro e giroscopio a 6 assi per la stima del dispendio energetico, la classificazione del sonno e il rilevamento automatico delle cadute (\textit{Fall Detection}).
+    \end{itemize}
+    
+    \item \textbf{Infrastruttura di Localizzazione BLE:} adozione di \textit{Beacon BLE} ambientali a basso consumo, posizionati in punti strategici dell'abitazione. Il wearable funge da ricevitore, registrando l'RSSI (\textit{Received Signal Strength Indicator}). La localizzazione non richiede precisione centimetrica, ma una mappatura logica (\textit{Room-Level Tracking}). La distanza stimata $d$ viene modellata tramite l'equazione logaritmica di propagazione:
+    $$d = 10^{\frac{TxPower - RSSI}{10 \cdot n}}$$
+    dove $TxPower$ è la potenza del segnale a 1 metro di distanza e $n$ è la costante di attenuazione ambientale.
+    
+    \item \textbf{Analisi Elettrica Non Intrusiva (NILM):} un misuratore \textit{smart} (es. Shelly EM con pinza amperometrica) installato nel quadro elettrico generale. Tramite il campionamento ad alta frequenza della potenza attiva e reattiva, è in grado di dedurre l'accensione e lo spegnimento di specifici elettrodomestici (es. macchina del caffè, forno, TV) senza richiedere \textit{smart plug} multipli.
+\end{itemize}
+
+\subsubsection{Livello Edge: Intelligenza Artificiale e Fault Tolerance}
+Il vero cuore elaborativo del sistema è il \textbf{Gateway Domestico (Edge Node)}, implementato tramite microcomputer (es. Raspberry Pi 4). I dati non vengono inviati grezzi in Cloud, ma elaborati localmente, garantendo il funzionamento continuo anche in assenza di connettività esterna e azzerando i rischi di violazione della privacy.
+\begin{itemize}
+    \item \textbf{Data Ingestion e Fusione Sensoriale:} il Gateway ospita un \textit{broker} MQTT locale (es. Mosquitto) che raccoglie in tempo reale i pacchetti BLE dal wearable e i dati HTTP/CoAP dal sensore NILM.
+    \item \textbf{Modelli di Machine Learning (Edge AI):} algoritmi leggeri (es. \textit{TensorFlow Lite}) disaggregano i carichi elettrici tramite Modelli Nascosti di Markov (FHMM) e valutano i pattern spazio-temporali tramite algoritmi di \textit{Anomaly Detection} (es. \textit{Isolation Forest}). Il sistema monitora:
+    \begin{itemize}
+        \item \textbf{Isolamento e Apatia:} eccessiva permanenza in una singola stanza correlata al mancato utilizzo di elettrodomestici essenziali.
+        \item \textbf{Wandering e Insonnia:} transiti continui e privi di scopo durante le ore notturne, indicativi di agitazione psicomotoria associata a demenza.
+    \end{itemize}
+    \item \textbf{Fault Tolerance:} se il Gateway non riceve \textit{heartbeat} dal wearable per un tempo superiore a una soglia limite (dispositivo scarico o rimosso), non viene generato un falso allarme medico, ma una notifica di \textit{manutenzione tecnica} al caregiver.
+\end{itemize}
+
+\subsubsection{Livello Cloud e Interfacce: Il Ruolo del Medico e del Paziente}
+Solo gli \textit{alert} di anomalia e i \textit{log} aggregati vengono trasmessi al Cloud (su connessione sicura TLS). L'ecosistema riposiziona il medico al centro del processo decisionale tramite interfacce dedicate:
+\begin{itemize}
+    \item \textbf{Dashboard Clinica (Interoperabilità HL7 FHIR):} fornisce al geriatra mappe di calore comportamentali e indicatori di rischio sintetici. I dati e i report generati sono esposti tramite API conformi allo standard internazionale \textbf{HL7 FHIR}, permettendo la totale integrazione con i Sistemi Informativi Ospedalieri (HIS) e l'inserimento nel Fascicolo Sanitario Elettronico (FSE).
+    \item \textbf{Intervento Attivo (Dashboard Utente):} in presenza di anomalie, il medico può sbloccare la somministrazione di test clinici mirati (es. MMSE o scale geriatriche per la depressione - GDS) direttamente sul tablet del paziente. L'interfaccia utente è progettata con principi di accessibilità geriatrica (alto contrasto, sintesi vocale) e integra dinamiche di \textit{Ecological Momentary Assessment} (EMA), interrogando proattivamente il paziente sul proprio stato d'animo per correlare l'oggettività sensoriale alla soggettività psicologica.
+    \item \textbf{Modulo Caregiver:} un accesso \textit{read-only} per i familiari che, nel rispetto del segreto medico, fornisce rassicurazioni semaforiche sullo stato della routine domestica.
+\end{itemize}
+
+\subsection{Metodologia di Test e Validazione}
+Per assicurare la validità traslazionale del progetto, è prevista una validazione bifasica:
+\begin{itemize}
+    \item \textbf{Validazione dell'Infrastruttura (Accuratezza e Latenza):} valutazione del \textit{Room-Level Tracking} tramite costruzione di una Matrice di Confusione per stimare l'accuratezza del posizionamento BLE in presenza di ostacoli fisici. In parallelo, \textit{stress test} dell'Edge Node per misurare il consumo di risorse (CPU/RAM) durante l'inferenza del modello NILM in tempo reale.
+    \item \textbf{Validazione Clinica e Usabilità (Human-Computer Interaction):} test del workflow di triage \textit{end-to-end} e somministrazione della \textbf{System Usability Scale (SUS)} a un campione di utenti anziani, con l'obiettivo di superare la soglia di tollerabilità di 70/100.
+\end{itemize}
+\newpage
+\section{Architettura Completa}
+\subsection{Acquisizione dei Dati Biometrici e collegamento con l'Edge Locale}
+Il dispositivo indossabile selezionato per il monitoraggio clinico continuo è il \textbf{Google Pixel Watch 2}. Essendo nativamente integrato nell'ecosistema di salute digitale di Fitbit (infrastruttura acquisita da Google), il dispositivo eredita un comparto sensoriale avanzato, comprendente il modulo cEDA per la misurazione continua dell'attività elettrodermica (stress e attivazione del sistema nervoso autonomo), sensori ottici ad alta precisione per l'HRV (Variabilità della Frequenza Cardiaca) e un'unità IMU a sei assi per l'analisi cinematica.
+Per ragioni di sicurezza intrinseca e per garantire la conformità alle stringenti normative sui dispositivi medicali e commerciali, l'accesso diretto ai dati grezzi in tempo reale tramite protocollo Bluetooth (BLE) è inibito dal produttore. Questa restrizione è architetturalmente necessaria per prevenire vulnerabilità e attacchi di rete (es. \textit{Man-in-the-Middle}). Pertanto, l'architettura di estrazione dei dati adotta un \textit{pattern} \textit{Device-to-Cloud-to-Edge}, in cui lo \textit{smartwatch} sincronizza autonomamente e in modo cifrato la telemetria con i \textit{server} dell'infrastruttura Fitbit.
+Il \textit{Gateway Edge} domestico (Raspberry Pi) è configurato come un \textit{Client API} che interroga il \textit{Cloud} per riportare i dati a livello locale. Il flusso di estrazione si articola in tre fasi fondamentali:
+\begin{enumerate}
+    \item \textbf{Autenticazione e Sicurezza (OAuth 2.0):} l'accesso ai dati sanitari è rigorosamente protetto dal protocollo di autorizzazione OAuth 2.0. Durante la fase di \textit{setup} del sistema, viene generato un \textit{Access Token} previa autorizzazione esplicita dell'utente. Il nodo \textit{Edge} memorizza questo \textit{token} in un \textit{vault} sicuro e lo utilizza per firmare ogni singola richiesta, garantendo che le interrogazioni siano cifrate e limitate ai soli parametri autorizzati.
+    
+    \item \textbf{Polling tramite API RESTful:} uno \textit{script} in esecuzione \textit{background} sul Raspberry Pi effettua chiamate HTTP \texttt{GET} a intervalli regolari (es. ogni 15 minuti) verso gli \textit{endpoint} ufficiali delle \textit{Fitbit Web API}. Ad esempio, il sistema interroga l'\textit{endpoint} dedicato all'elettrodermogramma per estrarre il conteggio delle risposte galvaniche e l'\textit{endpoint} biometrico per i \textit{trend} dell'HRV e la qualità del riposo.
+    \item \textbf{Data Ingestion e Decodifica JSON:} i \textit{server} Fitbit rispondono inoltrando un \textit{payload} strutturato in formato JSON. Il \textit{Gateway Edge} effettua il \textit{parsing} del pacchetto, estrae i valori numerici e le metriche temporali e le normalizza, scartando i dati ridondanti non necessari all'addestramento o all'inferenza del modello locale.
+\end{enumerate}
+Una volta scaricati localmente, i dati biometrici vengono sottoposti a un processo di \textit{Data Fusion}. L'algoritmo di Intelligenza Artificiale combina dinamicamente queste metriche fisiologiche con le variabili puramente locali prelevate nell'abitazione, ovvero il posizionamento \textit{indoor} (Beacon BLE) e/o l'interazione con gli elettrodomestici (NILM).
+Questo approccio ibrido risulta ingegneristicamente ottimale: delega l'onere della sicurezza \textit{hardware} e della pre-elaborazione del segnale grezzo al produttore certificato (Google/Fitbit), mantenendo al contempo la totale sovranità computazionale (\textit{Data Fusion} e \textit{Anomaly Detection}) sul nodo \textit{Edge} domestico, operando a piena tutela della privacy comportamentale del paziente.
+
+Dal punto di vista implementativo, la comunicazione tra il \textit{Gateway Edge} (Raspberry Pi) e i \textit{server} Fitbit richiede la configurazione di un ambiente \textit{software} dedicato per l'interrogazione automatizzata delle API. Il \textit{workflow} operativo per la sincronizzazione dei dati si articola in quattro fasi sequenziali:
+\begin{enumerate}
+    \item \textbf{Registrazione dell'Applicativo (Client Credentials):} il primo passo consiste nella registrazione del sistema IoT sul portale per sviluppatori di Fitbit. Questa operazione genera le credenziali univoche (\textit{Client ID} e \textit{Client Secret}), indispensabili per identificare il nodo \textit{Edge} e certificare l'origine delle chiamate di rete.
+    
+    \item \textbf{Autorizzazione OAuth 2.0 (Autenticazione Iniziale):} l'accesso ai dati sanitari dell'utente avviene tramite il protocollo standard OAuth 2.0. Dopo aver fornito il consenso esplicito, il sistema ottiene un \textit{Access Token} (necessario per validare l'identità nelle singole richieste HTTP) e un \textit{Refresh Token} (fondamentale per il rinnovo delle credenziali).
+    
+    \item \textbf{Sviluppo del Modulo di Ingestion (Script Python):} il cuore dell'estrazione è uno \textit{script} sviluppato in Python. Utilizzando librerie per richieste di rete (come \texttt{requests}), lo \textit{script} formula richieste HTTPS \texttt{GET} verso gli \textit{endpoint} biomedici specifici (es. battito cardiaco, variabilità HRV e risposte galvaniche cEDA). Il modulo si occupa inoltre di effettuare il \textit{parsing} del \textit{payload} JSON restituito, memorizzando i valori strutturati localmente per la successiva fase di \textit{Data Fusion}.
+    
+    \item \textbf{Automazione e Fault Tolerance (Cronjob):} per garantire un monitoraggio continuo (\textit{round-the-clock}) senza alcun intervento umano, lo \textit{script} di interrogazione viene schedulato tramite il demone di sistema del Raspberry Pi (\textit{Cronjob}), con esecuzione ciclica (es. ogni 15 minuti). Lo \textit{script} integra inoltre una routine di sicurezza che utilizza il \textit{Refresh Token} per generare automaticamente un nuovo \textit{Access Token} prima della naturale scadenza di quest'ultimo (generalmente 8 ore), evitando così interruzioni nel flusso di telemetria.
+\end{enumerate}
+\subsubsection{Implementazione Pratica dell'Indoor Positioning tramite BLE}
+
+La mappatura spaziale del paziente all'interno dell'ambiente domestico, fondamentale per l'estrazione delle metriche comportamentali (ADL), si basa su un'architettura di \textit{Indoor Positioning} a tecnologia Bluetooth Low Energy (BLE). L'implementazione pratica di questo modulo richiede la configurazione di \textit{hardware} ambientale e lo sviluppo di un motore di scansione \textit{software} sul nodo \textit{Edge}. Il processo si articola in quattro fasi:
+
+\begin{enumerate}
+    \item \textbf{Setup dell'Infrastruttura (iBeacon/Eddystone):} vengono installati Beacon commerciali alimentati a batteria (standard \textit{iBeacon} o \textit{Eddystone}) nei centroidi delle stanze di interesse clinico (Camera, Cucina, Bagno, Soggiorno). Ciascun nodo ambientale è configurato con identificatori univoci gerarchici (UUID, \textit{Major ID}, \textit{Minor ID}) che mappano in modo statico la planimetria dell'abitazione all'interno del sistema.
+    
+    \item \textbf{Configurazione dello Scanner Centrale:} per superare i limiti di programmazione \textit{custom} a basso livello sui \textit{wearable} commerciali, l'architettura adotta una topologia a "Scansione Inversa". Il Raspberry Pi agisce come \textit{Scanner/Observer} BLE centrale. Il dispositivo indossato dal paziente (Pixel Watch 2 o un \textit{Tag} BLE dedicato) opera in modalità \textit{Broadcaster}, emettendo \textit{advertising packet} a intervalli regolari.
+    
+    \item \textbf{Algoritmo di Trilaterazione Logaritmica (Script Python):} il motore di localizzazione, sviluppato in Python tramite librerie asincrone (es. \texttt{bleak} o \texttt{bluepy}), scansiona lo spettro radio estraendo il parametro RSSI (\textit{Received Signal Strength Indicator}). Poiché il segnale indoor è fortemente affetto da \textit{multipath fading} e ostacoli (muri), lo \textit{script} applica un filtro passa-basso sui valori RSSI per stabilizzare la lettura. Successivamente, mappa la posizione dell'utente associandolo al Beacon che presenta l'attenuazione di tratta minore, calcolando la distanza relativa.
+    
+    \item \textbf{Aggregazione delle Metriche Spaziali:} per evitare di saturare la memoria del nodo \textit{Edge} con letture ridondanti e fluttuazioni ad alta frequenza, lo \textit{script} sintetizza i dati grezzi in Vettori di Permanenza. L'\textit{output} algoritmico consiste in un log strutturato contenente \textit{Timestamp}, \textit{Stanza Attuale} e \textit{Tempo di Permanenza Continuativa} (espressa in minuti). Questi vettori pre-elaborati costituiscono le \textit{feature} di ingresso per il modello di \textit{Anomaly Detection} deputato al rilevamento del \textit{wandering} o dell'isolamento.
+\end{enumerate}
+\subsubsection{Intelligenza Artificiale Edge: Modello di Anomaly Detection}
+Il nucleo computazionale dell'intero ecosistema risiede nel modulo di \textit{Machine Learning} (ML) eseguito localmente sul \textit{Gateway Edge} (Raspberry Pi). Il sistema adotta un approccio non diagnostico ma comportamentale, con l'obiettivo di identificare deviazioni statisticamente significative dalla \textit{routine} consolidata del paziente (ADL). 
+
+A causa dell'elevata variabilità interindividuale e dell'assenza iniziale di dataset clinici etichettati specifici per il singolo utente, l'architettura scarta i classici modelli di apprendimento supervisionato in favore di algoritmi di apprendimento non supervisionato (\textit{Unsupervised Learning}) focalizzati sull'\textbf{Anomaly Detection}.
+
+Il \textit{workflow} algoritmico e lo sviluppo del modello si articolano nelle seguenti fasi:
+
+\begin{enumerate}
+    \item \textbf{Fase di Calibrazione e Apprendimento della Baseline:} durante le prime due settimane di installazione (nel nostro caso usando dei dati simulati), il sistema opera in modalità "silenziosa" (\textit{training phase}). Lo \textit{script} Python sul nodo \textit{Edge} aggrega le \textit{feature} provenienti dalla \textit{Data Fusion} (es. vettori contenenti medie orarie dell'HRV, numero di eventi cEDA, \textit{timestamp} e tempi di permanenza spaziale) per costruire il \textit{cluster} normativo del paziente.
+    \item \textbf{Modello Isolation Forest:} il modello selezionato per l'inferenza è l'\textbf{Isolation Forest}. Rispetto ad algoritmi computazionalmente onerosi (es. \textit{Deep Autoencoders}), l'\textit{Isolation Forest} è estremamente efficiente su dispositivi \textit{embedded} (libreria \texttt{scikit-learn}). Il modello suddivide ricorsivamente lo spazio delle \textit{feature}; i \textit{pattern} anomali (es. un \textit{wandering} notturno associato a picchi di stress cEDA prolungati) richiedono meno partizioni per essere isolati rispetto alle abitudini quotidiane dense, venendo così etichettati come \textit{outlier} statistici.
+    
+    \item \textbf{Gestione Soglie e Alarm Fatigue:} per mitigare il rischio clinico di ``fatica da allarme'' (\textit{alarm fatigue}) per il medico curante, il sistema implementa una logica di \textit{debounce} algoritmico. Una singola anomalia isolata (es. una notte insonne occasionale) non innesca la notifica. L'\textit{alert} verso il \textit{Cloud} (via MQTT) viene generato solo se il \textit{trend} delle anomalie (\textit{Anomaly Score} aggregato) supera un valore di soglia dinamico su una finestra temporale estesa (es. anomalie comportamentali costanti nelle ultime 48 ore).
+    
+    \item \textbf{Deployment su Edge:} una volta addestrato e validato il \textit{cluster} iniziale, il modello viene serializzato in memoria locale. Un \textit{daemon} di sistema alimenta ciclicamente il modello con i dati pre-elaborati quasi in tempo reale (\textit{Near Real-Time}), richiedendo inferenze (\texttt{model.predict()}) con una latenza computazionale nell'ordine dei millisecondi e azzerando la dipendenza dal \textit{Cloud} per il rilevamento delle criticità.
+\end{enumerate}
+\subsubsection{Gestione degli Eventi e Triage Cognitivo Dinamico}
+L'\textit{output} generato dal modello \textit{Isolation Forest} non consiste in una diagnosi binaria, bensì in un \textit{Anomaly Score} continuo. Questo punteggio viene confrontato dal \textit{Gateway Edge} con soglie di tolleranza dinamiche, classificando lo stato comportamentale in tre scenari operativi principali. L'obiettivo ingegneristico di questa classificazione è ottimizzare l'intervento medico, innescando un protocollo di \textbf{Triage Cognitivo e Psicometrico} proporzionale al livello di rischio rilevato.
+\paragraph{Scenario 1: Baseline Regolare (Nessuna Anomalia)}
+Quando i parametri fisiologici (HRV stabile) e comportamentali (regolarità spaziale BLE e interazione con elettrodomestici NILM) ricadono all'interno del \textit{cluster} di normalità, l'\textit{Edge AI} non trasmette alcun \textit{alert} al \textit{Cloud}, minimizzando il consumo di banda.
+\begin{itemize}
+    \item \textbf{Azione di Sistema:} la \textit{Dashboard} Utente sul tablet del paziente avvia un protocollo di \textit{Ecological Momentary Assessment} (EMA). Viene somministrata una notifica non intrusiva (es. ``Come valuti il tuo umore oggi?'', tramite \textit{emoticon}), utile per correlare nel tempo i dati oggettivi (sensori) con la percezione soggettiva del paziente, fungendo da rinforzo positivo per l'aderenza al sistema.
+\end{itemize}
+\paragraph{Scenario 2: Sospetto Comportamentale (Pre-Allarme Lieve)}
+Qualora il modello rilevi alterazioni minori protratte nel tempo (come un lieve incremento degli episodi di risveglio notturno (possibile \textit{wandering} precoce) o la mancata accensione della macchina del caffè o fornelli per un singolo pasto (possibile apatia)) il \textit{Gateway} pubblica un messaggio MQTT di basso livello verso il \textit{Cloud}.
+\begin{itemize}
+    \item \textbf{Azione di Sistema (Screening Rapido):} la \textit{Dashboard} Medica evidenzia il \textit{trend} sospetto senza generare un allarme critico. Il sistema abilita l'invio automatico o manuale di uno strumento di \textit{screening} rapido sul \textit{tablet} dell'utente. In caso di sospetto disturbo depressivo, viene sottoposto il questionario PHQ-2 (\textit{Patient Health Questionnaire-2}); in caso di sospetto declino cognitivo, viene proposto un breve \textit{test} gamificato (es. \textit{memory task} visivo) per valutare i riflessi e l'attenzione a breve termine.
+\end{itemize}
+\paragraph{Scenario 3: Anomalia Clinica (Allarme Severo)}
+Il terzo scenario si configura di fronte a deviazioni statisticamente estreme dalla \textit{routine}: il paziente non abbandona la camera da letto per oltre 18 ore, il sensore cEDA rileva un grave distress (o un appiattimento totale associato all'apatia) e il sistema NILM non registra alcuna attività domestica.
+\begin{itemize}
+    \item \textbf{Azione di Sistema (Triage e Intervento Medico):} il nodo \textit{Edge} forza l'invio immediato di un pacchetto MQTT con priorità massima (QoS 2). La \textit{Dashboard} Medica segnala un codice rosso. A questo punto, il geriatra utilizza la piattaforma per attivare un test neuropsicologico standardizzato (es. MMSE, \textit{Mini-Mental State Examination} o MoCA. \textit{Montreal Cognitive Assessment}). Qualora lo stato cognitivo del paziente comprometta l'uso del \textit{tablet}, l'applicativo notifica simultaneamente la \textit{Dashboard Caregiver}, richiedendo al familiare l'assistenza urgente per la compilazione del \textit{test} in telemedicina o suggerendo l'intervento domiciliare.
+\end{itemize}
+In questo modo, il sistema IoT svolge la funzione di "filtro predittivo", assicurando che i \textit{test} cognitivi (spesso fonte di \textit{stress} per il malato) non vengano somministrati in modo cieco o routinario, ma proposti esattamente nel momento di reale necessità clinica individuato dall'Intelligenza Artificiale.
+
+\subsubsection{Sviluppo Applicativo: Stack Tecnologico e Interfacce Utente (Dashboard)}
+Il livello applicativo (\textit{Application Layer}) del sistema rappresenta l'interfaccia operativa attraverso cui i dati elaborati dall'Intelligenza Artificiale vengono tradotti in azioni cliniche. Per garantire reattività, sicurezza e interoperabilità, lo sviluppo delle interfacce si basa su una moderna architettura a microservizi basata su \textit{framework} orientati agli eventi.
+
+\paragraph{Stack Tecnologico e Architettura Backend}
+L'infrastruttura \textit{Cloud} è governata da un \textit{backend} sviluppato in \textbf{Python (FastAPI)}, scelto per le sue elevatissime prestazioni e per la nativa capacità di gestire operazioni asincrone e chiamate RESTful. La persistenza dei dati si divide in due flussi:
+\begin{itemize}
+    \item I dati telemetrici e le serie temporali (es. anomalie ADL, \textit{trend} HRV) vengono storicizzati su un \textit{Time-Series Database} (\textbf{InfluxDB}), ottimizzato per query basate sul tempo.
+    \item I dati anagrafici, i \textit{log} degli eventi clinici e i referti dei \textit{test} cognitivi vengono archiviati su un database relazionale (es. \textbf{PostgreSQL}).
+\end{itemize}
+Il disaccoppiamento tra \textit{backend} e \textit{frontend} è garantito dal protocollo \textbf{WebSockets}, che stabilisce un canale \textit{full-duplex} capace di notificare gli allarmi (\textit{push notifications}) alle interfacce web con una latenza inferiore ai 50 millisecondi.
+
+\paragraph{Sviluppo della Dashboard Medico (Interfaccia Clinica)}
+L'interfaccia destinata al geriatra è sviluppata in \textbf{React.js} e si ispira ai principi di ottimizzazione del Triage ospedaliero (\textit{At-a-Glance view}). Oltre alla visualizzazione semaforica dei pazienti e alla reportistica standard, il sistema estende le capacità operative del medico attraverso tre moduli di comando interattivi (\textit{Call to Action}) gestiti in tempo reale via \textit{WebSockets}:
+\begin{itemize}
+    \item \textbf{Gestione Pazienti a Semaforo:} la \textit{homepage} espone la lista dei pazienti ordinata per priorità di \textit{Anomaly Score} (codifica cromatica Verde-Giallo-Rosso), calcolato localmente dall'algoritmo \textit{Isolation Forest} sul nodo \textit{Edge}.
+    \item \textbf{Data Visualization Clinica:} visualizzazione dei \textit{trend} comportamentali integrati (librerie \textit{Chart.js} o \textit{Recharts}). Il medico non visualizza \textit{raw data} di continuo, ma eventi aggregati (es. durata delle interruzioni del sonno, riduzione delle interazioni domestiche rilevate dal NILM).
+    \item \textbf{Richiesta On-Demand dei Dati di Dettaglio (Raw Data Download):} per impostazione predefinita, il \textit{Gateway Edge} distrugge o mantiene locali i dati telemetrici grezzi ad alta frequenza per tutelare la privacy. Tuttavia, in caso di dubbio clinico o pre-allarme, il medico può inviare un comando di \textit{Override}. Il Raspberry Pi impacchetta temporaneamente le serie temporali grezze degli ultimi giorni (es. campionamenti RSSI dei Beacon o dettagli al secondo del NILM) e le carica sul \textit{Cloud} in formato FHIR, permettendo al medico un'ispezione analitica profonda.
+    \item \textbf{Modulo di Attivazione Paziente (Task Biometrici Manuali):} il medico può richiedere proattivamente all'utente l'esecuzione di un'azione fisica o di una misurazione manuale. Tramite la \textit{dashboard}, invia una notifica push testuale e acustica sul \textit{tablet} dell'anziano (es. ``Si richiede di misurare la pressione arteriosa'' o ``Si prega di avviare la misurazione manuale del battito cardiaco tramite lo smartwatch''). L'interfaccia utente guiderà il paziente nei passaggi richiesti e rimanderà l'esito della misurazione direttamente alla cartella clinica del medico.
+    \item \textbf{Modulo di Coordinamento Caregiver (Verifica Territoriale Urgent):} qualora i sensori evidenzino un'anomalia severa o il paziente non risponda ai compiti biomedici assegnati, il medico può bypassare l'utente e richiedere un intervento ispettivo immediato al familiare. Cliccando sull'apposito comando, la \textit{dashboard} invia una notifica ad alta priorità sul dispositivo del \textit{caregiver} (es. ``Richiesta medica urgente: si prega di verificare visivamente lo stato del paziente e confermare l'avvenuto controllo via app''). Questo automatizza la rete di soccorso familiare prima di allertare inutilmente le strutture di emergenza centralizzate.
+\end{itemize}
+
+\paragraph{Sviluppo della Dashboard Utente e Modulo Caregiver}
+La \textit{Dashboard} paziente, fruibile via \textit{tablet} o \textit{smartphone}, risponde a stringenti requisiti di accessibilità geriatrica. L'interfaccia è priva di grafici o dati medici grezzi, prevenendo fenomeni di ipocondria o ansia indotta dai dati (\textit{data-induced anxiety}).
+\begin{itemize}
+    \item \textbf{UI Accessibile e Modulo EMA:} adozione di componenti \textit{Material Design} ad alto contrasto. La schermata principale implementa una Valutazione Ecologica Istantanea (EMA): tramite un'interfaccia a pittogrammi (\textit{emoticon}), l'utente comunica il proprio stato d'animo soggettivo, dato che verrà poi correlato dall'AI ai parametri fisiologici (es. picchi cEDA rilevati dal \textit{wearable}).
+    \item \textbf{Ricezione Interattiva dei Test:} la piattaforma funge da ricevitore attivo per i \textit{test} inviati dal medico. Il questionario interrompe gentilmente l'interfaccia (modale a tutto schermo) guidando il paziente nella compilazione \textit{step-by-step}.
+    \item \textbf{Autorizzazione Caregiver:} in caso di anomalie severe in cui il paziente non risulti cognitivamente in grado di rispondere ai \textit{test}, una \textit{view} secondaria dell'app notifica il \textit{caregiver} familiare, richiedendo assistenza per la compilazione o per contattare il personale clinico.
+\end{itemize}
+\paragraph{Sviluppo della Dashboard Caregiver (Modulo Familiare)}
+La \textit{Dashboard} destinata ai familiari o agli assistenti autorizzati (\textit{Caregiver}) rappresenta un pilastro fondamentale per la sostenibilità dell'assistenza domiciliare. Spesso, nei sistemi di telemedicina tradizionali, i familiari soffrono di ``ansia da monitoraggio'' a causa della mancanza di informazioni o, al contrario, vengono sommersi da dati clinici che non sanno interpretare. L'interfaccia \textit{caregiver}, sviluppata anch'essa con tecnologia reattiva \textbf{React.js} e ottimizzata per dispositivi \textit{mobile}, risponde a logiche di trasparenza, tempestività e supporto operativo:
+\begin{itemize}
+    \item \textbf{Indicatore Comportamentale a Semaforo (Tranquillità Passiva):} la schermata principale non mostra i battiti cardiaci o i grafici dei consumi elettrici (tutelando la privacy del paziente), ma espone uno stato sintetico basato sulla \textit{routine}. Un indicatore verde (es. ``Routine regolare nelle ultime 24 ore'') rassicura la famiglia sul fatto che l'anziano si sta svegliando, alimentando e muovendo secondo la sua \textit{baseline}, riducendo la necessità di continue e intrusive telefonate di controllo.
+    \item \textbf{Gestione degli Alert Tecnici e Logistici (Fault Tolerance):} in conformità con il modulo di tolleranza ai guasti dell'Edge AI, se il paziente rimuove il Google Pixel Watch 2 o dimentica di caricarlo, la \textit{dashboard} del familiare riceve una notifica push tecnica (es. ``Attenzione: lo smartwatch di Mario è scarico. Si prega di metterlo in carica''). Questo previene l'insorgenza di falsi allarmi medici ed evita che il sistema smetta di raccogliere dati per lunghi periodi.
+    \item \textbf{Modulo Promemoria e Aderenza Terapeutica:} l'interfaccia include un calendario condiviso sincronizzato con il \textit{Cloud}. Il \textit{caregiver} può inserire il piano terapeutico (orari dei farmaci) o gli appuntamenti clinici. Il sistema invierà un \textit{reminder} visivo e acustico sul tablet del paziente e, in caso di mancata conferma da parte dell'anziano, notificherà il familiare per una verifica.
+    \item \textbf{Co-compilazione e Supporto nei Test Cognitivi:} qualora il medico riscontri un'anomalia severa (Scenario 3) e sblocchi la somministrazione dell'MMSE o del test MoCA, la \textit{dashboard} del \textit{caregiver} riceve un avviso di massima priorità. L'applicazione richiede esplicitamente al familiare di affiancare l'anziano davanti al tablet per supportarlo nella comprensione e nella compilazione delle risposte, assicurando la validità clinica del test psicometrico anche in presenza di un deficit cognitivo acuto.
+\end{itemize}
+% ======================================================================
+% INIZIO DOCUMENTAZIONE TECNICA IMPLEMENTATIVA
+% Revisione: 26 settembre 2026. Base f2aea71 + preparazione deployment PC/RPi.
+% Conservare questo marcatore per gli aggiornamenti successivi al deployment.
+% La classe extarticle utilizza section, non chapter: ogni sezione seguente
+% costituisce un capitolo logico della relazione.
+% ======================================================================
+
+\clearpage
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    columns=fullflexible,
+    keepspaces=true,
+    breaklines=true,
+    breakatwhitespace=false,
+    showstringspaces=false,
+    frame=single,
+    rulecolor=\color{black!20},
+    aboveskip=1em,
+    belowskip=1em
+}
+\setlength{\emergencystretch}{2em}
+
+\section{Dalla Proposta al Sistema Realizzato}
+\label{sec:perimetro-reale}
+
+\subsection{Obiettivo e criterio di lettura}
+
+Il progetto nasce da una domanda concreta: come possiamo aiutare un medico a
+riconoscere un cambiamento nella vita quotidiana di una persona, senza chiedere
+a quella persona di compilare continuamente un diario? La risposta sviluppata
+combina osservazioni ambientali, dati del dispositivo indossabile e brevi
+interazioni con il paziente. Il risultato è un sistema di monitoraggio e
+coordinamento dell'assistenza: raccoglie dati, segnala variazioni e consente al
+medico di approfondirle attraverso attività, messaggi e questionari.
+
+Il termine \emph{triage} descrive qui una priorità di revisione. Un indice
+elevato significa che i dati meritano attenzione; non equivale alla diagnosi di
+una malattia, alla probabilità di una caduta o alla conferma di un'emergenza.
+Analogamente, un valore basso non dimostra che la persona stia bene, soprattutto
+quando mancano le misure. Per questo il sistema conserva separatamente il
+punteggio del modello, l'affidabilità dei dati e gli eventi tecnici.
+
+Questa parte della relazione è stata ricostruita leggendo sorgenti, contratti,
+migrazioni, configurazioni di esempio, script e test presenti nel repository
+alla revisione \texttt{f2aea71}, il 25 settembre 2026, e aggiornata il
+26 settembre con gli script di deployment PC/Raspberry e i relativi test.
+Descrive le funzioni implementate e i loro limiti osservabili. Non certifica il collaudo sul
+Raspberry Pi, che al momento della stesura deve ancora essere effettuato,
+né attribuisce risultati sperimentali a prove non ancora eseguite.
+
+\subsection{Le scelte definitive rispetto all'idea iniziale}
+
+Nella proposta erano state considerate più tecnologie. Durante lo sviluppo è
+stato necessario scegliere un percorso riproducibile con l'hardware disponibile.
+Il nodo previsto per il deployment è un \textbf{Raspberry Pi 5}; il wearable
+utilizzato è il \textbf{Google Pixel Watch 2}. I beacon ambientali vengono
+ascoltati principalmente dal \textbf{telefono Android portato dal paziente}.
+Il telefono trasmette al nodo Edge una stima della stanza mediante HTTP.
+Il Watch segue un percorso diverso: i dati sincronizzati dal suo ecosistema
+cloud sono letti da un adapter Python tramite API autorizzate.
+
+L'AI è realizzata con \textbf{scikit-learn e Isolation Forest}. Il backend è
+un'applicazione \textbf{FastAPI}, con un worker MQTT eseguibile separatamente,
+e usa \textbf{PostgreSQL} anche per le finestre temporali. La dashboard medico
+è una \textbf{Single Page Application React}, costruita con Vite. L'app
+Companion è nativa Android, scritta in Java con layout XML; comprende sia
+il profilo paziente sia il profilo caregiver.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.29\textwidth}X@{}}
+\toprule
+\textbf{Ipotesi iniziale} & \textbf{Situazione nella realizzazione corrente} \\
+\midrule
+InfluxDB e PostgreSQL & È utilizzato PostgreSQL; non è presente un servizio InfluxDB. \\
+FHIR e integrazione FSE & Le API sono REST/JSON proprie del progetto; non è implementato un server FHIR. \\
+Wearable come scanner BLE & Lo scanner operativo è l'app Android; resta un collector Python alternativo. \\
+cEDA e segnali IMU grezzi & Non esistono una feature cEDA acquisita né una pipeline di cadute da IMU. \\
+NILM con FHMM o TensorFlow Lite & Esiste un adapter per CSV energetici; la disaggregazione automatica non è implementata. \\
+Baseline simulata di due settimane & Il launcher corrente prevede sette giorni di raccolta personale reale. \\
+Alert con QoS 2 & Il publisher implementato utilizza QoS 1. \\
+Caregiver web in sola lettura & È presente una modalità Android con presa in carico degli alert. \\
+Latenze e validazione clinica già note & Devono essere misurate: non sono risultati acquisiti del prototipo. \\
+\bottomrule
+\end{tabularx}
+\caption{Differenze principali tra proposta e implementazione.}
+\end{table}
+
+Le espressioni della proposta come ``privacy totale'', ``integrazione totale''
+o ``latenza inferiore a 50 millisecondi'' devono quindi essere lette come
+aspirazioni iniziali, non come proprietà dimostrate. L'assenza di telecamere
+riduce l'invasività, ma i dati sulla salute e sulla routine restano personali.
+L'uso di TLS protegge un collegamento, non risolve automaticamente tutti i
+problemi di sicurezza dell'applicazione.
+
+\subsection{Organizzazione del lavoro e del repository}
+
+Il lavoro di Emilio riguarda soprattutto acquisizione Edge, modello AI,
+dashboard e Companion; quello di Daniel riguarda soprattutto infrastruttura
+MQTT, backend, persistenza, autorizzazioni e servizi aggregati. Le estensioni
+recenti attraversano entrambi i lati: ad esempio, la confidenza nasce nel
+runtime, viene conservata nel backend e viene spiegata nella dashboard.
+Per questo una funzione è realmente utilizzabile soltanto quando coincidono
+payload prodotto, contratto API e componente che lo visualizza.
+
+La cartella \path{edge_node/} contiene i moduli di acquisizione e inferenza;
+\path{cloud/} contiene lo stack di servizi e il backend;
+\path{Dashboard/} contiene il client web. Le applicazioni mobili si trovano in
+\path{Applicazione IoT Companion/}. I launcher sono in \path{Script/avvio/},
+le prove infrastrutturali in \path{Script/test/}. La documentazione per compito
+è conservata in \path{Documenti/Emilio/} e \path{Documenti/Daniel/}; i contratti
+condivisi sono in \path{Documenti/contracts/}.
+
+\clearpage
+\section{Architettura Esecutiva e Distribuzione dei Componenti}
+\label{sec:distribuzione}
+
+\subsection{Che cosa eseguire sul Raspberry e che cosa sul PC}
+
+Per il primo trasferimento scegliamo una distribuzione a due macchine.
+Il Raspberry rimane vicino all'ambiente osservato ed esegue la parte Edge;
+il PC ospita i servizi centrali. In questa configurazione la parola
+\emph{cloud} indica un livello logico del progetto: non è necessario affittare
+un server esterno per far funzionare la dimostrazione.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.20\textwidth}XX@{}}
+\toprule
+\textbf{Nodo} & \textbf{Processi e responsabilità} & \textbf{Dati da mantenere} \\
+\midrule
+Raspberry Pi 5 & Receiver BLE, polling wearable, finestre di quattro minuti, qualità, baseline, inferenza e publisher MQTT. & Configurazione Edge, token OAuth locali, modelli, campioni CSV, stato del runtime e coda MQTT. \\
+PC locale & Mosquitto, PostgreSQL, API FastAPI e worker MQTT; server della dashboard e browser del medico. & Database, certificati del broker, credenziali server, backup, asset web e configurazioni. \\
+Telefono paziente & Scanner BLE, interfaccia quotidiana, questionari, ricezione notifiche e invio risultati. & Sessione, identificatore installazione, cache e risultati in attesa. \\
+Telefono caregiver & Stato sintetico, alert autorizzati, messaggi e presa in carico. & Sessione e registrazione push del caregiver. \\
+Servizi esterni & API del wearable e Firebase Cloud Messaging. & Dati gestiti dai rispettivi servizi secondo la configurazione degli account. \\
+\bottomrule
+\end{tabularx}
+\caption{Distribuzione prevista per il primo deployment fisico.}
+\end{table}
+
+Docker sul PC non serve soltanto a ``tenere accesa la dashboard''. Il file
+\path{cloud/docker-compose.yml} definisce Mosquitto, PostgreSQL, un servizio
+di migrazione, il backend e il worker MQTT. \textbf{Non contiene il frontend}:
+durante lo sviluppo la dashboard viene servita da Vite, mentre per una
+distribuzione stabile si potranno servire gli asset compilati con un web server.
+La chiusura del browser non interrompe la raccolta se i servizi restano attivi.
+Lo spegnimento o la sospensione del PC interrompe invece l'accesso ai servizi
+centrali; il Raspberry può continuare a lavorare localmente e accodare messaggi.
+
+\subsection{Il percorso dei dati}
+
+Il flusso principale può essere rappresentato senza attribuire al telefono
+o al browser responsabilità che appartengono al backend:
+
+\begin{lstlisting}
+Beacon delle stanze --> app Android --> HTTP --> Raspberry
+Pixel Watch --> cloud wearable --> HTTPS/OAuth --> Raspberry
+CSV energetici, se disponibili -----------------> Raspberry
+
+Raspberry: aggregazione --> qualita --> AI --> decisione
+                                      |
+                                      v
+                           MQTT/TLS verso il PC
+                                      |
+                         Mosquitto --> worker MQTT
+                                      |
+                                  PostgreSQL
+                                      |
+                            FastAPI REST/WebSocket
+                                /            \
+                      Dashboard medico    App Companion
+
+Medico --> API --> task/messaggio nel DB --> FCM --> telefono
+Telefono --> API --> risultato nel DB --> aggiornamento web
+\end{lstlisting}
+
+Il browser non sottoscrive direttamente i topic del broker. Questa scelta
+mantiene credenziali MQTT e regole di accesso ai dati sul lato server.
+Allo stesso modo, Firebase non è il database dei task: la notifica richiama
+l'attenzione dell'utente, mentre il contenuto persistente viene recuperato dal
+backend autenticato.
+
+\subsection{Indirizzi, porte e significato di localhost}
+
+Nel deployment separato ci sono due indirizzi distinti, indicati in questa
+relazione con \texttt{IP\_RPI} e \texttt{IP\_PC}. Sono segnaposto da sostituire
+con gli indirizzi LAN reali; non sono nomi già configurati. Il telefono invia
+i campioni a \texttt{http://IP\_RPI:8000/ble/sample} e accede ai servizi clinici
+con \texttt{http://IP\_PC:8080/api/v1}. Il Raspberry raggiunge il broker
+sul PC alla porta \texttt{8883}.
+
+\texttt{127.0.0.1} e \texttt{localhost} indicano la macchina che esegue il
+client. Usarli sul telefono significherebbe cercare il backend sul telefono;
+usarli nel Raspberry significherebbe cercare Mosquitto sul Raspberry.
+\texttt{0.0.0.0} ha un altro significato: è l'indirizzo di ascolto che permette
+a un server di ricevere connessioni su tutte le sue interfacce. Non è
+l'indirizzo da inserire nell'app.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}p{0.20\textwidth}X@{}}
+\toprule
+\textbf{Porta} & \textbf{Nodo} & \textbf{Uso effettivo} \\
+\midrule
+8000/TCP & Raspberry & Receiver HTTP per i campioni BLE. \\
+8883/TCP & PC & MQTT su TLS per Edge e worker. \\
+1883/TCP & PC & Listener MQTT non cifrato previsto per test locali. \\
+9001/TCP & PC & MQTT su WebSocket sicuro, disponibile per strumenti di test. \\
+5432/TCP & PC & PostgreSQL; non è un endpoint per telefoni o browser. \\
+8080/TCP & PC & API HTTP e WebSocket applicativo FastAPI. \\
+5173/TCP & PC & Vite durante lo sviluppo della dashboard. \\
+4173/TCP & PC & Anteprima locale della build Vite. \\
+443/TCP & Esterno/proxy & HTTPS verso wearable e FCM; futuro proxy HTTPS del sistema. \\
+\bottomrule
+\end{tabularx}
+\caption{Porte principali; le porte pubblicate da Compose vanno limitate alla rete di prova.}
+\end{table}
+
+All'interno della rete Docker il backend usa invece i nomi dei servizi
+\texttt{postgres} e \texttt{mqtt}. Compose imposta questi valori esplicitamente.
+Un processo Python avviato sul PC fuori dai container usa normalmente
+\texttt{localhost}. Questa distinzione spiega perché un medesimo file di
+configurazione non possa essere copiato alla cieca tra host, container e Pi.
+
+\clearpage
+\section{Localizzazione Ambientale e Acquisizione BLE}
+\label{sec:ble-reale}
+
+\subsection{Il telefono come osservatore mobile}
+
+Nella configurazione usata dal prototipo i beacon sono fissi nelle stanze e
+il telefono si muove con il paziente. Il servizio Android osserva i pacchetti
+di advertising BLE e li associa a una mappa stanza--beacon. Non è richiesta
+una connessione GATT a ciascun beacon per leggerne l'advertising; lo scanner
+Android riceve gli annunci e i relativi RSSI attraverso le API Bluetooth.
+Il riferimento per questo meccanismo è la documentazione Android sullo
+scanning BLE \cite{android-ble}.
+
+La localizzazione descrive quindi \textbf{la posizione del telefono come
+approssimazione della posizione della persona}. Se il paziente lascia il
+telefono sul tavolo, il sistema non può dedurre che si sia spostato altrove.
+È una limitazione pratica centrale: va verificata nel protocollo di prova
+e spiegata a chi utilizza il sistema.
+
+Il codice riconosce gli iBeacon dal manufacturer identifier
+\texttt{0x004C} e dal prefisso \texttt{0x02 0x15}; ricostruisce UUID, major e
+minor per risolvere l'identità del beacon. La mappa può anche utilizzare nome
+o indirizzo. L'identificazione tramite UUID/major/minor è preferibile quando
+l'indirizzo radio non è stabile. Per la demo è stato deciso di utilizzare
+\textbf{due soli beacon validi, Cucina e Bagno}. Il terzo dispositivo,
+destinato alla Camera da letto, non è stato configurato e verificato con
+successo: viene escluso dalla configurazione operativa. Il software
+mantiene il supporto per camera e soggiorno, ma supporto nello schema
+e copertura fisica installata non sono la stessa cosa.
+
+\subsection{Copertura della demo con due beacon}
+
+La mappa attiva sul telefono deve contenere soltanto le associazioni
+verificate con \texttt{kitchen} e \texttt{bathroom}. La riga predefinita
+\texttt{bedroom} e l'associazione provvisoria per nome del terzo dispositivo
+non devono essere considerate configurazioni collaudate. La loro rimozione
+dalle preferenze del telefono è un'operazione da effettuare durante il setup;
+la presente revisione modifica la documentazione, non le impostazioni
+salvate nel dispositivo né i valori predefiniti dell'APK.
+
+Con questa disposizione si possono mostrare permanenze stimate e passaggi
+fra Cucina e Bagno. Non si possono validare la permanenza in Camera,
+l'uscita dalla Camera durante la notte o la localizzazione nell'intera
+abitazione. Quando il telefono è fuori dalle due stanze, lo scanner può
+continuare a ricevere uno dei beacon attraverso le pareti: il criterio
+del segnale più forte non prevede automaticamente una classe affidabile
+``fuori copertura''.
+
+Un limite concreto dell'adapter corrente è che, quando trova una sequenza
+BLE valida, inizializza a zero anche i minuti delle stanze non osservate.
+\texttt{bedroom\_minutes = 0} può quindi derivare dall'assenza di copertura,
+non dalla certezza che il paziente non sia entrato in Camera. Lo schema
+attuale non codifica compiutamente la distinzione fra stanza non monitorata
+e stanza monitorata ma non visitata. Finché questa distinzione non viene
+implementata, quei valori non devono essere usati per sostenere conclusioni
+sulla Camera. Anche le spiegazioni AI, la confidenza e le regole di routine
+devono essere lette alla luce di tale limite; il modello non si riconfigura
+automaticamente perché un beacon è stato escluso.
+
+La baseline raccolta con due stanze descrive questa specifica copertura.
+Se in futuro viene aggiunto il terzo beacon, occorrerà annotare il cambio
+di configurazione e valutare una nuova baseline: un cambiamento del sistema
+di misura può apparire come un cambiamento del comportamento.
+
+\subsection{Selezione della stanza e stabilità del segnale}
+
+\path{BleMonitoringService.java} mantiene le osservazioni recenti e sceglie
+il beacon mappato con RSSI maggiore. Il periodo di invio è di 15 secondi e
+le osservazioni più vecchie di 45 secondi non sono considerate attuali.
+Sono presenti riavvii della scansione dopo errori e una modalità di
+compatibilità quando il filtro iniziale non restituisce osservazioni.
+
+L'equazione distanza--RSSI riportata nella proposta è utile per descrivere
+un modello di propagazione e viene utilizzata nel collector Python
+alternativo. \textbf{La scansione Android corrente non esegue una
+trilaterazione geometrica}. Il criterio operativo è il segnale più forte
+tra beacon conosciuti. Pareti, orientamento del corpo, distanza e interferenze
+possono cambiare l'ordine dei segnali: il dato va interpretato a livello di
+stanza, senza attribuirgli una precisione metrica non misurata.
+
+Sul Raspberry \path{BleCsvAdapter} raggruppa ulteriormente le osservazioni
+in intervalli di 30 secondi, selezionando il segnale più forte del gruppo.
+Ricostruisce quindi la sequenza delle stanze e assegna a ciascuna osservazione
+il tempo fino a quella successiva, oppure fino alla fine della finestra.
+Da questa sequenza ricava permanenze, cambi stanza e permanenza continua
+massima. I cambi notturni sono contati quando l'inizio o la fine della
+finestra ricade fra mezzanotte e le sei, nel fuso configurato.
+
+La durata così calcolata è una stima. Una pausa nelle osservazioni può
+allungare la permanenza attribuita all'ultima stanza; la qualità BLE e la
+freschezza dei campioni devono quindi essere lette insieme ai minuti mostrati.
+La mappa di transizioni ottenuta successivamente da finestre aggregate è
+ancora più sintetica: non rappresenta tutti i passaggi fisici effettuati.
+
+\subsection{Ricezione e conservazione dei campioni}
+
+Il receiver è un piccolo servizio FastAPI distinto dal backend clinico.
+Espone \texttt{GET /health} e \texttt{POST /ble/sample}. Il payload comprende
+stanza, RSSI, identificativo del beacon, timestamp e identificativo del
+telefono; può includere potenza di trasmissione, distanza e metadati radio.
+Il receiver valida la struttura con Pydantic e scrive nel CSV grezzo
+\path{edge_node/data/raw/ble_samples.csv}. Non effettua inferenza durante
+la richiesta HTTP.
+
+Questa separazione evita che il telefono debba aspettare il completamento
+del modello. Consente anche di distinguere due errori: un invio HTTP fallito
+impedisce al campione di arrivare al Pi; un errore MQTT successivo può lasciare
+intatta l'elaborazione locale ma ritardare la dashboard.
+
+Nel receiver attuale non è presente un'autenticazione applicativa del
+telefono e non viene verificata un'associazione clinica del \texttt{phone\_id}.
+Il paziente della finestra è quello configurato sul nodo Edge. Per la prova
+iniziale il receiver deve quindi restare nella LAN controllata, con un gateway
+dedicato al paziente previsto. Un servizio multiutente o esposto su Internet
+richiede un ulteriore meccanismo di associazione e autenticazione.
+
+\subsection{Il collector Python alternativo}
+
+I moduli \path{edge_ingest/ble_collector.py} e
+\path{edge_ingest/ble_cli.py} consentono anche discovery e raccolta con
+\texttt{bleak}. Questa possibilità serve a prove con scanner fissi o
+dispositivi/tag configurati appositamente; non rende il Pixel Watch uno
+scanner programmato dal progetto e non sostituisce automaticamente il
+telefono nella topologia appena descritta. Le due modalità vanno collaudate
+separatamente, mantenendo coerenti stanza dello scanner e dispositivo cercato.
+
+\clearpage
+\section{Dati Wearable, OAuth e Sorgenti Opzionali}
+\label{sec:wearable}
+
+\subsection{Il percorso cloud--Edge del Watch}
+
+Il Raspberry non riceve dal Watch uno stream BLE del battito. Il dispositivo
+sincronizza i dati nel proprio ecosistema; il modulo
+\path{edge_ingest/google_health_adapter.py} interroga le API configurate e
+traduce le risposte nello schema del progetto. Il repository conserva anche
+\path{fitbit_adapter.py} come percorso legacy. La configurazione di esempio
+abilita Google Health e disabilita Fitbit, così da evitare la sovrapposizione
+inconsapevole delle due sorgenti.
+
+L'adapter usa \texttt{urllib.request} della libreria standard, non dipende da
+\texttt{requests}. Per alcune misure invia richieste di aggregazione
+\texttt{dataPoints:rollUp}, con intervalli interni di 60 secondi, verso percorsi
+\texttt{/v4/users/me/dataTypes/...}. Per altre legge elenchi di data point
+o dispositivi associati. I nomi degli endpoint descrivono il percorso
+implementato; l'accesso effettivo dipende dalle autorizzazioni dell'account e
+dalla disponibilità del servizio esterno.
+
+\subsection{Autorizzazione e rinnovo dei token}
+
+OAuth 2.0 permette al titolare dell'account di concedere a un'applicazione
+un accesso delimitato alle proprie risorse. Nel nostro caso l'access token
+viene inserito nelle richieste API e il refresh token permette di ottenerne
+uno nuovo quando necessario. Gli scope delimitano ciò che è autorizzato;
+OAuth non è, da solo, la cifratura del canale, che è affidata a HTTPS
+\cite{oauth2}.
+
+Per Google Health il repository contiene comandi \texttt{status} e
+\texttt{refresh}, mentre il consenso iniziale è preparato secondo
+\path{Documenti/Generale/GOOGLE_WATCH_SETUP.md}. Per Fitbit legacy è presente
+anche il flusso \texttt{setup}. I file
+\path{config/google_health_client.json} e
+\path{config/google_health_token.json} devono essere disponibili sul nodo che
+esegue il polling. La CLI mostra stato e scadenza senza richiedere di stampare
+i token nella relazione.
+
+I token sono salvati in file JSON locali: il codice Edge non implementa un
+vault hardware o una cifratura automatica di questi file. Escluderli da Git,
+limitarne i permessi e trasferirli in modo controllato sono dunque parti del
+deployment. La scadenza deve essere letta dai metadati del provider; non viene
+assunta universalmente una validità di otto ore.
+
+\subsection{Frequenza delle finestre e freschezza delle misure}
+
+Il ciclo aggrega finestre da quattro minuti, ma questo \textbf{non garantisce
+che ogni metrica del wearable sia stata misurata negli ultimi quattro minuti}.
+Il parametro \texttt{data\_delay\_minutes} permette di spostare la finestra
+richiesta al cloud; nella configurazione di esempio corrente vale zero.
+Se il battito manca nella finestra esatta, l'adapter può cercarlo nei
+30 minuti precedenti tramite \texttt{heart\_rate\_lookback\_minutes}.
+
+Il battito medio e la sua deviazione descrivono i valori restituiti da questa
+richiesta, eventualmente estesa. Frequenza a riposo, sonno, HRV e saturazione
+possono invece provenire da riepiloghi giornalieri o notturni. Nel codice
+le metriche giornaliere vengono applicate dopo quelle intraday e possono
+sovrascrivere campi comuni. Non è quindi corretto sommare il sonno giornaliero
+presente in ogni riga come se fossero nuovi minuti di sonno della finestra.
+
+Sono inoltre presenti approssimazioni esplicite: quando il battito è disponibile
+ma mancano data point dei passi, l'adapter può inserire zero passi; con battito
+e zero passi può stimare sedentaria l'intera finestra. Si tratta di regole
+implementative, non di misure dirette indipendenti. Anche
+\texttt{wearable\_present} deriva dal contesto delle API e dei dispositivi
+associati: non è una prova continua che l'orologio sia effettivamente indossato.
+
+Il CSV \path{data/raw/google_health_samples.csv} conserva una riga normalizzata
+per ciclo, con finestra del runtime e finestra richiesta alla sorgente.
+Non contiene necessariamente il segnale fisiologico grezzo. Una futura
+revisione dovrà rendere ancora più esplicite provenienza e anzianità di ogni
+singola metrica, in particolare quando interviene il lookback.
+
+\subsection{Shelly, NILM e cadute: predisposizione e limiti}
+
+\path{ShellyCsvAdapter} legge un CSV prodotto da un campionatore separato.
+Può stimare l'energia dalla potenza media moltiplicata per la durata,
+contare righe etichettate come eventi di cucina, caffè o fornelli e utilizzare
+un campo relativo alla TV. Non contiene il modello che riconosce da solo
+un elettrodomestico nella potenza aggregata. Il collector Shelly reale e
+la disaggregazione NILM restano quindi da completare; nella configurazione
+di esempio la sorgente è disabilitata.
+
+Lo schema contiene anche \texttt{fall\_events}, ma non è stato trovato un
+algoritmo di rilevamento automatico delle cadute dai sensori inerziali del
+Watch. Una risposta del paziente a una domanda su cadute o quasi-cadute è un
+dato dichiarato e non va confusa con una misura IMU. Lo stesso criterio vale
+per cEDA: la sua presenza nella proposta non implica che sia acquisita
+dall'adapter attuale.
+
+\clearpage
+\section{Pipeline Edge, Finestre Temporali e Qualità}
+\label{sec:pipeline}
+
+\subsection{Separazione dei moduli}
+
+Il runtime \path{edge_runtime/cli.py} coordina un ciclo completo.
+\texttt{edge\_ingest} raccoglie e aggrega le sorgenti;
+\texttt{edge\_quality} valuta la qualità;
+\texttt{edge\_baseline} gestisce la raccolta personale;
+\texttt{edge\_ai} esegue i modelli e la decisione;
+\texttt{edge\_mqtt} prepara pubblicazione e recupero degli invii.
+\texttt{edge\_stack} avvia receiver e runtime come processi figli e ne sorveglia
+la terminazione. Questa divisione permette di provare una singola funzione
+senza avviare tutta la dashboard.
+
+Nel loop normale l'intervallo richiesto è 240 secondi. La durata della finestra
+e il fuso sono configurati nel file YAML; gli orari sono normalizzati per i
+confronti e vengono anche salvati in forma locale per la lettura umana.
+Il timestamp della misura, gli estremi della finestra e la data di ricezione
+nel backend hanno significati diversi. Un messaggio recuperato dalla coda
+può essere ricevuto oggi e descrivere una finestra di ieri.
+
+\subsection{Schema comune delle feature}
+
+\path{edge_ai/schema.py} definisce 22 feature numeriche. Il vettore comprende
+inoltre \texttt{patient\_id}, \texttt{window\_start},
+\texttt{window\_end}, presenza e batteria del wearable. Le colonne sono
+stabili anche quando una sorgente non è attiva; questo evita che training,
+inferenza e backend attribuiscano significati diversi alla stessa posizione
+del dataset.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.20\textwidth}X@{}}
+\toprule
+\textbf{Gruppo} & \textbf{Feature previste nello schema} \\
+\midrule
+Fisiologia & \texttt{heart\_rate\_mean}, \texttt{heart\_rate\_std}, \texttt{resting\_heart\_rate}, \texttt{hrv\_rmssd}, \texttt{spo2\_mean}. \\
+Riposo e attività & \texttt{sleep\_minutes}, \texttt{awake\_minutes}, \texttt{steps}, \texttt{sedentary\_minutes}. \\
+Ambiente & \texttt{room\_changes}, \texttt{night\_room\_changes}, minuti in camera, cucina, bagno e soggiorno, \texttt{longest\_single\_room\_minutes}. \\
+Energia & \texttt{nilm\_total\_wh}, \texttt{nilm\_kitchen\_events}, \texttt{nilm\_tv\_minutes}, \texttt{nilm\_coffee\_events}, \texttt{nilm\_stove\_events}. \\
+Eventi & \texttt{fall\_events}, riservato a una sorgente compatibile. \\
+\bottomrule
+\end{tabularx}
+\caption{Schema supportato, distinto dalle sorgenti effettivamente disponibili.}
+\end{table}
+
+Un dato non acquisito rimane \texttt{NaN} nel contesto numerico/CSV e viene
+tradotto in \texttt{null} nel payload JSON. Non deve diventare automaticamente
+zero: zero passi osservati e passi sconosciuti sono situazioni diverse.
+Le eccezioni adottate dall'adapter wearable sono quelle descritte nella
+sezione precedente e devono rimanere riconoscibili nell'interpretazione.
+
+\subsection{Il ciclo completo e i suoi file}
+
+Il runtime costruisce la riga della finestra e riscrive
+\path{data/processed/latest_window.csv}. Questo file è volutamente un'istantanea:
+non è lo storico completo. Il report di qualità viene scritto in
+\path{outputs/last-quality-report.json}. Se esiste una raccolta baseline,
+la riga può essere aggiunta a \path{data/processed/baseline.csv} dopo i controlli.
+Il runtime carica i modelli disponibili, calcola la fusione, aggiorna il
+debounce e salva \path{outputs/patient-001-decision.json} per il paziente di
+esempio. Anche questo JSON rappresenta l'ultima decisione, non un archivio
+append-only di tutte le decisioni.
+
+\path{outputs/last-cycle.json} riassume finestra, sorgenti, qualità,
+modelli disponibili, avanzamento baseline e risultato dell'invio MQTT.
+Il recupero dello storico di tutte le decisioni dipende invece dalla
+persistenza nel backend, oppure dai messaggi ancora presenti nella coda
+locale. Questa distinzione evita di cercare mesi di score in un file che
+viene sovrascritto a ogni ciclo.
+
+Se nessun modello è disponibile, il runtime può aggregare i dati e indicare
+\texttt{skipped\_all\_models\_missing}. La modalità
+\texttt{--require-model} trasforma questa condizione in errore esplicito.
+La tolleranza a un guasto di pubblicazione MQTT non implica che qualunque
+errore di token, parsing o inferenza venga ignorato: i log del ciclo restano
+necessari per verificare ciò che è stato davvero prodotto.
+
+\subsection{Controlli di qualità e ammissione alla baseline}
+
+Il report distingue \texttt{ok}, \texttt{warning} ed \texttt{error}.
+I controlli riguardano validità temporale, presenza dei campioni, timestamp
+leggibili, duplicati, disponibilità delle feature wearable e dati energetici
+quando abilitati. La proprietà \texttt{usable\_for\_training} è falsa in caso
+di errore; un warning non esclude automaticamente la finestra.
+
+Prima di aggiungere un dato alla baseline viene inoltre applicato un gate
+basato sui modelli generici, se disponibili. La soglia configurata è
+\texttt{baseline\_gate\_block\_score = 60}. L'intento è evitare che finestre
+già considerate anomale diventino indiscriminatamente la normalità del
+modello personale. Nei file di stato si conserva la ragione dello scarto.
+Sono presenti opzioni per forzare l'append, ma una raccolta destinata alla
+valutazione deve documentare qualunque uso di queste eccezioni.
+
+\subsection{Raccolta e addestramento personale}
+
+Il launcher corrente abilita la baseline automatica quando manca il modello
+personale. La durata predefinita è sette giorni e la soglia operativa è
+\textbf{almeno 1000 finestre accettate}. In sette giorni senza interruzioni
+si avrebbero teoricamente $7\cdot24\cdot60/4=2520$ finestre; il numero reale
+dipende da acquisizione, qualità e gate. Il minimo di 50 righe presente nel
+metodo di training è solo un vincolo tecnico della funzione, non il criterio
+di completamento della raccolta automatica.
+
+Quando la durata prevista è trascorsa e i requisiti del runtime sono
+soddisfatti, viene scritto \path{models/patient-001.pkl}. Il ciclo successivo
+può usare il modello personale insieme ai generici. Alcune utilità manuali
+di finalizzazione applicano controlli più rigidi sullo storico degli errori;
+per diagnosticare una mancata partenza del training vanno quindi letti
+\texttt{baseline\_auto\_train}, conteggio delle righe e stato della sessione,
+non soltanto il tempo trascorso.
+
+La baseline personale prevista è reale. Nel repository esistono anche
+generatori sintetici e dataset convertiti per prove tecniche e modelli generici:
+il loro utilizzo va dichiarato separatamente. Il solo fatto che un file
+\texttt{.pkl} sia presente non dimostra con quali campioni sia stato addestrato.
+
+\clearpage
+\section{Intelligenza Artificiale, Fusione e Interpretazione}
+\label{sec:ai}
+
+\subsection{Perché Isolation Forest}
+
+La domanda affidata al modello è se una finestra sia compatibile con i dati
+di riferimento. Non disponendo di una diagnosi etichettata per ogni finestra,
+il progetto usa un metodo non supervisionato. Isolation Forest costruisce
+alberi di partizionamento casuale: osservazioni isolate in pochi passaggi
+risultano più anomale di quelle immerse nelle regioni dense del dataset.
+Nell'API di scikit-learn, \texttt{predict} distingue inlier e outlier, mentre
+\texttt{decision\_function} restituisce un valore continuo
+\cite{isolation-forest}.
+
+La scelta permette di usare feature eterogenee senza introdurre una rete
+neurale da addestrare sul piccolo dataset personale. Non è però sufficiente
+a dimostrare accuratezza clinica. Un modello può riconoscere differenze nei
+dati anche quando queste derivano dal sensore, dal dataset di origine o da
+un cambiamento di abitudini innocuo.
+
+\subsection{Preprocessing e artefatto del modello}
+
+\path{edge_ai/model.py} costruisce una pipeline con imputazione dei valori
+mancanti tramite mediana, standardizzazione e una foresta di 200 alberi.
+Il seed predefinito è 42 e la contaminazione predefinita è 0,05. Quest'ultimo
+parametro regola la soglia interna del modello: non significa che il
+5\% delle finestre del paziente debba essere clinicamente patologico.
+
+Per il modello generico wearable sono applicate anche trasformazioni
+specifiche. Il codice tratta la coda alta dell'HRV e alcune fasce di
+saturazione con clipping o sostituzioni, e contiene regole che possono
+modificare score e label in presenza di valori fisiologici ritenuti rilevanti
+dal prototipo. Queste regole devono essere presentate come \textbf{euristiche
+software da validare}, non come soglie diagnostiche ufficiali.
+
+È presente inoltre un transformer che moltiplica feature standardizzate per
+pesi. La sua presenza non dimostra da sola un aumento dell'importanza di una
+feature: un riscalamento lineare non garantisce l'effetto desiderato in una
+foresta di isolamento. L'effetto va verificato sperimentalmente insieme alle
+regole di calibrazione, separando ciò che modifica realmente l'output da ciò
+che descrive soltanto l'intenzione progettuale.
+
+Il file serializzato contiene pipeline e metadati: feature utilizzate, numero
+di righe, origine dichiarata, scope del modello, contaminazione, mediane e
+ancore dello score. Si usa \texttt{pickle}. Per il trasferimento su Raspberry
+occorre ricreare un ambiente compatibile con quello di training; nel
+\path{requirements.txt} Edge la versione di scikit-learn è fissata a
+\texttt{1.9.0}. Un artefatto pickle deve provenire da una sorgente fidata,
+perché il caricamento può eseguire codice.
+
+\subsection{I tre modelli e il loro ruolo}
+
+Il modello \texttt{generic\_spatial} osserva il comportamento spaziale e
+domestico. Il modello \texttt{generic\_wearable} osserva le misure fisiologiche
+e di attività. Il modello \texttt{personal} è addestrato sulle finestre del
+paziente. Durante la baseline il sistema può utilizzare i soli generici;
+quando il personale diventa disponibile, gli viene assegnato il peso
+principale.
+
+I convertitori presenti in \path{edge_node/edge_datasets/} supportano CASAS, PAMAP2,
+WESAD e dati di tipo Fitbit, oltre all'unione di dataset e alla generazione
+sintetica controllata. La conversione serve a portare fonti diverse nello
+stesso schema. Non elimina le differenze tra le popolazioni, i dispositivi
+e i contesti di acquisizione: per ogni artefatto usato nella demo va
+conservata l'indicazione del dataset effettivamente impiegato.
+
+Il runtime salta il generico wearable quando non rileva un segnale wearable
+di base utilizzabile. La gestione della mancanza delle sorgenti evita alcune
+inferenze prive di contenuto, ma non autorizza a leggere uno score calcolato
+su poche feature come equivalente a uno calcolato sul quadro completo.
+
+\subsection{Normalizzazione dello score}
+
+Il valore decisionale grezzo viene convertito nella scala 0--100 tramite due
+ancore ricavate sul training. Indicando con $d(x)$ il valore decisionale,
+con $a_n$ il cinquantesimo percentile e con $a_s$ il primo percentile,
+il codice applica:
+
+\begin{equation}
+S(x)=\operatorname{clip}_{[0,100]}
+\left(100\frac{a_n-d(x)}{a_n-a_s}\right).
+\end{equation}
+
+Se l'intervallo delle ancore non è positivo il metodo restituisce zero.
+La trasformazione produce un indice relativo alla distribuzione di training;
+non una probabilità calibrata di malattia. La label della foresta e lo score
+normalizzato vengono entrambi conservati, perché uno stesso valore intermedio
+non implica necessariamente che il modello abbia classificato il campione
+come outlier.
+
+\subsection{Fusione fra modelli}
+
+I pesi iniziali definiti in \path{edge_ai/fusion.py} sono 0,15 per lo spaziale,
+0,15 per il wearable e 0,70 per il personale. Se alcuni modelli mancano,
+i pesi dei rimanenti vengono rinormalizzati:
+
+\begin{equation}
+\widetilde{w}_i=\frac{w_i}{\sum_{j\in A}w_j},
+\qquad
+S_{\mathrm{medio}}=\sum_{i\in A}\widetilde{w}_i S_i,
+\end{equation}
+
+dove $A$ è l'insieme dei risultati disponibili. La decisione finale non si
+limita però a questa media. Se almeno due modelli confermano un livello
+anomalo, la fusione può usare il massimo score con un bonus di cinque punti.
+Un'anomalia isolata riceve invece una penalizzazione di dieci punti,
+senza scendere sotto la media pesata. Un solo generico non confermato è
+limitato a 79,9. Quando tutti i risultati sono considerati normali, lo score
+viene limitato a 34,9.
+
+Nel JSON vengono conservati modalità della fusione, score individuali,
+label, pesi attivi e motivazioni. Il medico può così distinguere, ad esempio,
+una variazione sostenuta dal wearable da un cambiamento concordante anche
+nella routine ambientale. I tre modelli non vanno comunque trattati come
+tre valutazioni cliniche indipendenti: possono condividere feature e
+preprocessing.
+
+\subsection{Debounce e due scale da non confondere}
+
+Il debounce conserva una storia locale di 48 ore. Nel codice Edge un risultato
+da 35 entra in attenzione; da 65 entra nel livello arancione; da 80 entra
+nel rosso. Il giallo è visibile ma non pubblicabile come alert. Un arancione
+richiede almeno quattro record sopra soglia nella storia conservata;
+non sono necessariamente quattro finestre consecutive. Il rosso è
+pubblicabile immediatamente. Presenza assente o batteria wearable sotto il
+12\% possono produrre una decisione tecnica separata.
+
+La dashboard applica una scala di presentazione richiesta durante lo sviluppo:
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.28\textwidth}X@{}}
+\toprule
+\textbf{Score visualizzato} & \textbf{Etichetta della dashboard} \\
+\midrule
+$0\leq S<40$ & Normalità \\
+$40\leq S<60$ & Attenzione \\
+$60\leq S<80$ & Rischio \\
+$80\leq S\leq100$ & Massima Allerta \\
+\bottomrule
+\end{tabularx}
+\caption{Fasce descrittive del frontend, con estremi non sovrapposti.}
+\end{table}
+
+\begin{osservazione}
+Le fasce 40/60/80 della dashboard e le soglie operative 35/65/80 del debounce
+non coincidono. Per esempio uno score 62 può apparire come ``Rischio'' senza
+essere ancora arancione per il runtime. Il valore
+\texttt{should\_publish}, non la sola scritta nel browser, determina
+l'ammissibilità della decisione al flusso degli alert. Questa differenza è
+presente nel codice e deve essere armonizzata in una revisione successiva.
+\end{osservazione}
+
+\subsection{Confidenza: qualità del contesto disponibile}
+
+\path{edge_ai/confidence.py} calcola un secondo indice, separato dallo score.
+La base è la percentuale di feature presenti nello schema di completezza;
+vengono poi sottratte penalità per wearable assente, modello personale
+mancante e, quando quei parametri sono forniti, pochi campioni BLE o coda
+MQTT profonda. Il risultato è limitato fra zero e cento e classificato
+come alto da 75, medio da 45, basso sotto 45.
+
+La penalità per l'assenza del wearable è 15 punti; le altre penalità previste
+sono di dieci punti ciascuna. Il calcolo considera anche sorgenti opzionali
+nel denominatore e quindi può penalizzare una configurazione intenzionalmente
+priva di Shelly. Inoltre non tutti i parametri opzionali sono trasmessi dal
+runtime in ogni modalità. È un indicatore euristico di completezza,
+\textbf{non un intervallo di confidenza statistico e non la probabilità
+che il modello abbia ragione}.
+
+\subsection{Spiegazione delle feature}
+
+Sono presenti due strumenti complementari. I riepiloghi dei modelli
+descrivono scostamenti delle feature dal riferimento di training. Il modulo
+\path{feature_importance.py} applica invece una sostituzione controllata:
+per ogni feature sostituisce il valore corrente con la mediana di training
+e ricalcola lo score. Se la sostituzione lo riduce, il valore originale
+contribuiva ad aumentare l'indice; se lo aumenta, contribuiva a ridurlo.
+
+Il metodo conserva al massimo sei fattori principali e normalizza i loro
+pesi relativi. Nel runtime la spiegazione viene eseguita sul modello con
+priorità più alta disponibile: personale, poi wearable, poi spaziale.
+Non è quindi una decomposizione esatta dell'intera fusione e non è SHAP.
+Una feature distante dal riferimento non dimostra un nesso causale con
+una patologia. La dashboard traduce questi risultati in frasi leggibili,
+mantenendo valori, riferimento e dati mancanti come elementi di contesto.
+
+\subsection{Trend, drift e assenza insolita}
+
+Il backend calcola andamenti dello score su orizzonti di 3, 7 e 14 giorni,
+utilizzando una regressione lineare rispetto al tempo. La pendenza esprime
+punti di score al giorno; le direzioni impiegano soglie di circa $\pm2$.
+Un trend richiede un numero sufficiente di osservazioni per essere
+contestualizzato. Non predice automaticamente lo stato futuro del paziente.
+
+Il servizio di drift confronta gli ultimi 14 giorni con un periodo storico
+fra 35 e 15 giorni prima. Il criterio implementato considera lo spostamento
+della media rispetto al massimo fra otto punti e 1,5 volte la deviazione
+standard storica, con un numero minimo di punti. Sono previsti stati come
+\texttt{stable}, \texttt{possible\_drift} e \texttt{needs\_review} e azioni
+del medico di approvazione o blocco. La funzione di approvazione aggiorna
+stato e log; \textbf{non esegue il training né distribuisce un nuovo pickle
+al Raspberry}. Anche se una risposta si chiama \texttt{retrained}, non
+costituisce prova dell'aggiornamento dell'artefatto.
+
+Un modulo distinto considera l'assenza insolita nella cronologia BLE:
+nessun cambio stanza per quattro ore, mancato accesso a cucina o bagno per
+dodici ore e permanenza prolungata rispetto al riferimento. Prima verifica
+se il BLE sia assente o obsoleto: un sensore fermo deve suggerire una
+verifica tecnica, non una conclusione clinica. Il runtime salva il segnale
+in \path{outputs/patient-001-absence.json} e nello stato del ciclo.
+
+Il costruttore MQTT supporta un messaggio dedicato per questi episodi, ma
+nel percorso di pubblicazione ordinario esaminato il parametro
+\texttt{absence\_json} non viene passato al costruttore. Di conseguenza la
+generazione locale dell'indicatore non dimostra ancora l'arrivo automatico
+dell'alert dedicato nel backend: è un collegamento da completare e verificare.
+
+\subsection{Metriche di validazione e loro significato}
+
+Il modulo \path{validation.py} produce precision, recall, F1, accuracy,
+ROC-AUC quando calcolabile, matrice di confusione e numero di record.
+La CLI consente un holdout temporale per lasciare fuori dal training le
+finestre più recenti. Sono inoltre registrati i record ambigui esclusi e
+le anomalie sintetiche eventualmente aggiunte.
+
+Nel metodo corrente le etichette di alcuni dati reali vengono ricavate
+dallo score del modello stesso, escludendo una fascia intermedia; vengono
+poi confrontate con la classificazione del modello. È quindi una
+\textbf{verifica tecnica con pseudo-etichette}, soggetta a circolarità,
+non una valutazione indipendente su diagnosi note. Anche un F1 elevato
+non può essere presentato come sensibilità clinica. Una validazione
+successiva deve usare dati separati, osservazioni annotate e un protocollo
+di riferimento concordato.
+
+\clearpage
+\section{Protocolli di Comunicazione e Contratti dei Messaggi}
+\label{sec:protocolli}
+
+\subsection{HTTP, REST e JSON}
+
+HTTP realizza lo scambio richiesta--risposta usato da receiver e backend.
+Le letture impiegano normalmente \texttt{GET}, la creazione di risorse
+\texttt{POST}, gli aggiornamenti \texttt{PATCH} e le eliminazioni
+\texttt{DELETE}. Il codice di stato distingue successo, autenticazione
+mancante, permesso negato, risorsa inesistente, conflitto e payload non valido.
+Questa semantica deriva dal protocollo HTTP \cite{http-semantics}; REST
+descrive lo stile delle API e non un ulteriore trasporto di rete.
+
+I payload applicativi sono JSON. Gli schemi Pydantic e le regole del backend
+controllano la struttura e i vincoli. Un \texttt{200 OK} del receiver
+conferma che il campione è stato accettato; non conferma che sia già stato
+elaborato, inviato al broker o visualizzato dal medico. Nello stesso modo
+la creazione di un task nel database e il successo della push sono esiti
+distinti.
+
+\subsection{MQTT e disaccoppiamento del flusso Edge}
+
+MQTT usa il modello publish/subscribe. Il produttore pubblica su un topic;
+il broker inoltra ai client iscritti. Il trasporto impiegato dal progetto
+è TCP con TLS nel collegamento previsto per il deployment. Il QoS 0 non
+richiede la conferma MQTT, il QoS 1 ammette ritrasmissioni e quindi duplicati,
+il QoS 2 aggiunge uno scambio per la consegna una sola volta a livello
+del protocollo. Retain conserva l'ultimo messaggio di un topic; il Last
+Will permette al broker di segnalare una disconnessione inattesa
+\cite{mqtt-spec}.
+
+Il publisher Paho del progetto utilizza \textbf{QoS 1} per finestre,
+decisioni, stato e alert. Ogni ciclo genera normalmente stato Edge,
+finestra e decisione, quando disponibili. L'alert è un messaggio ulteriore,
+condizionato dalla decisione. \texttt{should\_publish=false} non blocca
+la pubblicazione della telemetria: anche gli score normali possono essere
+salvati e disegnati nello storico.
+
+\begin{lstlisting}
+iot/patients/{patient_id}/edge/status
+iot/patients/{patient_id}/telemetry/window
+iot/patients/{patient_id}/telemetry/decision
+iot/patients/{patient_id}/alerts/critical
+iot/patients/{patient_id}/sensors/watch
+iot/patients/{patient_id}/sensors/ble
+iot/patients/{patient_id}/commands/#
+\end{lstlisting}
+
+I topic sensore e comando fanno parte del contratto e delle ACL; non
+implicano che tutti siano pubblicati o consumati dal ciclo corrente.
+In particolare l'Edge non implementa ancora un agente generale per
+eseguire comandi remoti di aggiornamento dei modelli.
+
+\subsection{Envelope versionato e deduplicazione}
+
+L'envelope contiene \texttt{schema\_version}, \texttt{message\_id},
+\texttt{event\_type}, \texttt{patient\_id}, \texttt{edge\_id},
+\texttt{timestamp} e \texttt{payload}. Il subscriber controlla la coerenza
+fra identità nel topic e identità nel messaggio. Questo controllo si
+affianca alle ACL del broker: il client non deve poter cambiare paziente
+semplicemente modificando il JSON.
+
+\begin{lstlisting}
+{
+  "schema_version": 1,
+  "message_id": "decision_updated-esempio-univoco",
+  "event_type": "decision_updated",
+  "patient_id": "patient-001",
+  "edge_id": "edge-rpi5-001",
+  "timestamp": "2026-09-25T10:04:10Z",
+  "payload": {
+    "window_start": "2026-09-25T10:00:00Z",
+    "window_end": "2026-09-25T10:04:00Z",
+    "anomaly_score": 43.5,
+    "level": "yellow",
+    "should_publish": false
+  }
+}
+\end{lstlisting}
+
+L'esempio mostra la struttura, non dati di un paziente reale. Il database
+impone l'unicità di \texttt{message\_id} nelle tabelle interessate. La
+ritrasmissione dello stesso messaggio viene quindi riconosciuta; il backend
+non dovrebbe creare una nuova riga solo perché il broker lo ha consegnato
+di nuovo. Ricalcolare la stessa finestra con un nuovo identificatore,
+invece, non equivale alla ritrasmissione dello stesso messaggio. Il vincolo
+non garantisce da solo l'unicità logica di ogni coppia di estremi temporali.
+
+\subsection{Coda locale, retain e Last Will}
+
+\path{DiskMqttQueue} salva messaggi su disco quando connessione o invio
+falliscono. Al ciclo successivo il publisher prova a svuotare una parte
+della coda, secondo \texttt{max\_flush\_messages}, e rimuove un messaggio
+solo dopo la conferma di pubblicazione. Per questo
+\texttt{queued\_connect\_failed} indica dati in attesa e non necessariamente
+un errore del modello.
+
+Solo lo stato Edge è normalmente retained; telemetria e alert non lo sono.
+Il Last Will è configurato come stato offline retained. Nel codice la
+connessione MQTT viene aperta per la pubblicazione del ciclo e chiusa
+regolarmente al termine. Pertanto il Last Will protegge una caduta durante
+quella connessione, ma non è un heartbeat permanente tra due cicli. Per
+riconoscere l'Edge non più aggiornato, il backend deve anche considerare
+l'età dell'ultimo stato ricevuto.
+
+Un'ulteriore limitazione deriva dal subscriber: la sua sessione e il momento
+dell'acknowledgement MQTT non costituiscono una transazione distribuita con
+PostgreSQL. Un invio confermato dal broker non è una ricevuta di avvenuta
+scrittura nel DB. Le prove di riavvio del worker e del broker sono quindi
+necessarie per misurare le garanzie effettive di recupero.
+
+\subsection{TLS e verifica dell'identità del broker}
+
+TLS protegge riservatezza e integrità del traffico e consente al client di
+verificare l'identità del server attraverso i certificati; non autorizza
+da solo l'accesso ai dati applicativi \cite{tls13}. Il client Edge richiede
+un certificato valido per la CA configurata e non disabilita la verifica
+del nome. Utente/password MQTT e ACL costituiscono un livello distinto.
+
+Il certificato di test descritto nella guida storica include soltanto
+\texttt{localhost} e \texttt{127.0.0.1}. Per spostare l'Edge sul Raspberry
+serve un certificato il cui Subject Alternative Name comprenda il nome o
+l'IP realmente usato per il PC. Se il worker è in Docker e si collega a
+\texttt{mqtt}, anche quel nome deve essere coperto. Copiare solamente
+\texttt{ca.crt} sul Pi non risolve un errore di nome del certificato.
+La chiave privata del server rimane sul PC.
+
+\subsection{WebSocket applicativo e push mobile}
+
+WebSocket mantiene un canale bidirezionale dopo l'apertura della connessione,
+così il server può segnalare cambiamenti senza una nuova richiesta HTTP
+del browser per ciascun evento \cite{websocket-rfc}. Nel progetto questo
+canale è esposto da FastAPI su \texttt{/ws/v1/patients/\{patient\_id\}}.
+È distinto dal listener Mosquitto WSS sulla porta 9001: quest'ultimo trasporta
+MQTT dentro WebSocket, mentre il primo trasporta eventi JSON della dashboard.
+
+Le push Android seguono un terzo percorso, attraverso FCM. I messaggi con
+contenuto di notifica vengono gestiti diversamente in primo piano e in
+background; la callback dell'app non viene usata allo stesso modo in tutti
+gli stati \cite{fcm-receive}. Per questo il progetto integra notifiche di
+sistema, identificatori degli eventi e recupero REST dei dati persistenti.
+
+\clearpage
+\section{Backend, Persistenza e Storicizzazione}
+\label{sec:backend}
+
+\subsection{FastAPI e worker MQTT separati}
+
+\path{cloud/backend/app/main.py} crea l'applicazione FastAPI, configura CORS,
+errori e log JSON e registra le route. Le API sono disponibili con prefisso
+\texttt{/api/v1}; per compatibilità sono montate anche senza quel prefisso.
+La documentazione OpenAPI è esposta da \texttt{/docs}, \texttt{/redoc} e
+\texttt{/openapi.json}. Il file OpenAPI esportato nel repository è un
+artefatto che può diventare meno aggiornato delle route eseguibili.
+
+Il worker \texttt{python -m app.mqtt.worker} è un processo separato. Sottoscrive
+i topic Edge, valida i messaggi, apre una sessione SQLAlchemy e li salva
+nelle tabelle corrispondenti. In caso di errore esegue il rollback e
+restituisce un esito di rifiuto; i vincoli univoci permettono di riconoscere
+i duplicati. Un backend REST avviato correttamente non sostituisce il worker:
+senza subscriber la dashboard può rispondere alle richieste usando dati
+vecchi, pur non ricevendo nuove misure.
+
+Il sistema è quindi un backend modulare con processi separabili, non una
+collezione di microservizi indipendenti per ogni funzionalità. API e worker
+condividono codice, modelli e database. Questa scelta riduce il numero di
+componenti da distribuire nella demo.
+
+\subsection{Modello relazionale}
+
+Le entità sono definite in \path{app/db/models.py}. Le informazioni
+strutturate e ricercabili sono colonne relazionali; i payload variabili
+sono conservati in campi JSON. Le relazioni collegano identità, pazienti,
+dispositivi, finestre, decisioni ed eventi operativi.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.38\textwidth}X@{}}
+\toprule
+\textbf{Tabelle} & \textbf{Responsabilità} \\
+\midrule
+\texttt{users}, \texttt{patients}, \texttt{doctors}, \texttt{caregivers} & Identità applicative e profili principali. \\
+\texttt{doctor\_patients}, \texttt{caregiver\_patients}, \texttt{patient\_users} & Associazioni che determinano l'accesso ai pazienti. \\
+\texttt{edge\_devices}, \texttt{edge\_cycles}, \texttt{sensor\_status} & Dispositivi e diagnostica dell'acquisizione. \\
+\texttt{feature\_windows}, \texttt{decisions} & Finestre aggregate e storico degli score e delle evidenze. \\
+\texttt{alerts}, \texttt{alert\_events} & Segnalazioni e azioni di presa in carico/risoluzione. \\
+\texttt{tasks}, \texttt{task\_results} & Attività assegnate e risposte. \\
+\texttt{questionnaire\_templates}, \texttt{questionnaire\_schedules} & Modelli versionati e programmazioni. \\
+\texttt{notifications}, \texttt{patient\_app\_status} & Comunicazioni, registrazioni dispositivi e stato dell'app. \\
+\texttt{refresh\_tokens}, \texttt{audit\_logs} & Sessioni revocabili e tracciamento delle operazioni. \\
+\texttt{patient\_model\_drift}, \texttt{model\_retraining\_logs}, \texttt{weekly\_reports} & Stato del drift e riepiloghi persistenti. \\
+\bottomrule
+\end{tabularx}
+\caption{Famiglie di dati conservate dal backend.}
+\end{table}
+
+Gli indici combinano spesso paziente e tempo, oppure paziente e stato, per
+le consultazioni più frequenti. Le chiavi esterne specificano cancellazioni
+a cascata o azzeramento del riferimento secondo il tipo di relazione.
+La cancellazione di un task, ad esempio, richiede anche la gestione dei
+risultati associati; rimuovere un alert non equivale a cancellare la sua
+finestra di misura o il relativo audit.
+
+\subsection{Dove finisce uno score ogni quattro minuti}
+
+Quando arriva un messaggio \texttt{telemetry/decision}, viene creata una
+riga in \texttt{decisions} con paziente, Edge, estremi temporali, livello,
+score, pubblicabilità, label e payload. La finestra numerica è salvata
+separatamente in \texttt{feature\_windows}. Si può quindi ricostruire lo
+storico anche per decisioni che non hanno generato alcun alert.
+
+È questo archivio che alimenta il grafico dell'indice AI. Il JSON locale
+\texttt{patient-001-decision.json} serve al ciclo corrente; il grafico
+non dovrebbe essere confuso con la lettura ripetuta di quel solo file.
+Per verificare la persistenza si controllano sia l'ultimo
+\texttt{window\_end} sia il numero di righe, evitando di scambiare vecchi
+dati di test per nuove acquisizioni.
+
+\subsection{Migrazioni e ambienti}
+
+Alembic versiona la struttura del database. Alla revisione esaminata sono
+presenti otto migrazioni, dallo schema iniziale alle tabelle dei report
+settimanali. Il comando \texttt{alembic upgrade head} applica le migrazioni
+mancanti al database configurato; non deve essere interpretato come avvio
+del server. In Compose un servizio dedicato esegue le migrazioni prima
+dell'avvio del backend.
+
+Lo stack ordinario usa PostgreSQL 16. Numerosi test costruiscono invece
+database SQLite in memoria o temporanei: consentono prove rapide e isolate
+della logica, ma non coprono tutte le differenze SQL e di concorrenza del
+database reale. Prima della demo serve anche un controllo su PostgreSQL.
+
+\subsection{Configurazioni e ambienti Python distinti}
+
+Il backend legge le variabili \texttt{IOT\_BACKEND\_*} dal proprio
+\path{cloud/backend/.env}. Compose legge inoltre \path{cloud/.env}, usato
+per database e password del worker containerizzato. Il file
+\path{Dashboard/.env} riguarda invece il client Vite. Sono tre configurazioni
+diverse: inserire una variabile nel file sbagliato può non avere alcun effetto.
+
+Anche gli ambienti Python sono distinti. L'Edge usa normalmente
+\path{.venv/} nella root; il backend nativo usa
+\path{cloud/backend/.venv/}. L'installazione di \texttt{firebase-admin} in uno
+non lo rende disponibile nell'altro. Nel percorso containerizzato le
+dipendenze provengono dal Dockerfile e da
+\path{cloud/backend/requirements.txt}; la base Docker attuale è Python 3.13.
+
+\clearpage
+\section{Identità, Autorizzazioni e Associazione del Telefono}
+\label{sec:identita}
+
+\subsection{Paziente, account e dispositivo sono entità diverse}
+
+\texttt{patient-001} è l'identificatore applicativo del paziente. Non è il
+nome, il codice fiscale, l'email o il token Firebase. Un account è una riga
+in \texttt{users}; un telefono è un'installazione dell'app con un
+\texttt{device\_id}. Separare questi concetti permette di sostituire un
+telefono senza cambiare lo storico clinico e di associare più professionisti
+allo stesso paziente.
+
+L'amministratore crea il paziente e gli account e stabilisce le relazioni
+tramite le API amministrative. Il medico vede i pazienti collegati dalla
+relazione \texttt{doctor\_patients}; il caregiver quelli presenti in
+\texttt{caregiver\_patients}; il paziente usa \texttt{patient\_users}.
+Il backend controlla tali relazioni quando riceve una richiesta, oltre
+a verificare il ruolo richiesto dall'operazione.
+
+\subsection{La procedura di associazione nell'app}
+
+Dopo il login, \path{BackendApiClient.java} accetta soltanto un ruolo
+\texttt{patient} o \texttt{caregiver} e richiede al server la lista dei
+pazienti autorizzati. Per il profilo paziente pretende una sola associazione:
+zero associazioni o più di una vengono trattate come configurazione
+incompatibile. Il paziente non sceglie liberamente una stringa da inserire
+per ricevere le attività di qualcun altro.
+
+L'app genera un identificatore casuale persistente dell'installazione,
+del tipo \texttt{android-...}. Registra poi sul backend paziente, dispositivo,
+piattaforma, versione e token FCM. L'endpoint verifica che l'utente sia
+autorizzato sul paziente indicato. Il token FCM è un indirizzo di recapito
+che può cambiare; non è una credenziale per leggere cartelle cliniche.
+La lettura di task e risultati continua a richiedere la sessione del backend.
+
+Il collegamento Edge è distinto: il Raspberry deve avere lo stesso
+\texttt{patient.id}, un \texttt{edge\_id} coerente e credenziali MQTT con ACL
+limitate al relativo ramo di topic. Per un secondo paziente si creano nuove
+associazioni e credenziali Edge, invece di riutilizzare indistintamente
+\texttt{patient-001} e \texttt{edge-rpi5-001}.
+
+\subsection{Autenticazione del backend}
+
+Le password degli account sono conservate come hash PBKDF2-SHA256 con salt
+casuale e 210000 iterazioni. Il login restituisce un access token breve e
+un refresh token opaco; la durata predefinita è rispettivamente 15 minuti
+e 30 giorni. Il database conserva l'hash del refresh token, la scadenza e
+l'eventuale revoca.
+
+Il formato dell'access token del progetto è un payload JSON codificato
+Base64URL seguito da una firma HMAC-SHA256. È un formato firmato proprio
+del backend, \textbf{non un JWT standard a tre segmenti}. La firma impedisce
+di alterare validamente i campi senza la chiave del server; non cifra il
+payload. All'uso del token il backend legge inoltre lo stato e il ruolo
+dell'utente dal database.
+
+Sono presenti login, refresh, logout, cambio password e revoca delle
+sessioni di refresh. Il logout revoca il refresh indicato; l'access token
+breve può restare valido fino alla scadenza. Il limite dei tentativi di
+login è mantenuto in memoria per processo e non rappresenta una protezione
+distribuita fra più repliche.
+
+\subsection{Profili demo e impostazioni amministrative mobili}
+
+I profili dimostrativi sono abilitati soltanto dalla configurazione di demo.
+La password è fornita tramite \texttt{IOT\_BACKEND\_DEMO\_AUTH\_PASSWORD}
+nel file del backend, non tramite Firebase. La relazione tecnica non
+riporta i suoi valori reali né i segreti MQTT o Google.
+
+Il pannello amministrativo Android protegge la modifica di gateway, mappa
+beacon e stop del servizio con credenziali locali. Nel prototipo tali
+credenziali sono fisse nel sorgente e sono separate dagli account admin
+del backend. Questa barriera evita modifiche accidentali nell'uso
+quotidiano, ma non è un sistema di provisioning sicuro per una distribuzione
+reale: deve essere sostituita o rafforzata prima di quel passaggio.
+
+\subsection{Separazione dei ruoli: risultato e confini}
+
+L'interfaccia caregiver usa un endpoint sintetico, senza mostrare feature
+AI o token tecnici. Le azioni di creazione task, risoluzione e cancellazione
+degli alert richiedono il ruolo appropriato. Occorre però distinguere
+\emph{assenza di un dato dall'interfaccia} da \emph{impossibilità di richiederlo}:
+alcune route generali controllano soprattutto l'associazione al paziente.
+La minimizzazione dei dati su tutte le API deve quindi essere verificata
+anche inviando richieste dirette con ciascun ruolo, non solo osservando
+la schermata Android.
+
+\clearpage
+\section{Aggiornamento in Tempo Reale e Diagnostica}
+\label{sec:realtime}
+
+\subsection{Eventi applicativi e lettura dello stato}
+
+La dashboard apre un WebSocket per il paziente selezionato e riceve eventi
+come nuova decisione, nuova attività, aggiornamento di un task o variazione
+di stato. Gli eventi fungono soprattutto da invito a ricaricare i dati REST:
+la rappresentazione persistente rimane nel database.
+
+All'interno del processo FastAPI è presente un bus in memoria. Il worker
+MQTT eseguito in un altro processo non condivide quella memoria; per
+rilevare anche i suoi aggiornamenti, la route WebSocket confronta
+periodicamente un riepilogo delle ultime righe nel DB, con un'attesa
+ordinaria di circa due secondi. Questo spiega perché la separazione fra
+worker e API funziona, ma anche perché non si può promettere una latenza
+costante inferiore a 50 millisecondi.
+
+Il riepilogo usa identificatori delle ultime risorse e timestamp sensore.
+Alcune modifiche alla stessa riga possono richiedere l'evento applicativo
+esplicito o un aggiornamento REST per essere rilevate. La prova di più
+processi API e di aggiornamenti concorrenti deve quindi far parte del
+collaudo, senza attribuire al bus in memoria le garanzie di un message broker
+condiviso.
+
+\subsection{Sessioni e riconnessione}
+
+Il browser passa il token nella query string del WebSocket. Il server
+verifica identità e accesso al paziente prima di accettare. Un rifiuto 403
+all'apertura può dipendere da token scaduto o non valido, utente disattivato
+o associazione mancante. Il client prova a riconnettersi dopo tre secondi;
+la sola riconnessione con lo stesso token scaduto non risolve il problema.
+
+Il client Android implementa un tentativo di refresh in seguito a una
+risposta 401. Il client web esaminato non contiene un meccanismo equivalente
+di rinnovo automatico in tutte le richieste: può rendersi necessario un
+nuovo login. I log di accesso che comprendono l'URL WebSocket possono
+inoltre includere il token; la loro redazione è parte dell'hardening futuro.
+
+\subsection{Stato tecnico leggibile}
+
+Il backend compone lo stato di Edge, wearable, BLE, Google Health e app
+considerando l'ultimo contatto e soglie di obsolescenza configurabili.
+I valori predefiniti sono dieci minuti per l'Edge, dodici per diverse
+sorgenti e quindici per l'app paziente. La dashboard usa anche proprie
+indicazioni di dato obsoleto; un'indicazione verde non va interpretata come
+una garanzia assoluta di connessione istantanea.
+
+\texttt{/health} verifica la vitalità del processo.
+\texttt{/ready}, nella versione attuale, controlla soprattutto la presenza
+della configurazione e non prova in profondità ogni dipendenza.
+\texttt{/ops/status} e \texttt{/metrics} offrono invece contatori, una verifica
+del DB e informazioni operative. Alcuni contatori MQTT, Firebase e WebSocket
+sono in memoria: quando API e worker sono processi separati, il valore
+visto da un processo può non rappresentare l'attività dell'altro.
+
+La diagnostica va quindi letta insieme a log del worker, crescita delle
+tabelle e \texttt{last-cycle.json}. Lo script
+\path{Script/test/diagnose_dashboard_data.ps1} percorre proprio questa catena:
+ultimo ciclo, login, pazienti REST, stato corrente, tabelle DB e log MQTT.
+
+\clearpage
+\section{Dashboard Medico e Lettura dei Dati}
+\label{sec:dashboard}
+
+\subsection{Una sola applicazione, più prospettive sul paziente}
+
+La dashboard è una Single Page Application React, costruita con Vite.
+Il medico accede, sceglie uno dei pazienti autorizzati e passa fra quadro
+clinico, timeline, valutazioni, giornata tipo, routine ambientale,
+segnalazioni, attività, stato sistema e report. Queste viste non sono
+applicazioni separate: condividono sessione, paziente selezionato e dati
+ottenuti dal backend. Le icone provengono da \texttt{lucide-react}.
+Il logo comune a dashboard e app e lo sfondo del login sono risorse
+grafiche del progetto, non dati scaricati dai servizi sanitari.
+
+Il quadro clinico mette in primo piano l'ultimo indice disponibile,
+il periodo a cui si riferisce e gli elementi utili a leggerlo. I dettagli
+tecnici, come ritardo di acquisizione, coda MQTT e stato delle sorgenti,
+hanno una vista dedicata: un problema di trasporto non deve diventare
+visivamente un peggioramento della persona.
+
+La scheda anagrafica permette di riconoscere il paziente attraverso nome,
+cognome e altri dati di base, con possibilità di nasconderli nella vista.
+Nella versione esaminata questa anagrafica è salvata nel
+\texttt{localStorage} del browser, con chiave
+\path{iot_dashboard_patient_profiles_v1}: non è una cartella anagrafica
+centralizzata. Non si sincronizza automaticamente fra PC e non sostituisce
+l'associazione account--paziente verificata dal backend. Nascondere i campi
+è un accorgimento visivo, non una cifratura dei dati.
+
+\subsection{Riepilogo, timeline e contesto temporale}
+
+Il riepilogo delle ultime ventiquattro ore riunisce copertura delle
+finestre, andamento dello score, segnalazioni e attività. Il confronto
+numerico usa le informazioni effettivamente disponibili nel periodo
+precedente; lo stato della baseline personale fornisce ulteriore contesto.
+Non è corretto chiamare indistintamente ``baseline'' ogni confronto:
+il giorno precedente, la media storica per fascia oraria e il dataset
+usato per addestrare il modello personale sono riferimenti diversi.
+
+La timeline unificata ordina temporalmente decisioni, anomalie, attività,
+messaggi e azioni registrate. Serve a ricostruire, per esempio, che cosa
+è accaduto fra un indice elevato e la successiva risposta del paziente.
+Non prova un rapporto causale fra eventi vicini nel tempo. Le API sono
+paginate; la vista e i fallback possono lavorare su un sottoinsieme già
+caricato. L'assenza di un evento nella prima pagina non prova che quell'evento
+non esista nel database.
+
+Le finestre recenti consentono ordinamento e selezione di un intervallo
+di data e ora. Il client invia i limiti temporali all'endpoint delle
+finestre quando richiesto, ma il caricamento resta limitato dal parametro
+\texttt{limit}, che per finestre e decisioni arriva a 200 nella rotta
+esaminata. Un grafico non va quindi presentato come l'intero archivio
+storico senza verificare intervallo, numero di record e limiti della query.
+
+\subsection{Grafici interattivi e origine del valore}
+
+I grafici sono componenti SVG implementati nel frontend; il progetto non
+dipende attualmente da Chart.js o Recharts. Le serie possono essere aperte
+in una finestra ingrandita. Il componente gestisce selezione dei punti,
+spostamento orizzontale e ingrandimento dell'intervallo, mantenendo
+leggibili valore e riferimento temporale. L'andamento dell'indice AI usa
+una linea rossa, mentre le altre metriche mantengono la propria distinzione
+cromatica.
+
+Il dato selezionato deve essere letto insieme alla finestra di raccolta,
+non come misura istantanea necessariamente acquisita nell'istante del click.
+Le diciture acquisito, non acquisito e imputato distinguono la provenienza
+quando il payload rende disponibile tale informazione. Un valore imputato
+consente al modello di elaborare un input incompleto, ma non equivale a
+una misura del sensore. I buchi nella serie e i dati mancanti non devono
+essere trasformati semanticamente in valori pari a zero.
+
+Le finestre di dettaglio e conferma usano il meccanismo dei portal React
+per separare l'overlay dai contenitori della pagina. Questa scelta affronta
+i problemi riscontrati con dialoghi fuori schermo, antenati con overflow
+e grafici ingranditi non visibili. Il comportamento va comunque verificato
+con zoom del browser, schermi piccoli e navigazione da tastiera: la sola
+presenza del pulsante di apertura non dimostra che l'interazione funzioni.
+
+\subsection{Routine ambientale e giornata tipo}
+
+La routine ambientale riassume permanenze nelle stanze, transizioni e
+movimenti notturni ricavati dai campioni BLE. Il significato rimane quello
+di una presenza stimata del telefono. Se il paziente lascia il telefono
+sul tavolo, la dashboard non può dedurre che la persona sia rimasta lì.
+
+La giornata tipo confronta oggi, ieri e una media storica nelle fasce
+00--06, 06--10, 10--14, 14--18, 18--22 e 22--24. Il backend esaminato cerca
+finestre e decisioni negli ultimi novanta giorni e considera storico
+i giorni diversi da oggi e ieri. Le grandezze vengono aggregate per fascia;
+non si tratta dello stesso oggetto del modello personale addestrato all'Edge.
+Se una politica di retention conserva soltanto trenta giorni di finestre,
+il riferimento effettivo non può contenere novanta giorni completi.
+
+La selezione della metrica permette di confrontare indice AI, frequenza
+cardiaca, passi e altre grandezze disponibili. Il confronto richiede
+campioni sufficienti in entrambe le serie: una fascia senza misure non
+dimostra né assenza di attività né miglioramento.
+
+\subsection{Spiegazione dell'AI e consultazione offline}
+
+La dashboard mostra separatamente score, confidenza, fattori influenti,
+dati mancanti, metriche di validazione, trend e stato di drift quando
+il backend li fornisce. Le etichette trasformano i nomi tecnici delle
+feature in frasi più leggibili, senza introdurre una diagnosi generata
+da un modello linguistico. Il progetto non contiene un servizio LLM
+incaricato di scrivere referti.
+
+Le chiamate ad alcune estensioni sono opzionali: se un endpoint non risponde,
+la pagina può usare le finestre e le decisioni già caricate. Questo evita
+una schermata vuota, ma un riepilogo locale su pochi record non è equivalente
+a un'aggregazione server sull'intero periodo.
+
+Una cache nel \texttt{localStorage} conserva l'ultimo payload del paziente
+con l'ora di salvataggio. In caso di errore, la dashboard può mostrare quei
+dati come non aggiornati e limitare le azioni operative. Non è una vera
+modalità offline completa: il login iniziale, i nuovi dati e le scritture
+richiedono il backend. La cache è indicizzata per paziente, non separata
+robustamente per ogni account; il fallback non distingue in modo sufficiente
+tutti gli errori di autorizzazione da quelli di rete. Prima di usare dati
+reali servono invalidazione al logout, separazione per utente e una gestione
+specifica dei 401 e 403.
+
+\subsection{Pulizia della vista e cancellazione persistente}
+
+I comandi che ripuliscono grafici o dati caricati agiscono sulla vista
+e sullo stato locale; non costituiscono una cancellazione generale dei
+record PostgreSQL. Anche la conferma con password della funzione di pulizia
+complessiva verifica nuovamente il login, ma l'operazione esaminata ripulisce
+stato e cache del client, non tutte le tabelle del backend.
+
+La cancellazione di un'attività o di una segnalazione usa invece endpoint
+\texttt{DELETE} persistenti. Per le segnalazioni il server richiede lo stato
+risolto e il ruolo medico o amministratore; elimina l'alert e i relativi
+eventi, conservando un record di audit. La decisione AI da cui l'alert
+derivava non viene automaticamente cancellata. La cancellazione delle
+attività da parte del medico elimina anche i risultati collegati: è una
+funzione distruttiva, non una semplice archiviazione.
+
+Queste scelte sono utili per gestire la demo, ma una successiva versione
+destinata alla pratica clinica dovrà definire una politica esplicita di
+archiviazione e conservazione. Il pulsante di conferma riduce gli errori
+accidentali; non sostituisce una politica dei dati.
+
+\clearpage
+\section{Attività, Questionari e Workflow delle Segnalazioni}
+\label{sec:attivita}
+
+\subsection{Dall'invio del medico al risultato}
+
+Un'attività nasce dal paziente selezionato nella dashboard. Il medico
+sceglie tipo, titolo, priorità, scadenza e istruzioni. Il backend controlla
+l'accesso al paziente e normalizza un payload versionato contenente domande,
+regole di scoring ed eventuali riferimenti a un alert. La priorità è una
+proprietà organizzativa dell'attività, distinta dallo score AI.
+
+Il ciclo comprende gli stati \texttt{created}, \texttt{sent},
+\texttt{seen}, \texttt{started} e \texttt{completed}, oltre a scadenza,
+annullamento e rimozione consentita. Sono informazioni differenti:
+``inviato'' non significa che il paziente abbia letto e ``visto'' non
+significa che abbia completato il test. Lo stato \texttt{expired} può
+essere calcolato durante la lettura in base alla scadenza; il valore
+mostrato dall'API può quindi differire dallo stato grezzo trovato con
+una query SQL sulla sola colonna \texttt{status}.
+
+L'app registra l'apertura e l'inizio, raccoglie le risposte e prepara un
+risultato con identificatore univoco, orario di completamento, durata in
+secondi e identificatore dell'installazione. Il server applica lo scoring
+previsto dal contratto, quando presente, e conserva il risultato. La
+dashboard può mostrare risposte, score, durata e completamento; il medico
+aggiunge una nota senza dover modificare le risposte del paziente.
+Gli aggiornamenti vengono resi disponibili al frontend attraverso il
+canale realtime e le successive letture REST.
+
+\subsection{I test realmente presenti}
+
+Il check-in di benessere è una breve raccolta di informazioni riferite
+dal paziente. Il test cognitivo dimostrativo usa domande semplici e regole
+esplicite di confronto della risposta. Questi strumenti dimostrano il
+percorso completo di assegnazione e restituzione, non l'efficacia di una
+valutazione clinica autonoma.
+
+Nel frontend compare anche una proposta PHQ-2. Nella configurazione
+dimostrativa esaminata lo score atteso viene descritto, ma non è sempre
+associato a una regola automatica di scoring: un intervallo mostrato nella
+UI non dimostra che il backend calcoli una scala validata. Domande,
+traduzione, scoring e condizioni di riproduzione vanno concordati prima
+di presentare questa funzione come somministrazione ufficiale.
+
+Per MMSE e MoCA il progetto predispone un'attività relativa a una
+valutazione supervisionata, con registrazione del punteggio e delle note.
+Non contiene una riproduzione completa dei moduli ufficiali e non acquisisce
+automaticamente il diritto di riprodurli. Non si deve confondere un campo
+numerico da zero a trenta con l'implementazione del test. La verifica con
+il docente e con le condizioni applicabili rimane un prerequisito per
+l'eventuale integrazione dei materiali ufficiali; questa documentazione
+non certifica alcuna autorizzazione o validazione clinica.
+
+\subsection{Template versionati e programmazioni}
+
+I questionari dinamici hanno un identificatore, una versione, uno schema
+di domande e regole di scoring opzionali. I tipi supportati dal contratto
+comprendono domande sì/no, scale, scelta singola e testo.
+Conservare la versione nel task consente di
+interpretare una risposta storica anche quando il template cambia.
+
+Una programmazione associa template e paziente, frequenza giornaliera o
+settimanale, intervallo, prossima esecuzione e possibili personalizzazioni.
+Può essere sospesa senza cancellare i risultati già prodotti. L'endpoint
+\path{/questionnaires/schedules/{id}/generate-due-task} crea l'attività
+quando la programmazione è dovuta e prova a evitare una doppia generazione
+nello stesso periodo, salvo richiesta esplicita di forzatura.
+
+\begin{osservazione}
+Nel codice corrente la programmazione non equivale a un servizio cron
+sempre attivo. Esiste la generazione richiamabile via API; non risulta
+collegato un processo autonomo che percorra tutte le scadenze a dashboard
+chiusa. La prossima esecuzione è calcolata aggiungendo giorni all'istante
+di generazione, mentre i controlli di periodo usano UTC: una pianificazione
+a un'ora locale fissa, anche al cambio dell'ora legale, richiede ulteriore
+lavoro. Il campo timezone non risolve da solo questo problema.
+\end{osservazione}
+
+Lo storico dei punteggi permette di seguire questionari ripetuti, ma
+il confronto deve rispettare template, versione e scala utilizzata.
+Sommare indiscriminatamente uno score di benessere e uno cognitivo
+produrrebbe un numero privo di significato.
+
+\subsection{L'alert come caso operativo}
+
+Una segnalazione riunisce titolo, motivo, livello, origine e collegamento
+alla decisione. La vista di dettaglio aggiunge la finestra di contesto,
+le attività di follow-up e lo storico delle azioni. Il backend cerca la
+finestra compatibile temporalmente più vicina; non ogni relazione è una
+chiave esterna uno-a-uno con il campione originario. I collegamenti espliciti
+nei payload restano importanti per ricostruire il caso.
+
+Il medico, o un caregiver autorizzato nei limiti del proprio ruolo, può
+prendere in carico l'evento. L'identità registrata deriva dall'utente
+autenticato, non da un nome liberamente inserito dal client. Il medico
+risolve la segnalazione con una nota obbligatoria. Una segnalazione risolta
+rimane nello storico, con una presentazione compatta e senza le normali
+azioni di presa in carico; l'eventuale eliminazione richiede conferma.
+
+Le politiche anti-rumore distinguono duplicati di trasporto e segnalazioni
+simili già aperte. Il dettaglio espone anche una soglia di escalation di
+trenta minuti. Un campo ``escalated'' calcolato al momento della lettura
+non dimostra però che un servizio abbia contattato automaticamente un
+operatore: visualizzazione, persistenza e invio push sono passaggi distinti.
+
+\clearpage
+\section{Applicazione Android del Paziente e del Caregiver}
+\label{sec:android}
+
+\subsection{Struttura tecnica e separazione delle schermate}
+
+L'app Android è nativa Java, con Gradle, configurazione Java 17,
+\texttt{minSdk 26} e \texttt{compileSdk}/\texttt{targetSdk 35} nella
+revisione documentata. Non è un client React Native. La schermata quotidiana
+è distinta dalle impostazioni amministrative: la prima deve poter essere
+usata senza conoscere porte, topic o UUID dei beacon; le seconde servono
+a configurare il collegamento con receiver e backend.
+
+L'accesso al backend determina il ruolo. Il paziente vede il proprio
+spazio con monitoraggio, connessioni, ultimo aggiornamento, indicatori
+disponibili, grafici, attività e messaggi del team. Il caregiver vede una
+vista sintetica del paziente associato, problemi tecnici comprensibili,
+segnalazioni autorizzate e messaggi a lui destinati. Non sono due account
+equivalenti e non devono condividere le credenziali.
+
+L'implementazione iOS presente nel repository è un lavoro distinto e
+parziale. Non le vengono attribuite automaticamente le funzioni paziente
+e caregiver completate su Android. La demo descritta in questo documento
+usa Android.
+
+\subsection{Monitoraggio in background e permessi}
+
+Il monitoraggio BLE continua in un Foreground Service con notifica
+persistente. Il servizio usa il tipo \texttt{connectedDevice}, una
+politica di riavvio \texttt{START\_STICKY} e la gestione del wake lock.
+Un receiver di sistema intercetta avvio del telefono e aggiornamento
+dell'app per tentare di riattivare il monitoraggio.
+
+Il manifest comprende permessi Bluetooth, localizzazione secondo la
+versione Android, notifiche, avvio al boot e accesso alla rete. Non basta
+dichiararli: l'utente deve concedere quelli richiesti a runtime e il telefono
+deve avere Bluetooth e servizi necessari attivi. La gestione del risparmio
+energetico varia fra dispositivi; foreground e wake lock non sono una
+garanzia assoluta contro ogni restrizione del produttore.
+
+La notifica persistente del monitoraggio non è un duplicato di una
+notifica clinica. Rappresenta il servizio che sta lavorando in background.
+Il suo arresto è protetto dalla schermata amministrativa, ma la protezione
+locale usa ancora credenziali statiche nel codice: è una misura dimostrativa,
+non un meccanismo amministrativo pronto per la distribuzione. Inoltre
+il percorso di boot deve essere verificato anche dopo uno stop intenzionale
+e dopo il passaggio al ruolo caregiver.
+
+\subsection{Sincronizzazione e disponibilità offline}
+
+Il servizio paziente effettua sincronizzazioni periodiche, con intervallo
+ordinario di circa sessanta secondi. Recupera attività, stato corrente,
+finestre e notifiche e aggiorna la cache. Il heartbeat applicativo viene
+inviato circa ogni quattro minuti e comprende stato dell'app, versione,
+batteria e disponibilità delle notifiche. Questi dati descrivono il telefono,
+non la batteria o la connessione del Watch.
+
+I risultati vengono prima inseriti nella coda locale e poi trasmessi.
+Il medesimo identificatore di risultato accompagna i tentativi successivi,
+così il backend può riconoscere un reinvio. Quando torna la rete, il
+servizio tenta nuovamente l'invio; non occorre chiedere al paziente di
+ricompilare automaticamente il test.
+
+Questa coda riguarda i risultati, non tutti i flussi dell'app. Un campione
+BLE non inviato al receiver non dispone dello stesso archivio durevole
+con replay. Anche le transizioni seen/started non devono essere considerate
+una coda transazionale completa al pari del risultato finale.
+
+I token di sessione sono protetti tramite Android Keystore e cifratura
+AES/GCM. Cache e coda dei risultati usano invece preferenze locali ordinarie,
+non lo stesso contenitore cifrato. La disinstallazione, la cancellazione
+dei dati o la perdita del telefono possono quindi eliminare risultati
+ancora non sincronizzati. Un ulteriore limite è la gestione generica
+di HTTP 409 nel flush della coda: il client può scartare l'elemento senza
+distinguere tutti i possibili motivi del conflitto. La riconciliazione dei
+risultati va verificata e affinata prima di garantire assenza di perdite.
+
+\subsection{Lettura dei propri dati e compilazione}
+
+L'interfaccia del paziente riassume l'andamento con formulazioni prudenti
+e mostra soltanto valori disponibili. I grafici mobili sono realizzati
+con una vista Canvas dedicata, non con una pagina web incorporata. Passi,
+sonno e frequenza cardiaca vanno letti secondo l'orizzonte della sorgente:
+le rilevazioni mostrate non costituiscono necessariamente il totale
+giornaliero reale, soprattutto se derivano da finestre sovrapposte o
+riepiloghi già aggregati.
+
+La schermata di attività costruisce i controlli dalle domande ricevute,
+registra l'inizio e misura la durata fino all'invio. L'aderenza fra tipo
+della domanda, controllo mobile e tipo JSON della risposta deve essere
+verificata per ogni nuovo template; non è sufficiente che un campo sia
+visivamente numerico perché venga inviato come numero. Il backend resta
+responsabile della validazione.
+
+Il paziente può rimuovere messaggi e attività scadute nei casi consentiti
+dal server; una notifica collegata a un'attività ancora da svolgere non
+deve diventare un modo per cancellare il compito. La rimozione consentita
+al paziente è spesso uno stato di dismiss, non l'eliminazione fisica
+che può compiere il medico. Questa distinzione mantiene separate la
+pulizia dell'app e la gestione dello storico clinico.
+
+\subsection{Il caregiver come destinatario operativo}
+
+L'endpoint dedicato al caregiver compone una vista ridotta: stato generale,
+ultimo aggiornamento, problemi tecnici e alert importanti autorizzati.
+La selezione considera pazienti associati, livelli pubblicabili e policy
+di visibilità. Il caregiver può confermare la presa in carico e vedere
+chi è intervenuto, senza ricevere nella schermata ordinaria il dettaglio
+delle feature AI.
+
+I messaggi inviati dal medico al caregiver hanno un percorso distinto
+dai task del paziente. Il caregiver può eliminarli dalla propria lista
+tramite l'operazione prevista dal backend. La minimizzazione della UI non
+va comunque confusa con una verifica completa di ogni endpoint generico:
+i controlli di ruolo devono essere applicati lato server anche quando
+un client costruisce richieste diverse da quelle dell'app ufficiale.
+
+\clearpage
+\section{Messaggi e Notifiche Push}
+\label{sec:push}
+
+\subsection{Contenuto clinico e segnale di consegna}
+
+Un messaggio personalizzato nasce nella dashboard: il medico può scrivere
+titolo e contenuto oppure partire da suggerimenti modificabili. L'invio
+al paziente usa il percorso delle attività di tipo messaggio, mentre
+il caregiver dispone di notifiche e destinatari dedicati. I suggerimenti
+sono testi operativi da rivedere per la singola persona, non prescrizioni
+automatiche decise dall'AI.
+
+Il database conserva il contenuto e i riferimenti. Firebase Cloud Messaging
+trasporta il segnale verso il telefono registrato: non è l'archivio clinico
+e non decide a quale paziente appartiene un'attività. Il token FCM identifica
+una registrazione dell'app e può cambiare; la relazione fra account,
+paziente e dispositivo è verificata dall'applicazione backend.
+
+Il payload push contiene titolo, corpo e identificatori necessari ad aprire
+o ricaricare il contenuto. Una risposta positiva del provider significa
+accettazione dell'invio, non lettura da parte della persona. Lo stato seen
+deve essere registrato tramite il percorso applicativo, non dedotto
+dall'esito di Firebase.
+
+\subsection{Foreground, background e duplicati}
+
+Il client Android integra un \texttt{FirebaseMessagingService}. In primo
+piano può costruire una notifica locale; in background la presenza di un
+payload notification consente anche la gestione da parte dell'SDK e del
+sistema. Il progetto usa identificatori e tracciamento delle notifiche
+già annunciate per limitare la doppia presentazione fra push e polling.
+Questa logica va collaudata sia ad app aperta sia ad app chiusa.
+
+Esistono tre duplicazioni diverse da non confondere: due righe nel DB,
+due invii allo stesso token e due presentazioni locali dello stesso evento.
+Per diagnosticarle si confrontano identificatore della notifica, task
+collegato, registrazioni dei dispositivi e contatori di consegna, senza
+stampare i token. Un titolo sempre generico si corregge nel punto in cui
+il backend costruisce il contenuto o nel fallback del client, non cambiando
+una preferenza grafica nella console Firebase.
+
+\subsection{Paziente e caregiver sullo stesso telefono}
+
+Le registrazioni caregiver sono distinte da quelle paziente e usano una
+convenzione di identificatore e piattaforma dedicata. Tuttavia il token
+FCM appartiene all'installazione: usando lo stesso telefono e cambiando
+account, lo stesso token può rimanere associato a più registrazioni.
+Il logout corrente non costituisce una revoca completa di tutti i
+collegamenti push precedenti.
+
+Questo spiega perché un telefono di prova possa ricevere notifiche dei
+due ruoli pur avendo effettuato accesso soltanto a uno. Non è il comportamento
+da considerare corretto per una distribuzione reale. Occorre disattivare
+la precedente associazione quando cambia utente, definire una titolarità
+non ambigua del token e verificarla all'invio. Per una prova chiara della
+separazione dei destinatari sono preferibili due dispositivi distinti.
+
+\subsection{Configurazione e guasti del provider}
+
+Sul backend serve la dipendenza \texttt{firebase-admin} nell'ambiente Python
+che esegue effettivamente il processo e un service account accessibile
+tramite il percorso configurato. Nell'app Android serve
+\path{app/google-services.json} del progetto Firebase corrispondente
+all'application ID. Il file iOS \path{GoogleService-Info.plist} non sostituisce
+la configurazione Android. Le credenziali del service account devono
+rimanere sul server, mai nell'APK o nel browser.
+
+Lo stato \texttt{firebase\_admin\_missing} indica un problema della
+dipendenza nell'ambiente backend, non un guasto del Bluetooth e non una
+password del paziente errata. I dettagli di delivery persistiti consentono
+di distinguere assenza del pacchetto, configurazione, token invalidi e
+fallimento dell'invio. I token invalidi possono essere disattivati.
+
+La persistenza della notifica consente al client di recuperarla via REST
+anche se il push non arriva. Non risulta però un worker durevole generale
+che ritenti autonomamente ogni invio Firebase fallito: conservazione
+nel DB e retry del provider non sono la stessa cosa. Anche la priorità
+alta della push non garantisce un tempo massimo di consegna.
+
+\clearpage
+\section{Report, Brief del Mattino e Tracciabilità}
+\label{sec:report}
+
+Il report raccoglie stato corrente, decisioni, segnalazioni, attività,
+qualità dei dati e informazioni sul modello. Il backend fornisce un
+payload dedicato; il frontend prepara una vista stampabile. Il pulsante
+di esportazione usa la stampa del browser, dalla quale si può salvare
+un PDF. Non è un documento firmato digitalmente e non viene generato
+da un motore di refertazione certificato.
+
+I report settimanali possono essere persistiti nel database, confrontati
+con la settimana precedente e selezionati dalla dashboard. Nella rotta
+di lettura corrente la generazione automatica avviene, quando richiesta,
+se manca il report della settimana in corso. Un report già esistente
+non viene necessariamente ricalcolato a ogni nuovo campione: per rigenerarlo
+serve il percorso esplicito previsto dal backend. Va quindi mostrato
+e controllato l'istante della generazione, soprattutto durante una settimana
+ancora aperta.
+
+Il brief del mattino riassume la notte nell'intervallo locale 22:00--08:00
+e usa i dati disponibili di sonno, parametri wearable e movimenti domestici.
+Il confronto si basa sullo storico delle notti precedenti, quando presente.
+Le frasi sono costruite da regole e aggregazioni; non da un modello
+generativo che interpreta liberamente i dati.
+
+L'audit registra operazioni quali creazione di task, presa in carico,
+risoluzione, cancellazione e produzione di determinati report. Permette
+di risalire a utente, oggetto e azione. Non equivale però a un registro
+immutabile con firma o concatenazione crittografica: un amministratore
+del database mantiene capacità tecniche di modifica. Anche le note
+libere possono contenere dati personali e vanno trattate con la stessa
+cura degli altri contenuti.
+
+\clearpage
+\section{Preparazione e Avvio dell'Installazione}
+\label{sec:avvio}
+
+\begin{osservazione}
+La modalità consigliata per la distribuzione a due macchine è ora il
+setup guidato della sezione~\ref{sec:autostart}: \texttt{avviaPC.ps1} sul
+PC e \texttt{setup-rpi} sul Raspberry. Le modalità manuali di questo
+capitolo spiegano i componenti e restano alternative per sviluppo e diagnosi;
+non vanno avviate in aggiunta al servizio \texttt{iot-edge}.
+\end{osservazione}
+
+\subsection{Convenzioni e prerequisiti della procedura}
+
+La procedura seguente descrive l'assetto consigliato per il prossimo
+collaudo: Raspberry per receiver, pipeline e AI; PC per servizi cloud
+locali e dashboard; Android per paziente e caregiver. Non attesta che
+il trasferimento sia già avvenuto. Le directory dei comandi sono dichiarate
+esplicitamente: se il terminale è già in \path{edge_node}, non bisogna
+eseguire un secondo \texttt{cd edge\_node}.
+
+\texttt{IP\_PC} e \texttt{IP\_RPI} sono segnaposto da sostituire con
+gli indirizzi LAN effettivi. Per evitare di riconfigurare l'app a ogni
+riavvio conviene assegnare prenotazioni DHCP ai due dispositivi. Telefono,
+PC e Raspberry devono potersi raggiungere: una rete ospiti con isolamento
+dei client può impedirlo anche se tutti mostrano la stessa rete Wi-Fi.
+
+Il PC richiede Docker con Compose per la modalità container, Node.js
+compatibile con il progetto frontend e, solo per l'esecuzione nativa del
+backend, Python con le dipendenze dedicate. Il Raspberry richiede un sistema
+Linux a 64 bit e un interprete Python compatibile con le versioni dichiarate
+in \path{edge_node/requirements.txt}. I requisiti vanno installati e provati
+sulla macchina target; una virtualenv Windows non è trasferibile su Linux.
+
+Gli orologi devono essere sincronizzati. Date corrette sono essenziali
+per token, scadenze, finestre, debounce e confronto degli eventi. Il progetto
+usa timestamp con timezone e normalizzazioni UTC, mentre le viste locali
+e le finestre domestiche usano principalmente \texttt{Europe/Rome}.
+Una data sbagliata sul telefono o sul Raspberry non è un problema estetico.
+
+\subsection{Configurazioni del PC senza mescolare le credenziali}
+
+\path{cloud/.env} alimenta le sostituzioni di Docker Compose, in particolare
+utente, database, password PostgreSQL e password del subscriber MQTT.
+\path{cloud/backend/.env} alimenta le impostazioni dell'app backend:
+autenticazione, CORS, collegamenti, soglie e Firebase. \path{Dashboard/.env}
+contiene invece variabili pubbliche incorporate nel frontend. Le variabili
+\texttt{VITE\_*} non devono contenere segreti.
+
+Si parte dai file example, senza sovrascrivere le configurazioni reali
+già presenti. Per una demo con utenti predefiniti, i parametri da verificare
+nel file del backend sono i seguenti; la password è scelta localmente
+e non riportata in questa relazione:
+
+\begin{lstlisting}
+IOT_BACKEND_ENVIRONMENT=development
+IOT_BACKEND_DEMO_AUTH_ENABLED=true
+IOT_BACKEND_DEMO_AUTH_PASSWORD=<password_demo_scelta_localmente>
+IOT_BACKEND_AUTH_SECRET_KEY=<segreto_forte_dedicato>
+IOT_BACKEND_CORS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+\end{lstlisting}
+
+I segnaposto non sono valori funzionanti. I profili demo sono una comodità
+di sviluppo e non il sistema di provisioning da mantenere per utenti
+reali. Cambiare una variabile d'ambiente non va assunto come sostituto
+di una procedura esplicita di aggiornamento delle credenziali degli account
+già persistiti. In produzione le impostazioni demo devono essere disabilitate.
+
+La password MQTT deve corrispondere all'utente nel file Mosquitto
+\path{cloud/mqtt/passwd}; la password PostgreSQL deve corrispondere al
+database effettivamente inizializzato. Modificare \texttt{POSTGRES\_PASSWORD}
+nel file Compose non cambia automaticamente la password di un ruolo in
+un volume PostgreSQL già esistente. Non si deve cancellare il volume per
+``risolvere'' questa differenza senza aver prima salvato e verificato i dati.
+
+\subsection{Certificati MQTT per il funzionamento su due macchine}
+
+Il certificato del broker deve essere valido per il nome o indirizzo
+usato dal client. Nel deployment proposto il Raspberry usa un nome LAN
+del PC oppure \texttt{IP\_PC}, mentre il worker Docker usa il nome di
+servizio \texttt{mqtt}. Questi riferimenti devono essere presenti nei
+Subject Alternative Names, con il tipo appropriato DNS o IP.
+
+Il certificato di esempio limitato a localhost e 127.0.0.1 non basta
+per una connessione dal Raspberry al PC né, da solo, per il nome Docker
+\texttt{mqtt}. La correzione è emettere il certificato appropriato e
+distribuire la CA attendibile; non disabilitare la verifica del nome host.
+Sul Raspberry serve il certificato pubblico della CA, non la chiave
+privata del broker. Gli account MQTT devono inoltre mantenere ACL
+distinte per Edge e subscriber backend.
+
+\subsection{Modalità A: backend e worker in Docker sul PC}
+
+Questa modalità riduce il numero di processi Python da gestire sul PC
+ed è coerente con lo spostamento della pipeline sul Raspberry.
+Dalla radice del progetto, in PowerShell:
+
+\begin{lstlisting}
+cd cloud
+docker compose up -d --build
+docker compose ps -a
+docker compose logs --tail 80 backend-migrations
+docker compose logs --tail 80 backend
+docker compose logs --tail 80 backend-mqtt-worker
+\end{lstlisting}
+
+Il servizio \texttt{backend-migrations} è un processo una tantum: un'uscita
+con codice zero è attesa. Il backend viene avviato dopo le migrazioni;
+il worker dopo la disponibilità del backend. Il worker deve risultare
+collegato al broker e deve effettivamente consumare i topic previsti.
+Il solo fatto che i container siano in stato running non prova che
+lo storico stia crescendo.
+
+Compose sostituisce il nome del database con \texttt{postgres}, il nome
+del broker con \texttt{mqtt} e monta CA e credenziali Firebase nei percorsi
+del container. Non si devono mettere indirizzi \texttt{127.0.0.1} interni
+al container pensando che indichino automaticamente il PC host.
+
+Per un controllo elementare dal PC:
+
+\begin{lstlisting}
+Invoke-RestMethod http://127.0.0.1:8080/health
+Invoke-RestMethod http://127.0.0.1:8080/ready
+\end{lstlisting}
+
+Si apre poi \url{http://127.0.0.1:8080/docs} per vedere il contratto REST
+dell'istanza in esecuzione. I controlli applicativi autenticati e l'arrivo
+di un messaggio reale restano necessari oltre a health e ready.
+
+\subsection{Modalità B: backend nativo sul PC}
+
+Durante lo sviluppo si può usare Docker soltanto per PostgreSQL e MQTT
+ed eseguire backend e worker nell'ambiente Python locale. È un'alternativa
+alla modalità A, non un secondo stack da avviare contemporaneamente sulla
+stessa porta e con lo stesso client MQTT.
+
+Dal terminale nella radice del progetto:
+
+\begin{lstlisting}
+cd cloud
+docker compose up -d mqtt postgres
+\end{lstlisting}
+
+In un altro terminale, sempre partendo dalla radice, si prepara il backend
+se l'ambiente non esiste già:
+
+\begin{lstlisting}
+cd cloud\backend
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+\end{lstlisting}
+
+Il comando di creazione dell'ambiente si omette quando la virtualenv
+è già pronta. Le migrazioni vanno eseguite una volta per l'aggiornamento
+dello schema, senza avviarne più copie concorrenti. In questa modalità
+il DB URL del file backend usa il PC, tipicamente localhost:5432, non il
+nome Docker \texttt{postgres}.
+
+In un ulteriore terminale, dalla directory \path{cloud/backend}:
+
+\begin{lstlisting}
+.\.venv\Scripts\python.exe -m app.mqtt.worker
+\end{lstlisting}
+
+\texttt{--reload} può essere aggiunto al comando Uvicorn quando si modifica
+il backend, ma non è necessario per la demo e introduce riavvii automatici.
+\texttt{--host 0.0.0.0} consente l'ascolto sulle interfacce di rete; il
+telefono usa sempre \texttt{http://IP\_PC:8080/api/v1}, non 0.0.0.0 come
+indirizzo del server. Il firewall deve consentire il collegamento dalla
+rete privata prevista.
+
+\subsection{Avvio della dashboard}
+
+La dashboard non viene avviata da \texttt{docker compose up}. Nel file
+\path{Dashboard/.env}, per un browser aperto sul PC, si verificano:
+
+\begin{lstlisting}
+VITE_API_BASE_URL=http://127.0.0.1:8080/api/v1
+VITE_WS_BASE_URL=ws://127.0.0.1:8080/ws/v1
+VITE_DATA_SOURCE=real
+\end{lstlisting}
+
+Il parametro della fonte dati è un'etichetta informativa della configurazione;
+non converte automaticamente un backend mock in un backend reale. Sono
+gli URL a determinare l'istanza contattata. Le impostazioni predefinite
+del frontend possono puntare al mock sulla porta 8090: vanno quindi
+controllate, non lasciate implicitamente al valore di default.
+
+Da un nuovo terminale nella radice del repository:
+
+\begin{lstlisting}
+cd Dashboard
+npm.cmd ci
+npm.cmd run dev
+\end{lstlisting}
+
+Il browser sul PC apre \url{http://127.0.0.1:5173}. Se si desidera aprire
+la dashboard da un altro computer, occorre esporre il server frontend
+sulla LAN, usare \texttt{IP\_PC} anche negli URL API e WebSocket e autorizzare
+l'origine esatta nelle impostazioni CORS. Per esempio il server di sviluppo
+può essere avviato con \texttt{npm.cmd run dev -- --host 0.0.0.0}.
+Le modifiche alle variabili Vite richiedono il riavvio del server di sviluppo
+o una nuova build.
+
+Per una versione statica si usa \texttt{npm.cmd run build}, che produce
+\path{Dashboard/dist}. Il server di sviluppo e \texttt{vite preview} sono
+strumenti di sviluppo e verifica, non l'intero deployment di produzione.
+Il repository contiene esempi di reverse proxy, ma l'hosting definitivo
+della dashboard, HTTPS e l'avvio automatico vanno configurati e collaudati
+nell'ambiente scelto.
+
+\subsection{Preparazione del Raspberry}
+
+Sul Raspberry si trasferisce una copia della stessa revisione del codice,
+senza copiare virtualenv Windows, directory \path{node_modules}, APK intermedi,
+chiavi private del broker o credenziali Firebase server. Per eseguire
+l'Edge servono \path{edge_node}, il launcher Linux e la configurazione
+dei percorsi; una copia del repository è comoda, ma non implica che tutti
+i suoi componenti debbano essere eseguiti sul dispositivo.
+
+Nell'esempio seguente il repository è in \path{~/progetto-iot}; il percorso
+va adattato all'installazione reale:
+
+\begin{lstlisting}
+cd ~/progetto-iot
+python3 -m venv .venv
+.venv/bin/python -m pip install -r edge_node/requirements.txt
+\end{lstlisting}
+
+Prima dell'avvio si prepara \path{edge_node/config/edge.yml} partendo
+dall'example e si verificano modelli generici, file OAuth e CA. I modelli
+serializzati richiedono versioni compatibili delle librerie, in particolare
+scikit-learn, e devono provenire da una sorgente fidata. Un file pickle
+non è un formato sicuro per artefatti ricevuti da sconosciuti.
+
+La configurazione MQTT minima da adattare è:
+
+\begin{lstlisting}
+mqtt:
+  enabled: true
+  host: IP_PC
+  port: 8883
+  use_tls: true
+  username: edge_patient_001
+  password: ""
+  password_env: MQTT_EDGE_PASSWORD
+  client_id: edge-rpi5-001
+  edge_id: edge-rpi5-001
+  ca_file: config/certs/ca.crt
+\end{lstlisting}
+
+È un estratto da integrare nel file esistente, non una sostituzione
+dell'intera configurazione. \texttt{IP\_PC} deve corrispondere all'identità
+del certificato. In questo esempio la CA pubblica è stata copiata in
+\path{edge_node/config/certs/ca.crt}; tutti i percorsi relativi vanno
+interpretati rispetto alla directory di esecuzione \path{edge_node}.
+Lasciare \texttt{password} vuoto permette di usare la variabile d'ambiente;
+una password esplicita non vuota nello YAML ha precedenza.
+
+Le credenziali OAuth devono essere trasferite con un canale protetto
+e permessi locali restrittivi, oppure ottenute nuovamente per l'installazione.
+Il client Google Health corrente gestisce stato e refresh di credenziali
+già ottenute; non contiene lo stesso wizard di autorizzazione iniziale
+del provider Fitbit. Dal Raspberry, nella directory \path{edge_node},
+si può verificarne la presenza senza stampare i segreti:
+
+\begin{lstlisting}
+../.venv/bin/python -m edge_auth.cli google-health status
+\end{lstlisting}
+
+È opportuno fermare il vecchio runtime sul PC prima di attivare quello
+sul Raspberry: due processi per lo stesso paziente possono duplicare
+finestre, contendersi il client ID MQTT e aggiornare contemporaneamente
+le credenziali del provider.
+
+\subsection{Avvio Edge e configurazione del telefono}
+
+Per una sessione manuale Bash, dalla radice del progetto sul Raspberry,
+si può acquisire la password MQTT senza inserirla nella cronologia del
+comando e avviare lo stack:
+
+\begin{lstlisting}
+read -rs -p "Password MQTT Edge: " MQTT_EDGE_PASSWORD
+printf '\n'
+export MQTT_EDGE_PASSWORD
+bash Script/avvio/avviaSistema
+\end{lstlisting}
+
+Il launcher entra nella directory corretta e avvia receiver e runtime
+con l'interprete della virtualenv. Il receiver ascolta di default sulla
+porta 8000 e il runtime esegue un ciclo ogni 240 secondi. La raccolta
+automatica della baseline e il successivo training personale sono abilitati
+secondo le condizioni descritte nella sezione~\ref{sec:pipeline}. L'opzione
+\texttt{--disable-auto-baseline} disabilita questa gestione automatica
+quando si vuole una sessione controllata.
+
+Nell'app Android le due destinazioni devono ora essere distinte:
+
+\begin{lstlisting}
+Receiver BLE:     http://IP_RPI:8000/ble/sample
+Backend clinico:  http://IP_PC:8080/api/v1
+\end{lstlisting}
+
+Il receiver non coincide con il backend clinico e non usa la stessa porta.
+Omettere \texttt{:8000} o \texttt{:8080} significa normalmente tentare
+la porta HTTP 80, causando il timeout osservato durante i primi test.
+Il telefono non deve usare localhost per raggiungere nessuna delle due
+macchine. Dopo aver verificato gli indirizzi, si effettua il login con
+l'account paziente associato dal backend, si concedono i permessi e si
+controlla la mappa dei beacon.
+
+\subsection{Che cosa fa oggi il comando unico}
+
+Su Windows \path{Script/avvio/avviaSistema.ps1} avvia normalmente soltanto
+lo stack Edge. Con \texttt{-Completo} avvia MQTT e PostgreSQL in Docker,
+esegue le migrazioni e avvia backend e worker nativi prima dell'Edge.
+Non avvia il frontend. Lo script verifica la porta del receiver e può
+riutilizzare un backend già in ascolto, ma questo non prova che quel
+processo sia l'istanza desiderata e non elimina tutti i rischi di worker
+duplicati.
+
+Il launcher Linux \path{Script/avvio/avviaSistema} avvia soltanto receiver
+e runtime. Nella distribuzione PC più Raspberry è quindi corretto usarlo
+sul Raspberry lasciando lo stack cloud sul PC. Non bisogna avviare anche
+\texttt{-Completo} sul PC per lo stesso paziente, altrimenti si riattiva
+una seconda pipeline Edge.
+
+Un comando manuale resta legato alla sessione del terminale. Per superare
+questo limite è stato aggiunto il template \path{edge_node/deploy/iot-edge.service.in}
+e uno script che genera e installa l'unità per l'utente e il percorso reali.
+La preparazione è descritta nella sezione~\ref{sec:autostart}; l'installazione
+fisica resta da collaudare. I file in \path{cloud/deploy} riguardano invece
+stack cloud e backup. Non va confuso questo lavoro con una ``system call'':
+si tratta di orchestrazione di processi e gestione di servizi.
+
+\subsection{Metriche dei modelli fra Raspberry e PC}
+
+L'inferenza avviene sul Raspberry, mentre il backend che espone le metriche
+di validazione legge file JSON da una directory locale. I file metriche
+non vengono trasferiti automaticamente con i normali messaggi MQTT delle
+decisioni. Se le metriche devono apparire nella dashboard, occorre
+sincronizzare sul PC i report \path{*_metrics.json} e configurare
+\texttt{IOT\_BACKEND\_AI\_MODELS\_DIR} sul percorso effettivamente visibile
+al processo backend.
+
+Nel deployment aggiornato, Compose monta \path{cloud/model-metrics} in
+sola lettura su \path{/model-metrics} e imposta il percorso nel backend.
+Rimane da trasferire esplicitamente in quella directory il report JSON
+generato sul Pi: non è stata aggiunta una sincronizzazione automatica.
+Per il backend nativo il file example indica \path{../model-metrics}.
+Il solo percorso Windows in una variabile d'ambiente non rende invece
+un file accessibile dentro un container privo del relativo volume.
+I JSON delle metriche sono sufficienti per quella vista: non occorre
+distribuire al backend i pickle personali.
+
+\subsection{Creazione e aggiornamento dell'APK}
+
+Sul PC di sviluppo si usa Android Studio con SDK richiesto e JDK compatibile.
+Lo script esistente individua il runtime Java nella directory standard
+di Android Studio, imposta \texttt{JAVA\_HOME} e invoca il wrapper Gradle:
+
+\begin{lstlisting}
+cd "Applicazione IoT Companion\companion_Android_app"
+.\CreaAPK.ps1
+\end{lstlisting}
+
+Il risultato della build debug è
+\path{app/build/outputs/apk/debug/app-debug.apk}. Se Android Studio è
+installato altrove, il percorso Java dello script deve essere adeguato.
+Una build release richiede una configurazione di firma e distribuzione
+che non viene garantita dal solo switch dello script.
+
+Aggiornare l'APK mantenendo stessa application ID e firma consente
+normalmente di preservare i dati dell'app; disinstallarla può cancellare
+cache, associazione locale e risultati non inviati. Prima dell'aggiornamento
+si verifica che la coda dei risultati sia vuota. Modifiche solo al backend
+non richiedono sempre un nuovo APK; modifiche Java, risorse, manifest o
+configurazione Firebase incorporata richiedono invece una nuova build.
+
+\subsection{Arresto e riavvio senza perdere lo storico}
+
+Con il launcher Edge, Ctrl+C coordina l'arresto dei processi avviati.
+Nell'assetto container, dalla directory \path{cloud},
+\texttt{docker compose stop} ferma i servizi senza eliminare i volumi;
+il frontend si ferma nel proprio terminale. Spegnere il PC interrompe
+API, worker e broker anche se il Raspberry resta acceso: la coda Edge
+può conservare messaggi, ma la dashboard non diventa per questo un servizio
+indipendente dal PC.
+
+Non si usa \texttt{docker compose down -v} nella normale procedura di
+arresto: la rimozione del volume può cancellare PostgreSQL. Prima di un
+cambio importante si esegue un backup, si annota la revisione dello schema
+e si verifica che non restino risultati mobili o messaggi Edge da consegnare.
+
+\clearpage
+\section{Avvio Automatico e Controllo Remoto del Raspberry}
+\label{sec:autostart}
+
+\subsection{Il deployment preparato il 26 settembre}
+
+La preparazione separa nettamente due punti di avvio. Sul PC Windows
+\path{Script/avvio/avviaPC.ps1} avvia i servizi Compose, attende la readiness
+del backend, compila il frontend e serve la build sulla porta locale 5173.
+Non avvia receiver o inferenza. Sul Raspberry
+\path{Script/rpi/setup-rpi} prepara l'ambiente e installa un servizio di
+sistema che avvia soltanto l'Edge. Scaricare tutto il repository sul Pi
+non comporta l'esecuzione dei componenti cloud.
+
+La guida operativa completa, mantenuta insieme al codice, è
+\path{Documenti/Generale/Deployment_RPi_PC.md}. Specifica prerequisiti,
+trasferimento dei file riservati, indirizzi Android e prove di accettazione.
+I file devono essere committati e inviati al repository remoto prima che
+\texttt{git pull} possa recuperarli sul Pi; i segreti rimangono esclusi.
+
+\subsection{Preparazione una tantum sul PC}
+
+Le configurazioni funzionanti del backend e del broker vengono conservate.
+Il nuovo helper \path{Script/avvio/preparaCertificatiLAN.ps1} verifica
+che il certificato MQTT sia valido per l'indirizzo del PC, localhost,
+127.0.0.1 e il nome Docker \texttt{mqtt}. Se i file esistenti non sono
+compatibili si ferma: la sostituzione richiede \texttt{-Replace}, dopo
+l'arresto del broker, e conserva una copia dei precedenti certificati.
+La CA autofirmata di demo è valida per 365 giorni e non sostituisce
+una gestione dei certificati di produzione.
+
+\begin{lstlisting}
+.\Script\avvio\preparaCertificatiLAN.ps1 -PcHost IP_PC
+.\Script\avvio\avviaPC.ps1
+\end{lstlisting}
+
+Una sola volta, con privilegi amministrativi, lo script
+\path{Script/avvio/abilitaFirewallLAN.ps1} permette le porte 8080 e 8883
+dal profilo di rete Privato e dalla sottorete locale. Non disabilita
+il firewall e non richiede di aprire porte sul router. La dashboard
+rimane accessibile sul PC a \url{http://127.0.0.1:5173}; il telefono
+raggiunge soltanto il backend tramite l'indirizzo LAN.
+
+Il frontend viene eseguito come processo Node nascosto, con log nella
+directory \path{Dashboard/dist}. Il launcher salva PID e istante di
+avvio per identificarlo al successivo arresto. \texttt{avviaPC.ps1 -Stop}
+ferma quel processo e i servizi Compose senza eliminare volumi.
+\texttt{-SkipBuild} riusa una build esistente, soltanto quando sorgenti
+e variabili Vite non sono cambiati. La preview Vite resta una soluzione
+di demo, non un servizio web di produzione.
+
+\subsection{Setup del Pi e caricamento dei segreti}
+
+Sul Raspberry serve Linux a 64 bit con Python almeno 3.11, compatibile
+con i requirements Edge. Il setup deve essere eseguito come utente ordinario:
+la virtualenv viene creata localmente, non copiata da Windows. Prima si
+trasferiscono via SSH il certificato pubblico \path{ca.crt} e i due
+file OAuth Google Health già validi. La chiave privata del broker,
+il service account Firebase e il database rimangono sul PC.
+
+Supponendo il repository in \path{~/progetto-iot}, dopo il trasferimento:
+
+\begin{lstlisting}
+cd ~/progetto-iot
+chmod 600 edge_node/config/google_health_token.json edge_node/config/google_health_client.json
+bash Script/rpi/setup-rpi --pc-host IP_PC --ca-file "$HOME/progetto-iot/edge_node/config/certs/ca.crt"
+\end{lstlisting}
+
+Il setup genera \path{config/edge.rpi.yml}, distinto dal precedente
+\path{edge.yml}, e chiede una sola volta la password dell'utente MQTT
+\texttt{edge\_patient\_001}. La memorizza in
+\path{config/edge-service.env}, con permessi 600, senza stamparla né
+inserirla nei comandi. Il file è ignorato da Git. I successivi setup
+riusano la password; \texttt{--rotate-secret} ne richiede la sostituzione.
+
+Vengono verificati presenza e struttura dei file OAuth, CA e caricamento
+dei modelli, trattando come errore un'incompatibilità di versione
+scikit-learn. Il controllo dei file OAuth non prova che il provider
+accetterà il refresh: la validità remota si verifica nel ciclo reale.
+Non viene creato un modello personale fittizio se manca la baseline.
+
+L'installazione del servizio richiede privilegi amministrativi una volta,
+tramite \texttt{sudo}. \textbf{L'avvio successivo al boot non richiede
+password, login grafico o sessioni SSH aperte}. Questo risultato si
+ottiene facendo leggere le credenziali a systemd, non eliminando le
+password di sistema o concedendo sudo indiscriminato.
+
+\subsection{Supervisione, riavvio e limiti del servizio}
+
+Il template genera \path{/etc/systemd/system/iot-edge.service} con utente
+ordinario, directory di lavoro esplicita e interprete della virtualenv.
+La relazione con \texttt{network-online.target} ordina l'avvio rispetto
+alla rete locale; non impone che il PC sia già acceso o che Internet
+sia disponibile. Il servizio è abilitato in \texttt{multi-user.target}
+e usa \texttt{Restart=on-failure} con attesa di quindici secondi.
+Le motivazioni di queste direttive sono descritte nei riferimenti
+systemd \cite{systemd-service,systemd-exec}.
+
+Il supervisore Python è stato corretto per restituire un codice diverso
+da zero quando termina un figlio, anche se il figlio esce con codice zero.
+Gestisce SIGTERM, pulisce il primo processo se il secondo non parte e
+attende la terminazione dei figli, forzandola dopo il timeout. L'unità
+usa \texttt{KillMode=control-group}, così receiver e runtime vengono
+gestiti come un insieme e non rimangono intenzionalmente orfani.
+
+Il servizio limita la scrittura alle directory operative di configurazione,
+dati, modelli e output, usa una umask restrittiva e invia stdout e stderr
+a journald. I file OAuth devono restare scrivibili dall'utente del
+servizio, perché il rinnovo del token aggiorna il file locale.
+
+Questa supervisione recupera processi terminati, non qualunque blocco
+interno. Il runtime può rimanere vivo mentre un ciclo fallisce ripetutamente;
+per questo è necessario controllare la freschezza degli output, non soltanto
+lo stato \texttt{active}. La coda MQTT permette il recupero quando torna
+il PC, entro i limiti del protocollo e della persistenza già discussi.
+
+\subsection{Diagnostica da SSH e prova al boot}
+
+\begin{lstlisting}
+cd ~/progetto-iot
+systemctl is-enabled iot-edge
+systemctl status iot-edge --no-pager
+bash Script/rpi/stato-rpi --network
+sudo journalctl -u iot-edge -f
+\end{lstlisting}
+
+La diagnostica controlla file, aggiornamento dell'ultimo ciclo, CSV BLE
+e coda. L'opzione \texttt{--network} aggiunge receiver locale, health
+del backend PC e una connessione MQTT autenticata con verifica TLS.
+La sonda usa un client ID distinto e non pubblica dati finti: una
+connessione riuscita non certifica ancora tutte le ACL o la scrittura
+del worker nel database. \texttt{--models} aggiunge il caricamento dei
+pickle. I valori dei segreti non vengono stampati.
+
+Il collaudo richiede un riavvio reale con \texttt{sudo reboot}, seguito
+da verifica dello stato e dell'arrivo di nuove finestre sul PC senza
+lanciare manualmente l'Edge. Si prova poi un'interruzione controllata
+di MQTT e il successivo svuotamento della coda. L'app continua a usare
+due indirizzi distinti: receiver sul Pi, backend sul PC. La mappa dei
+beacon resta limitata a Cucina e Bagno e va modificata sul telefono,
+non nel servizio Linux.
+
+Le chiavi SSH possono rendere più comodo l'accesso remoto, ma non sono
+necessarie al servizio per partire. La chiave privata resta sul PC;
+eventuali richieste sudo per manutenzione non devono essere confuse con
+un requisito di password durante l'avvio automatico.
+
+\subsection{Verifiche della preparazione}
+
+Il 26 settembre la suite Edge completa ha eseguito con successo 138 test,
+inclusi 30 controlli aggiunti per supervisore, configurazione, diagnostica
+e certificati temporanei. I due modelli generici sono stati caricati
+con le dipendenze locali; sono state verificate le sintassi PowerShell
+e Bash e la configurazione Compose. Questi risultati riguardano l'ambiente di sviluppo Windows.
+Non sostituiscono l'installazione dell'unità su Linux né una prova su
+hardware ARM, radio BLE e rete domestica, ancora da eseguire.
+
+\clearpage
+\section{Conservazione, Backup e Recupero}
+\label{sec:conservazione}
+
+\subsection{Dove sono conservati i dati}
+
+La persistenza è distribuita. Sul Raspberry i CSV grezzi e processati,
+la baseline, lo stato dei cicli, i modelli e la coda MQTT vivono sul
+filesystem. Nel PC il volume PostgreSQL contiene lo storico applicativo;
+Mosquitto ha proprie directory di dati e log. Il browser conserva sessione,
+anagrafica locale e cache; il telefono conserva configurazione, token,
+cache e risultati in attesa.
+
+Un backup del solo database non recupera un modello personale perduto,
+un token OAuth o un risultato ancora presente soltanto sul telefono.
+Viceversa, copiare \path{latest_window.csv} non salva lo storico del
+backend. La procedura di recupero deve stabilire quali dati sono
+ricostruibili e quali richiedono una copia separata protetta.
+
+\subsection{Retention effettiva e crescita}
+
+A quattro minuti per finestra si ottengono teoricamente 360 finestre
+al giorno e 10\,800 in trenta giorni per paziente, prima di considerare
+duplicati, interruzioni e messaggi aggiuntivi. Il codice di retention
+attuale prevede trenta giorni per feature e decisioni e centottanta per
+cicli Edge e stato sensori. Alert, attività, risultati, audit e report
+non sono inclusi nella normale cancellazione automatica di queste serie.
+
+La soglia è applicata a \texttt{created\_at}, cioè alla registrazione nel
+DB, non necessariamente all'istante fisiologico della misura. Un record
+recuperato in ritardo dalla coda può quindi rimanere per un periodo diverso
+da quello che si dedurrebbe osservando \texttt{window\_start}.
+
+Il codice contiene una cancellazione, non un archivio storico esterno
+automatico. Non risulta un timer già attivo per questa operazione. Prima
+di applicarla si verifica il riepilogo, si esegue il backup e si controllano
+le relazioni fra decisioni e alert su PostgreSQL. La CLI blocca il purge
+in ambiente production; ciò non autorizza a considerare testata ogni
+possibile procedura di archiviazione.
+
+Dalla directory backend, il comando di sola verifica è:
+
+\begin{lstlisting}
+.\.venv\Scripts\python.exe -m scripts.retention_cli status
+\end{lstlisting}
+
+Nella modalità Docker si usa invece, dalla directory cloud:
+
+\begin{lstlisting}
+docker compose exec backend python -m scripts.retention_cli status
+\end{lstlisting}
+
+\subsection{Backup SQL e copia separata}
+
+Gli script \path{Script/avvio/backupPostgres.ps1} e
+\path{Script/avvio/backupPostgres} producono dump SQL e conservano gli ultimi
+sette file. La rotazione non prova che i backup siano leggibili, né
+protegge dalla perdita del disco se tutte le copie restano sullo stesso
+PC. È necessaria una copia separata, protetta e accessibile soltanto
+agli operatori autorizzati.
+
+Con Windows PowerShell meno recente, la redirezione del testo può
+modificare la codifica. Per un collaudo controllato si può creare il dump
+direttamente nel container e copiarlo come file binario verso il PC.
+Il seguente esempio, dalla directory \path{cloud}, assume utente e
+database predefiniti e usa un nome da rendere univoco a ogni esecuzione:
+
+\begin{lstlisting}
+New-Item -ItemType Directory -Force backups
+docker compose exec -T postgres pg_dump -U iot_backend -d progetto_iot --no-owner --no-privileges -f /tmp/progetto_iot_backup.sql
+docker compose cp postgres:/tmp/progetto_iot_backup.sql ./backups/progetto_iot_20260925.sql
+\end{lstlisting}
+
+Il dump contiene dati applicativi sensibili e deve essere protetto al
+pari del database. Il nome di esempio non deve essere riutilizzato
+in modo da sovrascrivere l'unica copia valida.
+
+\subsection{Restore di prova e limite dello script Python}
+
+Lo script \path{cloud/backend/scripts/backup.py} implementa anche un
+percorso SQLite, utile ai test. Il ramo PostgreSQL però crea attualmente
+un dump SQL con suffisso \texttt{.dump} senza richiedere il formato custom
+di \texttt{pg\_dump}, mentre il restore richiama \texttt{pg\_restore}.
+Estensione del nome e formato del contenuto non sono equivalenti: questa
+coppia di comandi non è una procedura PostgreSQL da considerare verificata.
+Inoltre il restore deve ricevere in modo coerente host e credenziali,
+non soltanto il nome di un database locale.
+
+Un dump SQL si verifica usando \texttt{psql} su un database temporaneo,
+senza sostituire quello principale. Proseguendo l'esempio precedente:
+
+\begin{lstlisting}
+docker compose cp ./backups/progetto_iot_20260925.sql postgres:/tmp/restore_check.sql
+docker compose exec -T postgres createdb -U iot_backend iot_restore_check_20260925
+docker compose exec -T postgres psql -U iot_backend -d iot_restore_check_20260925 -v ON_ERROR_STOP=1 -f /tmp/restore_check.sql
+docker compose exec -T postgres psql -U iot_backend -d iot_restore_check_20260925 -c "SELECT count(*) FROM patients; SELECT count(*) FROM decisions; SELECT count(*) FROM tasks;"
+\end{lstlisting}
+
+Il nome temporaneo deve essere nuovo; se esiste già, non lo si sovrascrive
+alla cieca. Si confrontano conteggi e un campione di relazioni con il
+database di origine, inclusi utenti, risultati e alert. La sola creazione
+del file non conclude il test. Questa procedura è proposta per il collaudo:
+non è stata eseguita nell'ambito della redazione della documentazione.
+
+Il timer Linux presente per il backup è un modello da installare e
+abilitare sulla macchina che ospita il database. Se il database rimane
+sul PC Windows, non basta installare quel timer sul Raspberry; occorre
+programmare il backup sul PC oppure definire esplicitamente un accesso
+remoto sicuro.
+
+\clearpage
+\section{Sicurezza e Limiti della Protezione dei Dati}
+\label{sec:sicurezza}
+
+\subsection{Confini di fiducia e superficie esposta}
+
+Il sistema attraversa più confini: radio BLE, LAN domestica, servizi del
+provider wearable, broker, backend e dispositivi degli utenti. Proteggere
+uno di questi collegamenti non protegge automaticamente gli altri.
+MQTT su TLS, per esempio, non cifra il percorso HTTP dal telefono al
+receiver né una richiesta di login inviata al backend in chiaro.
+
+La configurazione di sviluppo Android permette traffico HTTP. Questo
+consente le prove nella LAN, ma non è una scelta da mantenere per accessi
+su reti non controllate. L'ascolto su \texttt{0.0.0.0} aumenta la
+raggiungibilità del servizio, non la sua sicurezza. Non si devono aprire
+porte sul router per esporre direttamente il receiver, PostgreSQL o la
+configurazione di sviluppo del backend.
+
+I listener MQTT comprendono anche porte alternative a quella TLS.
+Per la demo il flusso applicativo previsto usa la 8883; per un deployment
+più rigido vanno limitati o disabilitati i listener non necessari e
+ristrette le regole firewall. PostgreSQL non deve essere raggiungibile
+dal telefono soltanto perché Compose pubblica la porta sul PC.
+
+\subsection{Segreti, sessioni e dispositivi condivisi}
+
+Password del database, password MQTT, chiave di firma dei token, file
+OAuth e service account Firebase appartengono a domini diversi e non
+sono intercambiabili. I file example descrivono i parametri; i file reali
+non devono essere inclusi in Git, screenshot, report o APK.
+L'esclusione tramite \texttt{.gitignore} evita nuove inclusioni accidentali,
+ma non rimuove un segreto da commit precedenti: se un valore è stato
+esposto, occorre sostituirlo e verificare la cronologia.
+
+Sul browser la sessione è conservata nel \texttt{localStorage}. Questo
+richiede particolare attenzione a script eseguiti nella pagina e uso di
+PC condivisi. Sul telefono il Keystore protegge i token, ma non elimina
+i rischi della cache o della coda locale non cifrata. L'identificatore
+\texttt{patient-001} è uno pseudonimo tecnico; collegandolo ad anagrafica,
+routine domestica e account può comunque identificare una persona.
+
+Le notifiche possono essere visualizzate sullo schermo bloccato. Il
+contenuto inviato dovrebbe quindi restare essenziale e rimandare all'app
+autenticata per i dettagli. La privacy non si ottiene soltanto evitando
+telecamere: anche orari del bagno, presenza in casa e risposte ai questionari
+sono informazioni delicate.
+
+\subsection{Autorizzazione da verificare su ogni operazione}
+
+L'associazione al paziente è necessaria, ma non sempre sufficiente:
+medico, caregiver e paziente hanno accesso allo stesso soggetto con scopi
+diversi. Le rotte dedicate riducono il payload per il caregiver, mentre
+alcune rotte generiche applicano principalmente il controllo di associazione.
+La verifica futura deve accertare che non sia possibile aggirare la UI
+e ottenere dati più dettagliati richiamando direttamente un endpoint.
+
+Analogamente, un \texttt{phone\_id} nel JSON BLE non autentica il mittente.
+Il receiver attuale è adatto a una LAN dimostrativa controllata, non a
+un servizio condiviso da pazienti arbitrari. L'introduzione di un canale
+autenticato deve legare telefono, gateway e paziente senza consentire
+al client di cambiare liberamente destinatario.
+
+La gestione di un token FCM dopo logout, cambio account o perdita del
+telefono è parte della sicurezza delle identità. Non basta filtrare i
+messaggi nella schermata se il push viene già consegnato al dispositivo
+sbagliato. Il collaudo deve coprire anche registrazioni vecchie e telefoni
+riutilizzati.
+
+\subsection{Che cosa non viene certificato}
+
+La relazione descrive un prototipo tecnico. Non certifica conformità
+normativa, efficacia clinica, disponibilità continua, precisione medica
+dei sensori o idoneità a gestire emergenze. Il progetto non deve essere
+presentato come sostituto di una valutazione sanitaria o di un sistema
+di soccorso. Un punteggio alto richiede una verifica umana; un punteggio
+basso con dati incompleti non esclude un problema.
+
+Prima dell'uso con persone reali occorrerà definire con i responsabili
+competenti finalità, accessi, consenso ove pertinente, conservazione,
+gestione degli incidenti e condizioni d'uso dei test. Sono attività
+organizzative e tecniche ulteriori, non proprietà deducibili dall'uso
+di TLS o da un'interfaccia con un'icona a forma di lucchetto.
+
+\clearpage
+\section{Verifica, Collaudo e Diagnosi dei Problemi}
+\label{sec:collaudo}
+
+\subsection{Distinguere codice presente e comportamento verificato}
+
+La documentazione è stata costruita confrontando sorgenti, configurazioni
+di esempio, test e note di sviluppo. La presenza di un test o di una voce
+spuntata in un piano di lavoro non significa che l'intero sistema sia
+stato collaudato nella topologia PC--Raspberry--telefono. In questa attività
+di redazione non sono stati eseguiti un deployment sul Raspberry, un
+restore PostgreSQL, prove radio o una campagna clinica.
+
+Un test unitario verifica un contratto ristretto; un test con broker e
+database reali verifica anche il trasporto e la persistenza; un test sul
+telefono aggiunge permessi, risparmio energetico e comportamento del
+sistema operativo. I tre livelli sono complementari. Il risultato va
+registrato con revisione del codice, macchina, versioni, configurazione
+dei sensori e data, senza includere credenziali.
+
+\subsection{Suite disponibili e comandi ripetibili}
+
+I test Edge coprono ingestione e qualità, fusione, debounce, coda MQTT,
+confidenza, importance, trend, validazione e assenza insolita. Dalla
+directory \path{edge_node}, nell'ambiente Windows:
+
+\begin{lstlisting}
+..\.venv\Scripts\python.exe -m pytest -q
+\end{lstlisting}
+
+Sul Raspberry lo stesso insieme si può richiamare con
+\texttt{../.venv/bin/python -m pytest -q}. L'ambiente deve contenere
+le dipendenze dichiarate; eseguire un comando con un Python differente
+può produrre import mancanti senza indicare un errore del codice applicativo.
+
+I test backend verificano schema, autenticazione, ingestione MQTT,
+realtime, alert, attività, companion, questionari, riepiloghi, timeline,
+report, drift e operazioni di manutenzione. Dalla directory
+\path{cloud/backend}:
+
+\begin{lstlisting}
+.\.venv\Scripts\python.exe -m pytest -q
+\end{lstlisting}
+
+Molte fixture usano SQLite o dipendenze sostituite. Un esito positivo
+non sostituisce una prova su PostgreSQL con i suoi vincoli, sul broker
+con certificati reali o su Firebase con telefoni reali. Gli script nella
+directory \path{Script/test} e il percorso demo backend offrono prove
+di integrazione; prima di usarli bisogna leggere quali dati di esempio
+inseriscono e scegliere un ambiente dedicato.
+
+Per il frontend, dalla directory \path{Dashboard}:
+
+\begin{lstlisting}
+npm.cmd test
+npm.cmd run build
+\end{lstlisting}
+
+Lo smoke test corrente controlla la presenza di componenti e collegamenti
+nei file sorgenti. \textbf{Non è un test di rendering nel browser} e non
+simula click, swipe, modali, accessibilità o richieste reali. La build
+verifica che il bundle sia producibile; non dimostra che un pulsante
+apra effettivamente un grafico. Le prove visuali e interattive rimangono
+necessarie, così come le prove Android su dispositivo fisico.
+
+\subsection{Collaudo del percorso dati con due stanze}
+
+La prima prova inizia con la configurazione annotata: soltanto Cucina
+e Bagno sono valide. Si porta il telefono vicino al primo beacon e si
+controlla che l'app riconosca la stanza e che il receiver accetti gli
+invii. Nel CSV grezzo devono comparire timestamp recenti e la stanza
+prevista. Poi si ripete vicino al secondo beacon e si osserva il passaggio.
+Le verifiche vanno ripetute anche nella zona intermedia per comprendere
+quanto siano stabili i segnali; non si assume una precisione basata sulla
+sola distanza mostrata da uno scanner BLE.
+
+Si attende almeno un ciclo completo di quattro minuti. Si confrontano
+\path{latest_window.csv}, report qualità, decisione e \path{last-cycle.json}.
+Se i campioni sono arrivati a metà finestra, non ci si aspetta necessariamente
+quattro minuti interi attribuiti a una stanza. La camera non deve essere
+usata come criterio di riuscita della prova: il suo beacon è escluso.
+
+Il passo successivo verifica pubblicazione MQTT, ricezione del worker
+e nuove righe nel DB. La dashboard deve mostrare una data aggiornata,
+non soltanto il paziente già esistente. Un nuovo score persistito ma
+senza alert è un risultato plausibile: lo storico delle decisioni e
+la policy di pubblicazione degli alert sono meccanismi distinti.
+
+Infine si apre il grafico AI e si seleziona un punto: score e finestra
+devono corrispondere ai dati memorizzati. L'ingrandimento va verificato
+su desktop e schermo stretto, controllando centratura, spostamento della
+serie, leggibilità dell'asse temporale e assenza di dialoghi irraggiungibili.
+I punti ripetuti provenienti da un riepilogo wearable non devono essere
+descritti come misure indipendenti del Watch ogni quattro minuti.
+
+\subsection{Collaudo di attività, identità e destinatari}
+
+Con account distinti si verifica anzitutto l'associazione: il medico
+vede solo i pazienti assegnati e l'app paziente non può scegliere
+arbitrariamente un altro \texttt{patient\_id}. Si crea quindi un check-in
+con titolo riconoscibile, si controllano ricezione, apertura, inizio e
+completamento e si confrontano risposte, durata e dispositivo sul backend.
+Il successivo aggiornamento della dashboard deve mostrare lo stesso
+risultato, non una copia generata dal refresh.
+
+Per il caregiver si invia un messaggio diverso da quello del paziente.
+La prova ideale usa due telefoni, così si verifica che il push raggiunga
+soltanto il destinatario previsto. Si ripete con app in primo piano,
+in background e schermo bloccato. Si conta la notifica relativa all'evento,
+senza confonderla con quella permanente del servizio BLE.
+
+Si controllano poi presa in carico e visibilità dell'operatore intervenuto,
+risoluzione con nota, rimozione dei messaggi e gestione delle attività
+scadute. Un tentativo di cancellare una notifica di task ancora attivo
+deve seguire la policy server. La cancellazione definitiva di un alert
+risolto e di un'attività di prova va verificata ricaricando la pagina
+e controllando il DB, su dati sacrificabili e con backup disponibile.
+
+Una seconda serie di prove usa richieste non autorizzate: paziente diverso,
+ruolo errato, token scaduto e identificatore di dispositivo incongruente.
+Il fatto che il percorso normale funzioni non dimostra che i percorsi
+vietati siano effettivamente bloccati.
+
+\subsection{Prove di disconnessione e ripresa}
+
+Durante un'interruzione del collegamento MQTT si osservano i file della
+coda Edge e il numero di messaggi in attesa. Dopo il ripristino si controlla
+che la coda diminuisca e che lo stesso \texttt{message\_id} non produca
+nuovi record duplicati. Il test deve considerare anche una riconnessione
+del worker, perché il PUBACK del broker non è una conferma della scrittura
+nel database.
+
+Sul telefono si apre un'attività già sincronizzata, si disattiva la rete
+e si completa il test. Il risultato deve restare nella coda, con il
+medesimo identificatore al reinvio. Si ripristina la rete e si controllano
+sia la coda locale sia il risultato sul backend. Vanno provati anche task
+scaduto nel frattempo, conflitto e revoca dell'account: oggi non tutti
+i conflitti vengono riconciliati con sufficiente distinzione.
+
+Si eseguono inoltre blocco schermo, risparmio energetico, riavvio del
+telefono e riavvio del Raspberry. Per ciascun caso si annota se il
+monitoraggio riprende da solo, dopo quanto tempo e con quali permessi.
+Non bisogna promettere un recupero automatico dopo qualunque arresto
+forzato dell'app sulla base della sola dichiarazione \texttt{START\_STICKY}.
+
+La cache della dashboard si verifica separatamente: interrompere il
+backend può lasciare visibili dati già caricati, ma deve risultare chiaro
+che non sono aggiornati. Si verifica anche che logout e cambio utente
+non espongano dati della sessione precedente; questo punto richiede
+ulteriore consolidamento nell'implementazione corrente.
+
+\subsection{Diagnostica dei problemi già incontrati}
+
+Un timeout verso la porta 80 del PC indica anzitutto un URL privo della
+porta corretta. Se il backend è raggiungibile sul PC ma non dal telefono,
+si verificano bind, IP LAN, firewall e isolamento Wi-Fi prima di cambiare
+password. Un errore 401 richiede invece di distinguere credenziali,
+scadenza della sessione e rinnovo: la rete ha già consegnato la richiesta.
+Nei log, richieste da 127.0.0.1 possono appartenere alla dashboard sul PC,
+anche se nello stesso momento si sta provando il caregiver sul telefono.
+
+L'errore Windows 10048 segnala che una porta è già occupata. Si identifica
+il processo in ascolto e si decide quale istanza mantenere, senza arrestare
+processi sconosciuti a tentativi. Dalla PowerShell:
+
+\begin{lstlisting}
+Get-NetTCPConnection -LocalPort 8000 -State Listen
+Get-NetTCPConnection -LocalPort 8080 -State Listen
+\end{lstlisting}
+
+Il messaggio \texttt{paho-mqtt non installato} riguarda l'interprete
+che esegue l'Edge. Installare il pacchetto soltanto nella virtualenv backend
+non lo risolve. Viceversa \texttt{firebase\_admin\_missing} riguarda
+l'ambiente backend che invia la push, non quello dell'Edge. Lo stato
+\texttt{queued\_connect\_failed} richiede poi di leggere l'errore associato:
+può dipendere da dipendenze, DNS, certificato, password o broker.
+
+Una migrazione Alembic apparentemente ferma va diagnosticata controllando
+disponibilità PostgreSQL, URL corretto per host o container e possibili
+attese sul DB. Non si avviano più migrazioni concorrenti e non si elimina
+il database per ottenere un terminale nuovamente libero. Il comando deve
+terminare con successo prima di usare rotte che dipendono dal nuovo schema.
+
+Infine, ``Errore invio BLE'' riguarda la consegna HTTP di una rilevazione,
+mentre ``Nessun beacon mappato'' riguarda riconoscimento e scansione.
+Sono problemi diversi. Un nome visto da un'altra app di scansione non
+prova che il Companion riceva l'advertising iBeacon richiesto. Per il
+terzo dispositivo questa verifica non è stata conclusa e la demo rimane
+deliberatamente limitata ai due beacon validi.
+
+\clearpage
+\section{Stato di Completamento ed Evoluzione del Progetto}
+\label{sec:evoluzione}
+
+\subsection{Il risultato implementato}
+
+Il progetto dispone di una catena concreta che parte da osservazioni
+BLE e dati wearable, costruisce finestre comuni, controlla la qualità,
+produce uno score locale e trasferisce messaggi a un backend persistente.
+Il medico può leggere andamento e contesto, gestire segnalazioni e
+assegnare attività; paziente e caregiver hanno percorsi distinti
+nell'app Android. Le estensioni aggiungono riepiloghi, timeline, routine,
+confidenza, spiegazioni, trend e report.
+
+La divisione del lavoro si riflette nei contratti: la parte server ed
+Edge predisposta da Daniel produce strutture e controlli consumati dalle
+interfacce sviluppate da Emilio. Le note in \path{Documenti/Daniel},
+\path{Documenti/Emilio} e nei file dei compiti aiutano a ricostruire il
+percorso, ma lo stato finale si verifica nel codice e con prove di
+integrazione. Quando una nota storica e un modulo corrente divergono,
+la documentazione tecnica deve rendere esplicita la differenza.
+
+\subsection{Integrazioni ancora da consolidare}
+
+La prima priorità è il passaggio fisico al Raspberry: dipendenze ARM,
+percorsi, certificati, permessi, indirizzi LAN, gestione dei processi
+e avvio dopo un riavvio vanno verificati sul dispositivo. La topologia
+proposta in questa relazione è una decisione operativa, non un verbale
+di installazione già riuscita.
+
+La seconda riguarda la semantica dei dati. Con due beacon occorre
+distinguere le stanze non monitorate dagli zeri reali e riflettere questa
+copertura in qualità, confidenza e spiegazioni. Anche score, soglie UI
+e soglie decisionali Edge devono essere mantenuti coerenti o dichiarati
+come scale diverse. La mancanza di sensori non deve trasformarsi in una
+conclusione comportamentale sicura.
+
+Per i flussi estesi restano punti di collegamento concreti: l'assenza
+insolita calcolata all'Edge deve raggiungere il percorso cloud previsto;
+l'approvazione del retraining deve essere collegata a un job effettivo
+e a una nuova versione verificabile del modello; i file delle metriche
+devono raggiungere il backend sul PC. Un pulsante o un JSON di stato
+non dimostrano che l'intera catena sia chiusa.
+
+La programmazione dei questionari e i report periodici necessitano di
+una politica esplicita di esecuzione autonoma, recupero delle scadenze e
+timezone. Il retry delle push, la revoca dei token sui telefoni condivisi
+e la riconciliazione dei risultati offline meritano test mirati. Il ramo
+PostgreSQL del backup e la retention devono essere provati sul database
+reale prima di automatizzarli.
+
+Sul frontend il refactoring è iniziato con componenti comuni e
+\texttt{ErrorBoundary}, ma gran parte dell'applicazione rimane in
+\path{App.jsx}. Le directory predisposte e i relativi README non equivalgono
+alla completa estrazione di viste e hook. I test statici attuali devono
+essere affiancati da test di rendering e interazione. Si tratta di
+manutenzione e robustezza, non di nuove funzionalità cliniche.
+
+Infine, l'hardening richiede credenziali amministrative mobili non statiche,
+protezioni del receiver, controllo dei ruoli su tutti gli endpoint,
+trattamento delle cache e rimozione dei token dagli URL registrati nei log.
+Questi limiti sono esplicitati per evitare che il buon esito di una demo
+venga scambiato per prontezza all'uso reale.
+
+\subsection{Come aggiornare questa relazione nei prossimi passaggi}
+
+Ogni modifica infrastrutturale dovrà essere accompagnata da una revisione
+della documentazione. Dopo il trasferimento sul Raspberry si aggiorneranno
+distribuzione dei componenti, sistema operativo, versioni effettive,
+percorsi, configurazioni non segrete e risultati dei test. La procedura
+di avvio dovrà descrivere il comando realmente usato e il comportamento
+osservato, non quello inizialmente auspicato.
+
+Il template del servizio, il caricamento dei segreti e i comandi di
+stato e log sono ora documentati nella sezione~\ref{sec:autostart}.
+Quando verrà installato sul Pi si registreranno utente e percorso effettivi,
+versioni ARM e soprattutto l'esito della prova al boot.
+Se i servizi cloud verranno spostati dal PC, si rivedranno URL, certificati,
+CORS, backup e dipendenze della dashboard. Una modifica alle feature o
+alla copertura dei beacon richiederà invece di aggiornare dataset,
+baseline, modelli e limiti interpretativi.
+
+La revisione dovrà conservare una separazione chiara fra tre informazioni:
+funzione implementata, configurazione installata e prova eseguita.
+È questo il criterio che rende la relazione utile anche dopo la demo,
+quando un altro sviluppatore dovrà capire perché una scelta è stata fatta
+e quali garanzie siano state davvero verificate.
+
+\clearpage
+\appendix
+\section{Mappa dei Sorgenti e dei Contratti}
+\label{app:sorgenti}
+
+La seguente mappa indica i punti da rileggere quando cambia una funzione.
+Non elenca ogni file del repository: collega le responsabilità principali
+ai moduli che le implementano.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.26\textwidth}X@{}}
+\toprule
+Responsabilità & Sorgenti di riferimento \\
+\midrule
+Avvio Edge & \path{edge_node/edge_stack/cli.py}, \path{edge_node/edge_runtime/cli.py}, \path{Script/avvio/avviaSistema} e variante PowerShell. \\
+Ingestione e qualità & \path{edge_node/edge_ingest/}, \path{edge_node/edge_receiver/}, \path{edge_node/edge_quality/}. \\
+Baseline e AI & \path{edge_node/edge_baseline/}, \path{edge_node/edge_ai/model.py}, \path{fusion.py}, \path{debounce.py}, \path{confidence.py}, \path{validation.py} nello stesso package AI. \\
+Trasporto Edge & \path{edge_node/edge_mqtt/messages.py}, \path{publisher.py}, \path{queue.py}. \\
+Infrastruttura & \path{cloud/docker-compose.yml}, \path{cloud/mqtt/mosquitto.conf}, \path{cloud/mqtt/aclfile}, \path{cloud/deploy/}. \\
+Backend e schema & \path{cloud/backend/app/main.py}, \path{app/api/router.py}, \path{app/db/models.py}, \path{alembic/versions/}, relativamente alla directory backend. \\
+Auth e servizi & \path{cloud/backend/app/auth/}, \path{app/mqtt/}, \path{app/services/}, \path{app/api/routes/}. \\
+Dashboard & \path{Dashboard/src/App.jsx}, \path{src/api/client.js}, \path{src/api/realtime.js}, \path{src/utils/format.js}, CSS e componenti comuni sotto \path{Dashboard}. \\
+Android & Package \path{it/unisalento/iotedgecompanion} sotto \path{Applicazione IoT Companion/companion_Android_app/app/src/main/java/}; layout sotto \path{res/layout/}. \\
+\bottomrule
+\end{tabularx}
+\caption{Punti di ingresso per manutenzione e revisione.}
+\end{table}
+
+Le API REST applicative sono usate con prefisso \path{/api/v1}.
+Gli esempi seguenti sono una mappa di orientamento; il contratto completo
+e i tipi dei payload si verificano in \path{/openapi.json} e nelle rotte
+della revisione installata.
+
+\begin{lstlisting}
+POST   /api/v1/auth/login
+POST   /api/v1/auth/refresh
+GET    /api/v1/patients
+GET    /api/v1/patients/{patient_id}/current
+GET    /api/v1/patients/{patient_id}/windows
+GET    /api/v1/patients/{patient_id}/decisions
+GET    /api/v1/patients/{patient_id}/summary/24h
+GET    /api/v1/patients/{patient_id}/timeline
+GET    /api/v1/patients/{patient_id}/spatial-summary
+GET    /api/v1/patients/{patient_id}/day-profile
+GET    /api/v1/patients/{patient_id}/system-status
+GET    /api/v1/patients/{patient_id}/ai/model-metrics
+POST   /api/v1/patients/{patient_id}/tasks
+POST   /api/v1/patients/{patient_id}/caregiver-messages
+PATCH  /api/v1/alerts/{alert_id}/acknowledge
+PATCH  /api/v1/alerts/{alert_id}/resolve
+DELETE /api/v1/alerts/{alert_id}
+DELETE /api/v1/tasks/{task_id}
+GET    /api/v1/questionnaires/templates
+GET    /api/v1/patients/{patient_id}/report-data
+GET    /api/v1/patients/{patient_id}/reports/weekly
+GET    /api/v1/patients/{patient_id}/morning-brief
+GET    /api/v1/alerts/caregiver
+POST   /api/v1/notifications/devices/register
+POST   /api/v1/notifications/caregiver/devices/register
+\end{lstlisting}
+
+Il canale WebSocket del paziente è
+\path{/ws/v1/patients/{patient_id}}; l'autenticazione corrente viene
+passata come parametro della connessione. Per creare nuove identità
+si usano, con autorizzazione amministrativa, \path{/admin/patients},
+\path{/admin/users} e \path{/admin/users/{user_id}/patients/{patient_id}}
+sotto il prefisso REST. Non si associa un telefono modificando soltanto
+il nome mostrato nella dashboard.
+
+\section{Glossario Operativo}
+
+\textbf{Finestra.} Intervallo temporale sul quale vengono aggregate le
+osservazioni. Nel setup ordinario dura quattro minuti; non coincide con
+la frequenza di acquisizione di ogni singola sorgente.
+
+\textbf{Baseline personale.} Insieme di finestre ammesse che descrive
+il riferimento usato per il modello della persona. È distinto da un
+semplice confronto con ieri o da una media calcolata sul database.
+
+\textbf{Feature.} Grandezza derivata usata come ingresso del modello,
+per esempio frequenza cardiaca media o permanenza stimata in una stanza.
+La sua presenza nello schema non garantisce un sensore attivo che la misuri.
+
+\textbf{Score e confidenza.} Lo score riassume l'anomalia secondo modelli
+e regole del progetto; la confidenza descrive euristicamente quanto
+supporto informativo è disponibile. Nessuno dei due è automaticamente
+una probabilità clinica o un intervallo statistico di confidenza.
+
+\textbf{Decisione e alert.} La decisione conserva l'esito di una finestra;
+l'alert è una segnalazione operativa prodotta quando le policy lo
+consentono. Non esiste necessariamente un alert per ogni decisione.
+
+\textbf{Task e notifica.} Il task è il contenuto operativo persistente;
+la notifica avvisa della sua disponibilità o porta un messaggio. Una push
+ricevuta non prova il completamento del task.
+
+\textbf{Idempotenza.} Ripetere una richiesta o un messaggio con la stessa
+identità non deve produrre un nuovo effetto equivalente. Non significa
+che tutti i messaggi simili, ma con identificatori diversi, siano deduplicati.
+
+\textbf{Store-and-forward.} Conservazione locale prima di un successivo
+tentativo di trasmissione. La garanzia dipende da cosa viene salvato,
+quando viene eliminato e quale conferma viene considerata sufficiente.
+
+\textbf{Dato non monitorato.} Grandezza che l'installazione non è in
+grado di osservare, come la permanenza in Camera nella demo a due beacon.
+È concettualmente diversa sia dallo zero misurato sia da una temporanea
+interruzione di una sorgente normalmente disponibile.
+
+\section{Uso del Documento e Riferimenti}
+
+La relazione mantiene la classe \texttt{extarticle} e il preambolo
+originale: i capitoli sono quindi organizzati come sezioni principali.
+Le prime due sezioni sono conservate come proposta iniziale, mentre
+la parte implementativa specifica cosa è presente e cosa rimane futuro.
+I comandi aggiunti usano \texttt{listings}; non richiedono nuovi ambienti
+\texttt{minted}. Il pacchetto minted già presente nel preambolo non viene
+rimosso da questa revisione.
+
+La copertina continua a riferirsi al file \path{Immagini/logo.png}, che
+deve essere disponibile nel progetto Overleaf con il percorso previsto.
+La compilazione richiede i pacchetti dichiarati nel preambolo e più
+passaggi per aggiornare indice e riferimenti. I controlli strutturali
+del sorgente non sostituiscono l'ispezione del PDF: tabelle, intestazioni
+e interruzioni di pagina vanno verificati nel compilatore effettivamente
+usato per la consegna.
+
+Le fonti seguenti documentano i protocolli e le librerie citate. Non sono
+una prova che ogni opzione descritta dallo standard sia abilitata nel
+progetto: per la configurazione effettiva fanno fede i sorgenti e le
+verifiche indicate nelle sezioni precedenti.
+
+\begin{thebibliography}{10}
+
+\bibitem{mqtt-spec}
+OASIS, \emph{MQTT Version 3.1.1}, standard del protocollo.
+\url{https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html}.
+
+\bibitem{http-semantics}
+IETF, \emph{HTTP Semantics}, RFC 9110.
+\url{https://www.rfc-editor.org/rfc/rfc9110.html}.
+
+\bibitem{websocket-rfc}
+IETF, \emph{The WebSocket Protocol}, RFC 6455.
+\url{https://www.rfc-editor.org/rfc/rfc6455}.
+
+\bibitem{oauth2}
+IETF, \emph{The OAuth 2.0 Authorization Framework}, RFC 6749.
+\url{https://www.rfc-editor.org/rfc/rfc6749}.
+
+\bibitem{tls13}
+IETF, \emph{The Transport Layer Security (TLS) Protocol Version 1.3},
+RFC 8446, riferimento al modello di protezione TLS, non dichiarazione
+di una versione obbligatoriamente negoziata da ogni collegamento del prototipo.
+\url{https://datatracker.ietf.org/doc/html/rfc8446}.
+
+\bibitem{android-ble}
+Android Developers, \emph{Find BLE devices}, documentazione delle API
+di scansione Android.
+\url{https://developer.android.com/develop/connectivity/bluetooth/ble/find-ble-devices}.
+
+\bibitem{fcm-receive}
+Firebase, \emph{Receive messages in an Android app}, comportamento
+dei messaggi in foreground e background.
+\url{https://firebase.google.com/docs/cloud-messaging/android/receive-messages}.
+
+\bibitem{isolation-forest}
+Scikit-learn, \emph{IsolationForest}, riferimento API e descrizione
+del metodo; le versioni installate sono quelle indicate nei requirements
+del progetto, non necessariamente quelle della documentazione online.
+\url{https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.IsolationForest.html}.
+
+\bibitem{systemd-service}
+Systemd, \emph{systemd.service}, documentazione delle unità di servizio.
+\url{https://github.com/systemd/systemd/blob/main/man/systemd.service.xml}.
+
+\bibitem{systemd-exec}
+Systemd, \emph{systemd.exec}, ambiente e protezioni dei processi.
+\url{https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml}.
+
+\end{thebibliography}
+\end{document}

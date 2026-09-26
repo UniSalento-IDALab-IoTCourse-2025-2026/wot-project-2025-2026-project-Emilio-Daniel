@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+result=0
+systemctl is-enabled iot-edge.service || result=1
+systemctl is-active iot-edge.service || result=1
+systemctl show iot-edge.service --property=MainPID,NRestarts,ActiveEnterTimestamp --no-pager
+cd "$ROOT/edge_node"
+"$ROOT/.venv/bin/python" -m edge_deploy.cli check "$@" || result=1
+exit "$result"

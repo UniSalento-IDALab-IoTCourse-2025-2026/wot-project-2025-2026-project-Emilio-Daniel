@@ -1,0 +1,3 @@
+Script/avvio/avviaSistema text eol=lf
+Script/rpi/* text eol=lf
+edge_node/deploy/*.in text eol=lf

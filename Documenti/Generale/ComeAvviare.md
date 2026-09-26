@@ -1,5 +1,14 @@
 # Come Avviare Il Sistema IoT
 
+## Installazione PC + Raspberry (26 settembre 2026)
+
+Per il nuovo assetto usare [Deployment_RPi_PC.md](Deployment_RPi_PC.md):
+`Script/avvio/avviaPC.ps1` sul PC e `Script/rpi/setup-rpi` sul Raspberry.
+Il servizio `iot-edge` parte al boot senza login. Stato da SSH con
+`bash Script/rpi/stato-rpi --network`. Non avviare anche `avviaSistema -Completo`
+sul PC per lo stesso paziente. I paragrafi seguenti descrivono le modalita'
+manuali precedenti e alternative, non ulteriori comandi da aggiungere al servizio.
+
 Questo file spiega come avviare lo stack completo del progetto distinguendo
 l'avvio su Windows dall'avvio su Raspberry Pi.
 

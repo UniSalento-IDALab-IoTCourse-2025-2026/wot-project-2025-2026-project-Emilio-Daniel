@@ -12,6 +12,13 @@ desktop.ini
 .pytest_cache/
 .vscode/settings.json
 edge_node/config/edge.yml
+edge_node/config/edge.rpi.yml
+edge_node/config/edge-service.env
+edge_node/config/certs/
+edge_node/deploy/generated/
+cloud/mqtt/cert-backups/
+cloud/model-metrics/
+Dashboard/.pc-launch.json
 edge_node/config/fitbit_token.json
 edge_node/config/fitbit_client.json
 edge_node/config/fitbit_oauth_state.json

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import signal
 import socket
 import subprocess
 import sys
@@ -55,27 +56,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main() -> int:
     """Avvia receiver e runtime loop come due processi coordinati."""
     args = build_parser().parse_args()
     config_path = Path(args.config)
     _print_startup_summary(args)
     _warn_about_config(config_path)
 
-    receiver = _start_process(
-        "receiver",
-        [
-            sys.executable,
-            "-m",
-            "edge_receiver.cli",
-            "--config",
-            str(config_path),
-            "--host",
-            args.host,
-            "--port",
-            str(args.port),
-        ],
-    )
     runtime_command = [
         sys.executable,
         "-m",
@@ -99,16 +86,29 @@ def main() -> None:
                 str(args.baseline_contamination),
             ]
         )
-    runtime = _start_process("runtime", runtime_command)
-
+    processes: dict[str, subprocess.Popen] = {}
+    previous_handler = signal.signal(signal.SIGTERM, _stop_requested)
     try:
-        _watch_processes({"receiver": receiver, "runtime": runtime})
+        processes["receiver"] = _start_process(
+            "receiver",
+            [sys.executable, "-m", "edge_receiver.cli", "--config", str(config_path),
+             "--host", args.host, "--port", str(args.port)],
+        )
+        processes["runtime"] = _start_process("runtime", runtime_command)
+        _watch_processes(processes)
     except KeyboardInterrupt:
-        _log("CTRL+C ricevuto: arresto receiver e runtime")
-    except RuntimeError as exc:
+        _log("Arresto richiesto: chiusura receiver e runtime")
+    except (RuntimeError, OSError) as exc:
         _log(f"Errore stack: {exc}")
+        return 1
     finally:
-        _terminate_processes([runtime, receiver])
+        _terminate_processes(list(reversed(processes.values())))
+        signal.signal(signal.SIGTERM, previous_handler)
+    return 0
+
+
+def _stop_requested(signum, frame) -> None:
+    raise KeyboardInterrupt
 
 
 def _print_startup_summary(args: argparse.Namespace) -> None:
@@ -193,12 +193,13 @@ def _terminate_processes(processes: list[subprocess.Popen]) -> None:
     for process in processes:
         if process.poll() is None:
             process.terminate()
-    deadline = time.time() + 8
+    deadline = time.monotonic() + 8
     for process in processes:
-        while process.poll() is None and time.time() < deadline:
-            time.sleep(0.2)
-        if process.poll() is None:
+        try:
+            process.wait(timeout=max(0.1, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
             process.kill()
+            process.wait()
 
 
 def _log(message: str) -> None:
@@ -217,4 +218,4 @@ def _guess_lan_ip() -> str | None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

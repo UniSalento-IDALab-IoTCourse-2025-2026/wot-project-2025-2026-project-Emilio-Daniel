@@ -6,6 +6,11 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 EDGE_DIR="$PROJECT_DIR/edge_node"
 CONFIG_FILE="$EDGE_DIR/config/edge.yml"
 
+if command -v systemctl >/dev/null && systemctl is-active --quiet iot-edge.service; then
+  echo "iot-edge.service e' gia' attivo. Usare systemctl/journalctl, non avviare una seconda pipeline."
+  exit 1
+fi
+
 if [[ ! -f "$CONFIG_FILE" ]]; then
   echo "ERRORE: manca edge_node/config/edge.yml"
   echo "Crea il file reale partendo da edge_node/config/edge.example.yml e inserisci token/config locali."

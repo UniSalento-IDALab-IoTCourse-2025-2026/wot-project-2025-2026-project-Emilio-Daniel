@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ "$EUID" -eq 0 ]]; then
+  echo "Eseguire come utente ordinario, non con sudo. Sudo verra' richiesto solo per installare il servizio."
+  exit 1
+fi
+if [[ $# -eq 0 ]]; then
+  echo "Uso: bash Script/rpi/setup-rpi --pc-host IP_PC --ca-file /percorso/ca.crt"
+  echo "Opzionale: --rotate-secret per sostituire la password MQTT salvata."
+  exit 1
+fi
+command -v systemctl >/dev/null || { echo "Richiesto Linux con systemd."; exit 1; }
+if systemctl is-active --quiet iot-edge.service; then
+  echo "Il servizio e' attivo. Prima della riconfigurazione: sudo systemctl stop iot-edge"
+  exit 1
+fi
+if [[ ! -x "$ROOT/.venv/bin/python" ]]; then
+  python3 -m venv "$ROOT/.venv"
+fi
+"$ROOT/.venv/bin/python" -m pip install -r "$ROOT/edge_node/requirements.txt"
+PYTHONPATH="$ROOT/edge_node${PYTHONPATH:+:$PYTHONPATH}" "$ROOT/.venv/bin/python" -m edge_deploy.cli prepare "$@"
+sudo systemd-analyze verify "$ROOT/edge_node/deploy/generated/iot-edge.service"
+sudo install -o root -g root -m 0644 "$ROOT/edge_node/deploy/generated/iot-edge.service" /etc/systemd/system/iot-edge.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now iot-edge.service
+echo "Servizio installato e abilitato al boot. Non e' ancora un collaudo end-to-end."
+echo "Stato: systemctl status iot-edge --no-pager"
+echo "Log:   sudo journalctl -u iot-edge -f"
+echo "Check: bash Script/rpi/stato-rpi --network"

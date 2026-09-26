@@ -3,6 +3,10 @@ Per ottenere le modifiche corrette usare "git pull origin main"
 
 # Progetto IoT 2026
 
+Per l'installazione con backend/dashboard sul PC e raccolta/AI sul Raspberry,
+seguire [Deployment PC + Raspberry](Documenti/Generale/Deployment_RPi_PC.md).
+Comprende servizio `systemd` al boot, configurazione LAN/TLS e diagnostica SSH.
+
 Questo repository contiene il nucleo reale del progetto IoT per il monitoraggio
 comportamentale e spaziale delle Attivita' della Vita Quotidiana (ADL).
 

@@ -1,5 +1,19 @@
 # Test completo del sistema IoT
 
+## Collaudo su PC + Raspberry
+
+Dal 26 settembre 2026 la procedura di riferimento e'
+[Deployment_RPi_PC.md](Documenti/Generale/Deployment_RPi_PC.md), inclusi setup,
+autostart `systemd`, SSH e prova di riavvio/disconnessione. Usare `avviaPC.ps1`
+sul PC e `iot-edge.service` sul Pi, senza avviare una seconda pipeline sul PC.
+La demo BLE copre solo Cucina e Bagno; Camera e' non monitorata.
+
+Test automatici del deployment dalla radice:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest edge_node/tests/test_edge_deploy.py -q
+```
+
 Questo file contiene la procedura ordinata e dettagliata per provare il sistema sviluppato
 finora.
 
@@ -46,8 +60,9 @@ I comandi lunghi e spiegati servono a noi durante sviluppo e debug.
 Alla fine del file c'e' una sezione separata con i comandi brevi e importanti da usare
 quando tutto e' gia' configurato.
 
-Questa non e' ancora la procedura finale per il paziente. Nella versione finale il
-Raspberry dovra' partire con servizi automatici, senza richiedere comandi manuali.
+I comandi manuali successivi servono a prove isolate e sviluppo. Il nuovo servizio
+automatico e' predisposto nella guida PC + Raspberry e deve essere collaudato
+sull'hardware prima di considerare conclusa l'installazione.
 
 ## Test automatici e manuali aggiunti da E21-E33
 

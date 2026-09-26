@@ -1,0 +1,29 @@
+[Unit]
+Description=IoT Edge - BLE receiver and inference runtime
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@EDGE_DIR@
+EnvironmentFile=@ENV_FILE@
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 NO_COLOR=1
+ExecStart=@PYTHON@ -u -m edge_stack.cli --config config/edge.rpi.yml --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=15
+KillMode=control-group
+TimeoutStopSec=25
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@CONFIG_DIR@ @DATA_DIR@ @MODELS_DIR@ @OUTPUTS_DIR@
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=iot-edge
+
+[Install]
+WantedBy=multi-user.target
