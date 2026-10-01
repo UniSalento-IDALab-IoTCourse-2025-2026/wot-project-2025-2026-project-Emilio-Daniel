@@ -76,6 +76,8 @@ edge_node/outputs/*
 
 # Segreti e certificati MQTT/Cloud generati localmente.
 cloud/mqtt/passwd
+cloud/mqtt/*passwd*
+!cloud/mqtt/passwd.example
 cloud/mqtt/certs/*
 !cloud/mqtt/certs/.gitkeep
 cloud/mqtt/data/*

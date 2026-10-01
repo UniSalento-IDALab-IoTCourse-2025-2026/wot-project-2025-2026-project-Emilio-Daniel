@@ -35,7 +35,7 @@ foreach ($file in @("cloud\.env", "cloud\backend\.env", "Dashboard\.env",
                     "cloud\mqtt\passwd", "cloud\mqtt\certs\server.crt",
                     "cloud\mqtt\certs\server.key", "cloud\mqtt\certs\ca.crt")) {
     if (-not (Test-Path -LiteralPath (Join-Path $Root $file))) {
-        throw "Manca $file. Consultare Documenti/Generale/Deployment_RPi_PC.md."
+        throw "Manca $file. Consultare la sezione Installazione e avvio del README.md."
     }
 }
 $null = Get-Command docker -ErrorAction Stop

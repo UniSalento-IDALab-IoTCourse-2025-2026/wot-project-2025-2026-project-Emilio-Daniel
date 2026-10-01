@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PYTHON="$ROOT/.venv/bin/python"
+CONFIG="config/edge.rpi.yml"
+ACTION="${1:-status}"
+
+if [[ ! -x "$PYTHON" ]]; then
+  echo "Ambiente Python assente: eseguire prima Script/rpi/setup-rpi."
+  exit 1
+fi
+
+cd "$ROOT/edge_node"
+
+case "$ACTION" in
+  status)
+    "$PYTHON" -m edge_maintenance.cli --config "$CONFIG" status
+    ;;
+  reset)
+    PATIENT_ID="${2:-}"
+    if [[ -z "$PATIENT_ID" ]]; then
+      echo "Uso: bash Script/rpi/modello-paziente reset patient-001"
+      exit 1
+    fi
+    if systemctl is-active --quiet iot-edge.service; then
+      echo "Arrestare prima il servizio: sudo systemctl stop iot-edge"
+      exit 1
+    fi
+    "$PYTHON" -m edge_maintenance.cli --config "$CONFIG" reset --confirm "$PATIENT_ID"
+    ;;
+  train-provisional)
+    PATIENT_ID="${2:-}"
+    if [[ -z "$PATIENT_ID" ]]; then
+      echo "Uso: bash Script/rpi/modello-paziente train-provisional patient-001"
+      exit 1
+    fi
+    if systemctl is-active --quiet iot-edge.service; then
+      echo "Arrestare prima il servizio: sudo systemctl stop iot-edge"
+      exit 1
+    fi
+    CONFIGURED_ID="$($PYTHON -c 'from edge_ingest.config import load_config; print(load_config("config/edge.rpi.yml").patient.patient_id)')"
+    if [[ "$PATIENT_ID" != "$CONFIGURED_ID" ]]; then
+      echo "Conferma non valida: il patient_id configurato e' $CONFIGURED_ID"
+      exit 1
+    fi
+    "$PYTHON" -m edge_baseline.cli --config "$CONFIG" train --allow-early --provisional
+    ;;
+  *)
+    echo "Uso: bash Script/rpi/modello-paziente {status|reset patient-001|train-provisional patient-001}"
+    exit 1
+    ;;
+esac

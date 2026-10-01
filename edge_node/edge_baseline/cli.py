@@ -10,6 +10,7 @@ from edge_baseline.session import (
     DEFAULT_BASELINE_STATE,
     DEFAULT_DAYS,
     finalize_session,
+    save_session,
     session_status_payload,
     start_session,
 )
@@ -44,6 +45,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     train = subparsers.add_parser("train", help="Train the patient model from baseline CSV")
     train.add_argument("--allow-early", action="store_true")
+    train.add_argument(
+        "--provisional",
+        action="store_true",
+        help=(
+            "Mark an early model as provisional. Requires --allow-early and "
+            "still requires at least 50 real patient windows."
+        ),
+    )
     train.add_argument("--contamination", type=float, default=0.05)
 
     return parser
@@ -81,20 +90,35 @@ def main() -> None:
         return
 
     if args.command == "train":
+        if args.provisional and not args.allow_early:
+            raise ValueError("--provisional requires --allow-early")
         session = finalize_session(config, state_path, allow_early=args.allow_early)
         frame = load_feature_frame(session.baseline_csv)
         detector = EdgeAnomalyDetector.train(
             frame=frame,
             patient_id=session.patient_id,
             contamination=args.contamination,
+            training_source=(
+                "patient_baseline_provisional"
+                if args.provisional
+                else "patient_baseline"
+            ),
         )
         detector.save(session.model_output)
+        session.status = "trained"
+        session.notes.append(
+            f"Manual {'provisional ' if args.provisional else ''}model trained "
+            f"with {detector.metadata.training_rows} windows."
+        )
+        save_session(session, state_path)
         payload = session.to_dict()
         payload.update(
             {
                 "status": "trained",
                 "training_rows": detector.metadata.training_rows,
                 "model": session.model_output,
+                "provisional": bool(args.provisional),
+                "training_source": detector.metadata.training_source,
             }
         )
         print(json.dumps(payload, indent=2))

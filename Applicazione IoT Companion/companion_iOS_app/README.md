@@ -185,7 +185,7 @@ La capability `bluetooth-central` permette al sistema di svegliare l'app per eve
 ma le scansioni non filtrate possono essere rallentate o sospese quando l'app resta a
 lungo in background.
 
-Per il progetto universitario va bene partire cosi':
+Per il progetto va bene partire con:
 
 ```text
 iPhone fisico

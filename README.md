@@ -1,1907 +1,536 @@
-Per eliminire tutti i desktop.ini: Get-ChildItem -Path . -Filter "desktop.ini" -Recurse -Force | Remove-Item -Force
-Per ottenere le modifiche corrette usare "git pull origin main"
+# Triage IoT
 
-# Progetto IoT 2026
+Sistema distribuito per il monitoraggio domiciliare e il supporto al triage.
 
-Per l'installazione con backend/dashboard sul PC e raccolta/AI sul Raspberry,
-seguire [Deployment PC + Raspberry](Documenti/Generale/Deployment_RPi_PC.md).
-Comprende servizio `systemd` al boot, configurazione LAN/TLS e diagnostica SSH.
+Progetto realizzato da **Emilio Pascadopoli** e **Daniel Spedicato** per il corso
+Internet of Things 2025/2026 dell'Universita del Salento.
 
-Questo repository contiene il nucleo reale del progetto IoT per il monitoraggio
-comportamentale e spaziale delle Attivita' della Vita Quotidiana (ADL).
+> Il software e' un prototipo accademico. Gli indicatori prodotti non costituiscono
+> una diagnosi e la valutazione finale resta al medico.
 
-L'obiettivo non e' sostituire una diagnosi medica, ma costruire un sistema di
-triage predittivo basato su Raspberry Pi 5, Google Pixel Watch 2, BLE indoor
-positioning, misurazione elettrica/NILM e modello di Anomaly Detection eseguito
-in locale.
+## Obiettivo
 
-Il progetto e' pensato per usare dati reali. Non stiamo addestrando il modello
-finale su dati simulati: la baseline verra' raccolta dal setup reale installato
-sul Raspberry Pi.
+Triage IoT raccoglie dati fisiologici e di routine domestica, li elabora vicino al
+paziente e presenta al medico un quadro temporale comprensibile. Il sistema unisce:
 
-La parte AI ora segue un approccio ibrido a tre modelli: un modello generico
-spaziale/domestico, un modello generico wearable/fisiologico e un modello personale
-addestrato progressivamente sulla baseline reale del paziente. Il sistema confronta
-tutti gli score disponibili e produce una decisione fusa.
+- dati Google Health acquisiti dal Pixel Watch;
+- posizione indoor stimata con beacon BLE e app Android;
+- finestre temporali Edge di quattro minuti;
+- modelli di anomaly detection generici e personali;
+- trasporto MQTT cifrato verso il backend;
+- dashboard web per medico, app paziente e interfaccia caregiver;
+- alert, task, questionari, messaggi, notifiche push e audit.
 
-## Indice
-
-- [Architettura](#architettura)
-- [Struttura](#struttura)
-- [Cosa e' stato fatto finora](#cosa-e-stato-fatto-finora)
-- [In parole povere](#in-parole-povere)
-- [Modello AI ibrido](#modello-ai-ibrido)
-- [Step attuale](#step-attuale)
-- [Configurazione](#configurazione)
-- [Google Health / Pixel Watch 2](#google-health--pixel-watch-2)
-- [BLE indoor positioning](#ble-indoor-positioning)
-  - [Hardware previsto](#hardware-previsto)
-  - [Cosa abbiamo fatto con Android](#cosa-abbiamo-fatto-con-android)
-  - [Cosa abbiamo fatto con iOS](#cosa-abbiamo-fatto-con-ios)
-  - [Receiver Raspberry per app mobile](#receiver-raspberry-per-app-mobile)
-  - [Test app Android con beacon reali](#test-app-android-con-beacon-reali)
-  - [Rendere l'app installabile su Android](#rendere-lapp-installabile-su-android)
-- [Shelly / NILM](#shelly--nilm)
-- [Dashboard e backend](#dashboard-e-backend)
-- [Comandi principali](#comandi-principali)
-  - [Comando unico consigliato](#comando-unico-consigliato)
-  - [Fase baseline](#fase-baseline)
-  - [Procedura completa per addestrare il modello sul Raspberry Pi](#procedura-completa-per-addestrare-il-modello-sul-raspberry-pi)
-  - [Comandi separati](#comandi-separati)
-- [Flusso sul Raspberry Pi](#flusso-sul-raspberry-pi)
-- [Prossimi step](#prossimi-step)
-- [Stato attuale del progetto](#stato-attuale-del-progetto)
+L'elaborazione Edge continua anche quando il PC non e' temporaneamente raggiungibile:
+i messaggi MQTT non inviati vengono accodati sul Raspberry e ritentati al ritorno della
+rete.
 
 ## Architettura
 
-```text
-Google Pixel Watch 2 / Fitbit API
-        |
-        v
-Fitbit/Google Health adapter
-
-BLE samples da Android/beacon indoor
-        |
-        v
-BLE adapter
-
-Shelly EM / NILM samples
-        |
-        v
-Shelly adapter
-
-        tutti gli adapter
-              |
-              v
-edge_ingest aggrega una finestra da 4 minuti
-              |
-              v
-edge_node/data/processed/latest_window.csv
-              |
-              v
-edge_ai esegue generico spaziale + generico wearable + personale + fusione + debounce
-              |
-              v
-edge_node/outputs/patient-001-decision.json
+```mermaid
+flowchart LR
+    Watch[Pixel Watch / Google Health] --> Edge
+    Beacon[Beacon BLE] --> Android[App Android]
+    Android -->|HTTP LAN, campioni BLE| Edge[Raspberry Pi 5\nEdge e AI]
+    Edge -->|MQTT TLS 8883| Broker[Broker Mosquitto\nPC]
+    Broker --> Worker[Worker MQTT]
+    Worker --> DB[(PostgreSQL)]
+    API[Backend FastAPI] <--> DB
+    API -->|REST e WebSocket| Web[Dashboard medico]
+    API -->|FCM| Android
+    Android -->|task, risultati e stato app| API
 ```
 
-## Struttura
+### Distribuzione reale
+
+| Nodo | Responsabilita | Servizi principali |
+| --- | --- | --- |
+| Raspberry Pi 5 | Ricezione BLE, aggregazione, inferenza AI e pubblicazione | `iot-edge.service`, porta HTTP `8000` |
+| PC | Broker, database, backend, worker e dashboard | MQTT TLS `8883`, PostgreSQL `5432`, API `8080`, web `5173` |
+| Telefono Android | Scansione beacon, app paziente/caregiver, task e notifiche | Receiver `http://IP_RPI:8000`, API `http://IP_PC:8080/api/v1` |
+
+PC, Raspberry e telefono devono essere sulla stessa rete locale. Il PC deve restare
+acceso e non deve entrare in sospensione durante acquisizione e demo.
+
+## Componenti
+
+Il repository corrente e' il repository di integrazione:
+
+- [repository integrato](https://github.com/emipasca12/ProgettoIoT)
+- [Edge e gateway](edge_node/README.md)
+- [Cloud, backend e broker](cloud/README.md)
+- [Dashboard medico](Dashboard/README.md)
+- [App Android paziente e caregiver](Applicazione%20IoT%20Companion/companion_Android_app/README.md)
+- [Contratti API e MQTT](Documenti/contracts/README.md)
+- [Test ufficiali](Test.md)
+
+Le istruzioni del corso richiedono un repository GitHub per ogni componente. I nomi
+scelti per la consegna sono:
+
+| Componente | Repository dell'organizzazione |
+| --- | --- |
+| Edge e gateway | [wot-project-2025-2026-edge-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-edge-Pascadopoli-Spedicato) |
+| Cloud e backend | [wot-project-2025-2026-cloud-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-cloud-Pascadopoli-Spedicato) |
+| Dashboard web | [wot-project-2025-2026-dashboard-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-dashboard-Pascadopoli-Spedicato) |
+| App Android | [wot-project-2025-2026-android-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-android-Pascadopoli-Spedicato) |
+| Sito di presentazione | [wot-project-2025-2026-presentation-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-presentation-Pascadopoli-Spedicato) |
+
+Se un collegamento restituisce `404`, il repository corrispondente deve ancora essere
+creato nell'organizzazione del corso. Non inserire nei repository componenti segreti o
+dati raccolti.
+
+### Materiale richiesto per l'esame
+
+Secondo le istruzioni del corso devono essere consegnati:
+
+- documentazione tecnica e codice GitHub entro una settimana dall'esame;
+- presentazione entro il giorno precedente all'esame, oppure almeno tre giorni
+  lavorativi prima se si desidera un feedback;
+- una GitHub Page che presenti obiettivo, architettura, componenti e demo;
+- un README in ogni repository componente con progetto generale, architettura, link
+  agli altri repository e descrizione del componente specifico.
+
+La GitHub Page ha funzione di vetrina; non sostituisce i repository dei componenti o la
+documentazione tecnica.
+
+## Funzioni realizzate
+
+### Edge e AI
+
+- ricezione dei campioni BLE inviati dall'app;
+- acquisizione Google Health tramite OAuth;
+- aggregazione in finestre di quattro minuti;
+- controllo di qualita e gestione esplicita dei dati mancanti;
+- modelli generici spaziale e wearable, modello personale e fusione degli score;
+- score AI, confidenza, fattori esplicativi, trend e drift;
+- coda MQTT locale con ritentativo;
+- avvio automatico tramite `systemd`.
+
+### Backend e comunicazione
+
+- FastAPI, PostgreSQL e migrazioni Alembic;
+- autenticazione per medico, paziente, caregiver e amministratore;
+- associazione autorizzata tra account, `patient_id` e dispositivo;
+- ingestione MQTT con TLS, API REST e aggiornamenti WebSocket;
+- alert con presa in carico e risoluzione;
+- attivita, questionari, risultati e messaggi personalizzati;
+- notifiche Firebase distinte per paziente e caregiver;
+- report, riepilogo 24 ore, timeline, routine ambientale e audit;
+- retention, backup e endpoint di diagnostica.
+
+### Interfacce
+
+- dashboard clinica con grafici interattivi, andamento AI e stato tecnico;
+- storico di finestre, alert, attivita e questionari;
+- app Android con monitoraggio BLE in foreground e riavvio automatico;
+- home paziente, task guidati, risultati offline e notifiche;
+- vista caregiver limitata agli eventi autorizzati e pubblicabili;
+- credenziali tecniche protette nelle impostazioni amministrative.
+
+## Struttura del repository
 
 ```text
-Script/avvio/avviaSistema                    Launcher breve per Raspberry/Linux
-Script/avvio/avviaSistema.cmd        Launcher breve per Windows
-Script/avvio/avviaSistema.ps1        Launcher PowerShell alternativo
-Script/test/test_mqtt_local.ps1      Test automatico locale MQTT/TLS/WSS
-
-edge_node/
-  requirements.txt      Dipendenze Python del Raspberry/edge node
-
-  config/
-    edge.example.yml    Configurazione esempio dell'edge node
-
-  edge_ingest/
-    config.py           Lettura configurazione YAML
-    time_windows.py     Calcolo finestre temporali
-    ble_collector.py    Scanner BLE alternativo da Raspberry
-    ble_cli.py          Comando BLE discover/scan alternativo
-    fitbit_adapter.py   Polling reale Fitbit Web API via OAuth token
-    ble_adapter.py      Aggregazione campioni BLE gia' raccolti
-    shelly_adapter.py   Aggregazione campioni Shelly/NILM gia' raccolti
-    aggregator.py       Fusione dati in una riga feature
-    cli.py              Comando collect-window
-
-  edge_auth/
-    fitbit_oauth.py     Setup OAuth Fitbit, salvataggio token e refresh
-    cli.py              Comandi fitbit setup/status/refresh
-
-  edge_ai/
-    schema.py           Contratto delle feature in ingresso
-    features.py         Lettura e validazione CSV/JSON
-    model.py            Isolation Forest generica e paziente-specifica
-    fusion.py           Fusione tra score spaziale, wearable e personale
-    debounce.py         Anti alarm fatigue e alert tecnici
-    cli.py              Comandi train/infer
-
-  edge_baseline/
-    cli.py              Start/status/finalize/train baseline reale
-    session.py          Stato della raccolta baseline
-
-  edge_datasets/
-    cli.py              Conversione dataset pubblici nello schema edge
-    casas_converter.py  Conversione CASAS in generic_spatial_dataset.csv
-    fitbitdata_converter.py Conversione dataset Fitbit-style in generic_wearable_dataset_fitbitdata.csv
-    pamap2_converter.py Conversione PAMAP2 in generic_wearable_dataset_pamap2.csv
-    wesad_converter.py  Conversione WESAD in generic_wearable_dataset_wesad.csv
-    merge.py            Unione CSV convertiti nello schema feature ufficiale
-
-  edge_receiver/
-    app.py              Receiver HTTP locale sul Raspberry Pi
-    ble_storage.py      Scrittura campioni BLE Android nel CSV grezzo
-    cli.py              Comando per avviare il receiver
-
-  edge_runtime/
-    cli.py              Ciclo edge: aggregazione, qualita, inferenza e decisione
-
-  edge_stack/
-    cli.py              Comando unico per receiver BLE + runtime continuo
-
-  edge_quality/
-    checks.py           Controlli qualita dati prima di baseline/training
-    cli.py              Comando manuale per generare report qualita
-
-  data/
-    raw/                Campioni grezzi reali da app/sensori
-    processed/          Finestre aggregate per AI
-    state/              Stato debounce/allarmi
-
-  models/               Modelli generici e modelli paziente-specifici
-  outputs/              Decisioni JSON prodotte dall'AI
-
-cloud/
-  docker-compose.yml     Stack Docker Compose `progetto-iot`
-
-  mqtt/
-    mosquitto.conf       Broker Mosquitto con MQTT, TLS e WSS
-    aclfile              ACL per Edge, backend e client test
-    passwd.example       Utenti MQTT di esempio, senza password reali
-    certs/               Certificati locali ignorati da Git
-    data/                Persistence locale Mosquitto ignorata da Git
-    log/                 Log locali Mosquitto ignorati da Git
-
-  backend/
-    app/
-      main.py            Backend FastAPI unico
-      api/routes/        Moduli auth, patients, telemetry, alerts, tasks, realtime
-      core/              Config, errori centralizzati e log JSON
-      db/                SQLAlchemy models e sessione database
-      mqtt/              Subscriber MQTT, validazione e ingestione Edge
-    alembic/             Migrazioni versionate PostgreSQL
-    scripts/             Utility backend, inclusa esportazione OpenAPI
-    tests/               Test automatici backend e schema DB
-    requirements.txt     Dipendenze backend Cloud
-
 Applicazione IoT Companion/
-  companion_Android_app/
-    app Android per scansione BLE/manual test e invio dati al Raspberry
-  companion_iOS_app/
-    sorgenti Swift/SwiftUI preparati, ma per ora sospesi perche' useremo Android
-
-Documenti/
-  Generale/
-    ANDROID_APP.md        Guida app Android, emulatore e APK
-    BEACON_SETUP.md       Setup reale dei 3 BlueBeacon 01
-    API_CONSTRAINTS.md    Vincoli reali Google/Fitbit e BLE
-    GOOGLE_WATCH_SETUP.md Procedura Pixel Watch 2 / Google Health API
-    FEATURE_SCHEMA.md     Schema dataset reale
-    DASHBOARD_ARCHITECTURE.md Panoramica dashboard medico/paziente, MQTT e WebSocket
-    REAL_DATA_PLAN.md     Piano raccolta dati reali
-    RPI_DEPLOYMENT.md     Setup Raspberry Pi
-    CompitiDivisi.md      Checklist Daniel/Emilio
-  Daniel/
-    D1.md                 Broker MQTT Cloud
-    D2.md                 Struttura backend FastAPI
-    D3.md                 Database PostgreSQL
-    D4.md                 Subscriber MQTT e ingestione
-    D5.md                 API REST reali per dashboard e app
-    D6.md                 WebSocket realtime
-    D7.md                 Autenticazione, autorizzazione e audit
-    D8.md                 Logica alert e presa in carico
-    D9.md                 Task, test e risultati
-  contracts/
-    API_CONTRACT.md       Contratto API REST/WebSocket
-    MQTT_CONTRACT.md      Contratto topic e payload MQTT
-    openapi.json          OpenAPI generato dal backend FastAPI
-    examples/             Esempi JSON condivisi
+  companion_Android_app/    App Android paziente e caregiver
+  companion_iOS_app/        Prototipo iOS, non incluso nella demo ufficiale
+cloud/
+  backend/                  API FastAPI, worker, test e migrazioni
+  mqtt/                     Mosquitto, ACL e certificati locali
+  docker-compose.yml        Stack eseguito sul PC
+Dashboard/                  Frontend React/Vite del medico
+Documenti/contracts/        Contratti REST, WebSocket e MQTT
+edge_node/                  Acquisizione, AI, receiver e deployment Edge
+Script/avvio/               Avvio PC e strumenti operativi
+Script/rpi/                 Installazione e diagnostica Raspberry
+Test.md                     Checklist di collaudo
 ```
 
-Regola pratica: i comandi Python del Raspberry/AI vanno eseguiti entrando prima in
-`edge_node/`. L'app Android si apre da Android Studio selezionando
-`Applicazione IoT Companion/companion_Android_app/`.
-L'app iOS si crea su Mac con Xcode usando i file in
-`Applicazione IoT Companion/companion_iOS_app/`.
+## Codice Git e configurazioni locali
 
-## Cosa e' stato fatto finora
+PC e Raspberry eseguono componenti diversi, ma non richiedono due versioni del codice.
+Il codice sorgente resta su Git; ogni macchina conserva localmente configurazioni,
+credenziali e dati runtime esclusi da `.gitignore`.
 
-- Ho letto il PDF/proposta del progetto e ho ricostruito l'architettura reale:
-  Pixel Watch 2, Raspberry Pi 5, BLE indoor positioning, Shelly/NILM, Edge AI e dashboard.
-- Ho verificato i vincoli pratici delle API: i dati biometrici del Pixel Watch non vanno
-  letti come stream BLE grezzo, ma tramite Google Health/Fitbit API con OAuth.
-- Ho creato il nucleo `edge_ai`, pensato per girare sia su questo PC sia sul Raspberry Pi.
-- Ho definito lo schema delle feature reali che gli adapter hardware devono produrre.
-- Ho implementato un modello paziente-specifico con `IsolationForest` per anomaly detection ADL.
-- Ho esteso l'AI a tre modelli: `models/generic_spatial.pkl`,
-  `models/generic_wearable.pkl` e `models/patient-001.pkl`.
-- Ho aggiunto `edge_ai/fusion.py`, che confronta score spaziale, wearable e personale.
-- Ho aggiunto una logica di debounce per ridurre falsi allarmi e alarm fatigue.
-- Ho distinto gli alert clinici dagli alert tecnici, ad esempio wearable scarico o non indossato.
-- Ho creato la CLI AI con due comandi: training della baseline reale e inferenza sull'ultima finestra.
-- Ho rimosso `joblib` e ora salvo/carico i modelli con `pickle` standard in file `.pkl`.
-- Ho creato il nuovo pacchetto `edge_ingest`, cioe' il ponte tra dati reali e modello AI.
-- Ho aggiunto una configurazione YAML di esempio in `edge_node/config/edge.example.yml`.
-- Ho implementato l'adapter Google Health per Pixel Watch 2 e mantenuto Fitbit come
-  compatibilita legacy.
-- Ho aggiunto `edge_auth`, che gestisce token Google Health/Fitbit, salvataggio locale e
-  refresh automatico.
-- Ho implementato adapter CSV per BLE e Shelly/NILM, cosi' appena il Raspberry raccoglie campioni
-  grezzi possiamo aggregarli in feature.
-- Ho predisposto la parte BLE lato aggregazione: il sistema sa leggere campioni stanza/RSSI
-  da `edge_node/data/raw/ble_samples.csv` e trasformarli in feature per il modello.
-- Ho aggiunto il receiver HTTP locale per Android: il telefono potra' inviare campioni BLE
-  al Raspberry con `POST /ble/sample`.
-- Ho creato l'app Android `IoT Edge Companion` in
-  `Applicazione IoT Companion/companion_Android_app/`, ora orientata
-  al test BLE reale con telefono fisico e BlueBeacon.
-- Ho aggiunto il Foreground Service BLE nell'app Android, cosi' il monitoraggio puo'
-  restare attivo in background con notifica persistente.
-- Ho riordinato il repository separando `edge_node/`,
-  `Applicazione IoT Companion/` e `Documenti/`.
-- Ho aggiunto `cloud/mqtt` con Mosquitto in Docker, ACL per paziente, utenti separati,
-  MQTT locale, MQTT/TLS, WSS, Last Will e retained policy.
-- Ho aggiunto `cloud/backend`, backend FastAPI unico e modulare con endpoint health,
-  readiness, OpenAPI, errori centralizzati, log JSON e test automatici.
-- Ho aggiunto PostgreSQL nello stack Docker Compose `progetto-iot`, modelli SQLAlchemy,
-  migrazioni Alembic, schema iniziale D3, deduplicazione `message_id` e procedure
-  backup/restore.
-- Ho aggiunto il subscriber MQTT backend D4: ascolta i topic Edge, valida i payload,
-  salva finestre/decisioni/alert/stato sensori nel database e pubblica eventi interni.
-- Ho aggiunto le API REST backend D5: login, lista pazienti, current, finestre,
-  decisioni, alert, task, risultati task e system-status letti da PostgreSQL.
-- Ho aggiunto il WebSocket realtime D6: la dashboard si collega a `/ws/v1/patients/{id}`
-  e riceve eventi su decisioni, alert, task e stato sistema.
-- Ho aggiunto autenticazione e autorizzazione D7: password hash, access token breve,
-  refresh token revocabile, ruoli doctor/caregiver/patient/admin, WebSocket protetta
-  e audit delle azioni importanti.
-- Ho aggiunto la logica alert D8: decisioni AI pubblicabili `orange/red` creano alert
-  automatici deduplicati, mentre `yellow` resta attenzione visibile ma non urgente.
-- Ho aggiunto le regole task D9: tipi task validati, test clinici riservati al medico,
-  scadenze, blocco duplicati e scoring solo con regola esplicita.
-- Ho completato le estensioni D5-D8: API admin, profilo utente, cambio password,
-  revoca sessioni, ping/pong WebSocket, anti-spam alert ed escalation.
-- Ho aggiunto `edge_runtime`, il comando unico che aggrega la finestra e fa inferenza
-  automaticamente se trova un modello addestrato.
-- Ho aggiunto `edge_quality`, che controlla se i dati sono utilizzabili prima di salvarli
-  nella baseline o addestrare il modello.
-- Ho aggiunto `edge_baseline`, che gestisce stato, raccolta 7 giorni e training
-  automatico del modello paziente-specifico.
-- Ho aggiunto il comando che genera `edge_node/data/processed/latest_window.csv`.
-- Ho aggiunto `edge_datasets`, partendo dal converter CASAS per creare
-  `generic_spatial_dataset.csv`.
-- Ho aggiunto il converter PAMAP2 per creare finestre wearable da heart rate,
-  activity id, passi stimati e minuti sedentari.
-- Ho aggiunto il converter WESAD per creare finestre wearable da BVP/HRV,
-  usando solo label normali e scartando stress/transitori.
-- Ho aggiunto il converter `fitbitdata` per usare i dataset locali in
-  `data/external/fitbitdata`: HR/HRV, activity, sleep health, `Health data.csv`
-  e HuGCDN2014-OXI in formato MATLAB per SpO2/RR.
-- Ho unito fitbitdata, PAMAP2 e WESAD in `generic_wearable_dataset.csv`.
-- Ho riaddestrato `models/generic_wearable.pkl`: ora il generico wearable usa
-  `heart_rate_mean`, `heart_rate_std`, `hrv_rmssd`, `spo2_mean`, `steps` e
-  `sedentary_minutes`. HRV ha peso moderato: valori alti/sani non generano
-  allarme, valori molto bassi possono produrre attenzione pre-baseline.
-- Nel modello generico wearable, `spo2_mean` viene trattata con una regola
-  clinica semplice: valori sani/alti vengono normalizzati, mentre valori bassi
-  restano informativi. Cosi' una SpO2 pari a 99-100 non genera falsi allarmi.
-- Ho creato nella radice `Dataset_Modelli_Generali/` due dataset sintetici
-  controllati da 300000 righe ciascuno:
-  `generic_spatial_synthetic_300k.csv` e `generic_wearable_synthetic_300k.csv`.
-  Servono a calibrare i modelli generici con valori normali/standard e pesi
-  ragionati: battito molto alto a riposo pesa piu' di una SpO2 lievemente bassa,
-  HRV bassa pesa in modo intermedio e HRV alta/sana non genera falsi allarmi.
-- Ho aggiornato la documentazione di deployment su Raspberry Pi.
-- Ho eseguito controlli di compilazione/import e test tecnici end-to-end della pipeline.
+| Su Git | Solo locale, mai su Git |
+| --- | --- |
+| sorgenti Python, React e Android | file `.env` reali |
+| Docker Compose e Dockerfile | password Mosquitto e relativi backup |
+| configurazioni `*.example` | certificati e chiavi private |
+| template `systemd` | token OAuth Google/Fitbit |
+| migrazioni e test | `google-services.json` e service account Firebase |
+| contratti ed esempi anonimizzati | `edge.rpi.yml`, dati, output e modelli personali |
 
-## In parole povere
+### Flusso quotidiano consigliato
 
-Per ora abbiamo costruito le fondamenta del sistema.
-
-Abbiamo preparato il "cervello" del progetto, cioe' il modulo AI che ricevera' i dati
-del paziente, imparera' la sua routine quotidiana e poi segnalera' eventuali anomalie.
-Questo modulo non fa diagnosi mediche: produce solo un livello di attenzione, ad esempio
-routine normale, sospetto lieve, allarme severo oppure problema tecnico.
-
-Abbiamo anche preparato il "traduttore" tra i sensori reali e il modello AI. Questo pezzo
-si chiama `edge_ingest`: prende dati da Fitbit/Pixel Watch, BLE e Shelly, li mette tutti
-nello stesso formato e produce un file CSV che il modello sa leggere.
-
-Quindi oggi non abbiamo ancora collegato fisicamente i sensori reali, ma abbiamo gia'
-deciso e implementato come dovranno parlare con il resto del sistema. Quando arrivera'
-il Raspberry Pi, dovremo collegare una sorgente alla volta:
-
-1. Fitbit/Pixel Watch tramite API e OAuth.
-2. BLE tramite telefono Android come scanner mobile dei beacon nelle stanze.
-3. Shelly tramite lettura HTTP dei consumi.
-
-Dopo il collegamento, il Raspberry raccogliera' dati veri per circa 7 giorni.
-Durante questi giorni, se avremo gia' `models/generic_spatial.pkl` e/o
-`models/generic_wearable.pkl`, il sistema potra' usare i modelli generici come
-riferimento iniziale. I dati raccolti formeranno poi la baseline personale del
-paziente; dopo il training, ogni finestra verra' valutata dai generici disponibili e
-dal modello personale.
-
-## Modello AI ibrido
-
-La nuova architettura AI usa tre livelli:
-
-```text
-models/generic_spatial.pkl
-  modello generico spaziale/domestico addestrato da CASAS
-
-models/generic_wearable.pkl
-  modello generico wearable/fisiologico addestrato da WESAD/PAMAP2 o simili
-
-models/patient-001.pkl
-  modello personale addestrato dalla baseline reale raccolta in casa
-```
-
-Durante i primi 7 giorni:
-
-```text
-dati reali ogni 4 minuti
--> controllo qualita
--> modelli generici, se disponibili
--> raccolta baseline personale
-```
-
-I modelli generici non si modificano automaticamente con i dati dei primi giorni. Invece
-fanno da filtro di sicurezza: se uno score generico supera la soglia configurata, la
-finestra puo' essere usata per triage ma non viene aggiunta alla baseline personale.
-
-Dopo la baseline:
-
-```text
-dati reali ogni 4 minuti
--> controllo qualita
--> modello generico spaziale   -> generic_spatial_score
--> modello generico wearable   -> generic_wearable_score
--> modello personale           -> personal_score
--> fusione                     -> anomaly_score finale
--> debounce                    -> green / yellow / orange / red / technical
-```
-
-Il JSON finale conserva anche `evidence.fusion`, cioe' il riepilogo dei tre modelli.
-In questo modo possiamo capire se una segnalazione nasce dalla parte spaziale, dalla
-parte wearable, dalla routine personale oppure da una concordanza tra piu' modelli.
-
-Scala operativa dello score:
-
-```text
-0-35    green     routine compatibile, nessun alert
-35-65   yellow    attenzione lieve, visibile in dashboard ma non pubblicata
-65-80   orange    anomalia importante, pubblicata solo se confermata dal debounce
-80-100  red       anomalia severa, alert pubblicato subito
-```
-
-`technical` resta separato: indica problemi di sensore, batteria, token o wearable non
-indossato, non un peggioramento clinico.
-
-Per capire da quale sorgente nasce lo score:
+Le modifiche si sviluppano e si pubblicano normalmente dal PC:
 
 ```powershell
-cd C:\Users\Daniel\Desktop\ProgettoIoT\edge_node
-$d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
+git status --short
+git add <file-modificati>
+git diff --cached
+git commit -m "Descrizione chiara della modifica"
+git push origin main
 ```
 
-Spiegazione orologio / wearable:
+Evitare `git add .` prima di aver controllato `git status`. Sul Raspberry si aggiornano
+i sorgenti senza toccare la configurazione locale:
+
+```bash
+cd ~/progetto-iot
+git pull --ff-only origin main
+sudo systemctl restart iot-edge
+bash Script/rpi/stato-rpi --network
+```
+
+Se una correzione viene fatta direttamente sul Raspberry, pubblicarla su un branch
+dedicato e integrarla dal PC:
+
+```bash
+git switch -c rpi/correzione-descrittiva
+git add edge_node/ Script/rpi/
+git commit -m "Corregge acquisizione Edge"
+git push -u origin rpi/correzione-descrittiva
+```
+
+Non usare branch permanenti `pc` e `rpi`: produrrebbero due copie divergenti dello
+stesso progetto. La differenza tra le macchine e' nella configurazione ignorata da Git,
+non nel ramo sorgente.
+
+### Pubblicare i repository separati del corso
+
+Mantenere questo repository come fonte unica. Nell'organizzazione del corso creare
+prima i quattro repository componenti **vuoti**, senza README o commit iniziale. Poi,
+una sola volta, registrare i remoti:
 
 ```powershell
-$d.evidence.fusion.models.generic_wearable.feature_explanation | ConvertTo-Json -Depth 8
+git remote add course-edge https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-edge-Pascadopoli-Spedicato.git
+git remote add course-cloud https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-cloud-Pascadopoli-Spedicato.git
+git remote add course-dashboard https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-dashboard-Pascadopoli-Spedicato.git
+git remote add course-android https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-android-Pascadopoli-Spedicato.git
 ```
 
-Spiegazione beacon / BLE:
-
-```powershell
-$d.evidence.fusion.models.generic_spatial.feature_explanation | ConvertTo-Json -Depth 8
-```
-
-## Step attuale
-
-Il nuovo step implementato e' l'aggregatore Edge:
-
-```bash
-cd edge_node
-python -m edge_ingest.cli --config config/edge.example.yml
-```
-
-Questo comando:
-
-1. legge la configurazione;
-2. calcola l'ultima finestra temporale da 4 minuti;
-3. interroga gli adapter abilitati;
-4. fonde le feature in una singola riga;
-5. scrive `data/processed/latest_window.csv`.
-
-Se vuoi costruire la baseline reale, il comando diventa:
-
-```bash
-cd edge_node
-python -m edge_ingest.cli --config config/edge.example.yml --append-baseline
-```
-
-In questo caso, oltre a scrivere `latest_window.csv`, appende la riga anche a:
-
-```text
-data/processed/baseline.csv
-```
-
-## Configurazione
-
-Il file di partenza e':
-
-```text
-edge_node/config/edge.example.yml
-```
-
-Nel file di esempio BLE e' abilitato per testare subito il flusso Android/receiver,
-mentre Fitbit e Shelly restano disabilitati finche' non avremo credenziali o hardware:
-
-```yaml
-fitbit:
-  enabled: false
-
-ble:
-  enabled: true
-
-shelly:
-  enabled: false
-```
-
-Quando avremo credenziali e hardware, abiliteremo anche le altre sorgenti una alla volta.
-
-## Google Health / Pixel Watch 2
-
-Il Google Pixel Watch 2 verra' sincronizzato con l'account Fitbit/Google. Il Raspberry
-non legge i dati biometrici grezzi via Bluetooth: li recupera via API dopo autorizzazione
-OAuth.
-
-Per nuove credenziali usiamo Google Health API. Fitbit resta nel progetto come adapter
-legacy, ma il percorso attuale per Pixel Watch 2 e':
-
-```text
-Pixel Watch 2
--> telefono/account Google
--> Google Health API
--> token OAuth locali
--> edge_ingest/google_health_adapter.py
--> latest_window.csv
--> modelli AI
-```
-
-I file sensibili non vanno committati:
-
-```text
-config/google_health_token.json
-config/google_health_client.json
-```
-
-La procedura completa di creazione API, OAuth Playground e refresh token e' in:
-
-```text
-Documenti/Generale/GOOGLE_WATCH_SETUP.md
-```
-
-Da dentro `edge_node/`, i comandi principali sono:
+Dopo aver committato e pubblicato `main` nel repository integrato, esportare ogni
+cartella come radice del relativo repository:
 
 ```powershell
-python -m edge_auth.cli google-health status
-python -m edge_auth.cli google-health refresh
-python -m edge_runtime.cli --config config\edge.yml --loop
+git subtree push --prefix=edge_node course-edge main
+git subtree push --prefix=cloud course-cloud main
+git subtree push --prefix=Dashboard course-dashboard main
+git subtree push --prefix="Applicazione IoT Companion/companion_Android_app" course-android main
 ```
 
-Configurazione reale:
+Ripetere gli stessi quattro `subtree push` dopo le modifiche future. Non modificare
+direttamente i repository esportati: le correzioni vanno fatte qui, verificate e poi
+ripubblicate. Il repository della GitHub Page va creato e gestito separatamente.
 
-```yaml
-fitbit:
-  enabled: false
+## Installazione e avvio
 
-google_health:
-  enabled: true
-  token_file: config/google_health_token.json
-  client_file: config/google_health_client.json
-  api_base_url: https://health.googleapis.com
-  data_delay_minutes: 12
-  heart_rate_lookback_minutes: 30
-```
+### Requisiti PC
 
-L'adapter Google Health legge o stima:
+- Windows 10/11 con PowerShell;
+- Docker Desktop con Docker Compose;
+- Git;
+- Node.js 20 o successivo;
+- Python 3.11 o successivo.
 
-- frequenza cardiaca intraday;
-- media e deviazione standard della frequenza cardiaca nella finestra;
-- resting heart rate se presente;
-- HRV giornaliero se disponibile;
-- SpO2 giornaliero se disponibile;
-- sleep summary se disponibile;
-- passi; se il battito e' valido ma i passi non arrivano, usa `steps = 0.0`;
-- minuti sedentari stimati quando possibile;
-- batteria e presenza wearable tramite device status se disponibile.
+### Prima configurazione del PC
 
-Il refresh token e' gestito automaticamente: non serve rifare login a ogni avvio. Il
-refresh manuale serve solo per test/debug.
-
-Nota tecnica: Google Health puo' avere alcuni minuti di ritardo rispetto al watch. Per
-questo `data_delay_minutes` e `heart_rate_lookback_minutes` sono configurati dentro
-`google_health`: il BLE resta sulla finestra corrente, mentre solo la chiamata cloud usa
-una finestra interna piu' consolidata.
-
-## BLE indoor positioning
-
-Per il nostro progetto scegliamo questa impostazione come riferimento:
-
-- beacon BLE fissi nelle stanze;
-- telefono Android indossato/tenuto dal paziente come scanner mobile;
-- il telefono scansiona i beacon, sceglie quello con RSSI piu' forte e stima la stanza;
-- il telefono invia al Raspberry Pi una riga con `timestamp`, `room`, `rssi` e `beacon_id`;
-- questa soluzione e' piu' vicina all'idea "seguo il paziente in casa" con un solo Raspberry Pi fisso.
-
-Questa parte e' gia' predisposta lato software: abbiamo creato sia il receiver locale
-sul Raspberry/PC sia l'app Android che puo' inviare campioni manuali e avviare un
-Foreground Service BLE per il monitoraggio in background.
-
-Nota: abbiamo preparato anche una base iOS, ma per ora la parte beacon reale prosegue su
-Android.
-
-### Hardware previsto
-
-Per la prima versione reale servono:
-
-- beacon BLE configurabili, uno per stanza;
-- un telefono Android che resta vicino/addosso al paziente;
-- un Raspberry Pi locale fisso, usato come gateway e receiver dati;
-- rete locale condivisa tra telefono e Raspberry Pi.
-
-Per i 3 BlueBeacon 01 BlueUp abbiamo scelto questa mappa:
-
-```text
-Beacon 1 -> Cucina          -> kitchen
-Beacon 2 -> Stanza da letto -> bedroom
-Beacon 3 -> Bagno           -> bathroom
-```
-
-L'app Android usera' una mappa `identificativo_beacon=stanza` per trasformare il beacon
-piu' vicino nella stanza corrente. Il formato consigliato per BlueBeacon e' `uuid-major-minor`.
-La guida operativa e' in `Documenti/Generale/BEACON_SETUP.md`.
-
-### Cosa abbiamo fatto con Android
-
-Abbiamo preparato:
-
-1. app Android per scansione beacon BLE reale;
-2. mappa `beacon_id -> stanza`;
-3. scelta della stanza tramite RSSI piu' forte;
-4. invio HTTP al Raspberry Pi;
-5. receiver locale sul Raspberry, gia' predisposto in `edge_receiver`;
-6. salvataggio in `data/raw/ble_samples.csv`;
-7. aggregazione con il codice gia' presente;
-8. Foreground Service BLE, cioe' monitoraggio in background con notifica persistente.
-
-L'app Android e' gia' stata creata in:
-
-```text
-Applicazione IoT Companion/companion_Android_app/
-```
-
-La modalita principale e' BLE reale: su telefono Android fisico scansionera' i beacon e
-inviera' automaticamente la stanza stimata.
-
-La modalita BLE reale viene gestita da un Foreground Service Android: dopo aver premuto
-`Avvia monitoraggio BLE`, l'app continua a lavorare in background e mostra una notifica
-persistente. Questo e' importante per il progetto reale, perche' il telefono deve restare
-attivo anche quando lo schermo e' spento o l'app non e' in primo piano.
-
-### Cosa abbiamo fatto con iOS
-
-Abbiamo creato la cartella:
-
-```text
-Applicazione IoT Companion/companion_iOS_app/
-```
-
-Dentro ci sono sorgenti Swift/SwiftUI da copiare in un progetto Xcode sul Mac.
-
-L'app iOS contiene:
-
-1. schermata di configurazione del receiver Raspberry;
-2. `phone_id` per identificare l'iPhone;
-3. mappa `beacon/nome/UUID -> stanza`;
-4. invio manuale di campioni BLE per test senza beacon;
-5. scansione BLE reale tramite CoreBluetooth;
-6. scelta del beacon con RSSI piu' forte;
-7. invio HTTP al receiver Raspberry;
-8. guida per firma, installazione su iPhone e test.
-
-Nota: il simulatore iOS non e' adatto a testare il BLE reale. Per la scansione serve un
-iPhone fisico. Inoltre iOS gestisce il background BLE in modo piu' restrittivo rispetto
-ad Android; per beacon iBeacon reali potremo eventualmente evolvere l'app usando
-CoreLocation con UUID/major/minor.
-
-### Receiver Raspberry per app mobile
-
-Avvio del receiver locale:
-
-```bash
-python -m edge_receiver.cli --config config/edge.yml --host 0.0.0.0 --port 8000
-```
-
-Endpoint disponibile:
-
-```text
-POST /ble/sample
-```
-
-Payload che l'app Android/iOS dovra' inviare:
-
-```json
-{
-  "timestamp": "2026-06-25T10:00:00Z",
-  "room": "kitchen",
-  "rssi": -61,
-  "beacon_id": "AA:BB:CC:DD:EE:01",
-  "beacon_name": "KitchenBeacon",
-  "phone_id": "android-phone"
-}
-```
-
-Test manuale da terminale:
-
-```bash
-curl -X POST http://RASPBERRY_IP:8000/ble/sample \
-  -H "Content-Type: application/json" \
-  -d '{"room":"kitchen","rssi":-61,"beacon_id":"AA:BB:CC:DD:EE:01","beacon_name":"KitchenBeacon","phone_id":"android-phone"}'
-```
-
-Il receiver appende il campione a:
-
-```text
-data/raw/ble_samples.csv
-```
-
-### Test app Android con beacon reali
-
-Per testare la localizzazione reale servono telefono Android fisico e i 3 BlueBeacon accesi:
-
-```text
-App Android su telefono fisico
-        |
-        v
-BlueBeacon cucina/camera/bagno
-        |
-        v
-POST /ble/sample con stanza stimata
-        |
-        v
-Receiver Raspberry/PC
-        |
-        v
-data/raw/ble_samples.csv
-        |
-        v
-edge_ingest
-```
-
-Per provarla:
-
-1. avviare il receiver sul PC:
-
-```bash
-python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --port 8000
-```
-
-2. aprire `Applicazione IoT Companion/companion_Android_app/` in Android Studio;
-3. installare l'app su telefono Android fisico;
-4. usare come URL del receiver:
-
-```text
-http://IP_DEL_PC_O_RASPBERRY:8000/ble/sample
-```
-
-5. verificare la mappa beacon protetta con `admin` / `admin`;
-6. premere `Avvia monitoraggio BLE`;
-7. spostarsi vicino a cucina, camera e bagno;
-8. controllare che i campioni arrivino in:
-
-```text
-data/raw/ble_samples.csv
-```
-
-### Rendere l'app installabile su Android
-
-Per generare un APK:
-
-1. aprire Android Studio;
-2. `File -> Open`;
-3. selezionare la cartella `Applicazione IoT Companion/companion_Android_app`;
-4. attendere il sync Gradle;
-5. scegliere `Build -> Build Bundle(s) / APK(s) -> Build APK(s)`;
-6. al termine cliccare `locate` per trovare l'APK.
-
-Per installarla su un telefono Android:
-
-1. abilitare le opzioni sviluppatore;
-2. abilitare debug USB;
-3. collegare il telefono via USB;
-4. premere `Run` da Android Studio oppure installare l'APK generato.
-
-Per una versione finale firmata:
-
-1. `Build -> Generate Signed Bundle / APK`;
-2. scegliere `APK`;
-3. creare o selezionare un keystore;
-4. scegliere build type `release`;
-5. generare l'APK firmato.
-
-Il collector scrive un CSV reale:
-
-```text
-data/raw/ble_samples.csv
-```
-
-Formato minimo:
-
-```csv
-timestamp,room,scanner_id,address,name,rssi,tx_power,distance_m,service_uuids,manufacturer_data
-2026-06-24T10:00:00Z,kitchen,android-phone,AA:BB:CC:DD:EE:01,KitchenBeacon,-61,-59,1.259,[],{}
-2026-06-24T10:02:00Z,living_room,android-phone,AA:BB:CC:DD:EE:04,LivingBeacon,-70,-59,3.548,[],{}
-```
-
-Feature prodotte:
-
-- `room_changes`;
-- `night_room_changes`;
-- `bedroom_minutes`;
-- `kitchen_minutes`;
-- `bathroom_minutes`;
-- `living_room_minutes`;
-- `longest_single_room_minutes`.
-
-L'aggregatore legge questo file e produce feature di permanenza stanza compatibili con
-il modello AI.
-
-## Shelly / NILM
-
-L'adapter Shelly attuale aggrega un CSV reale gia' raccolto dal Raspberry:
-
-```text
-data/raw/shelly_samples.csv
-```
-
-Formato minimo:
-
-```csv
-timestamp,power_w
-2026-06-24T10:00:00Z,42.5
-2026-06-24T10:01:00Z,44.1
-```
-
-Formato esteso, utile quando aggiungiamo una prima disaggregazione NILM:
-
-```csv
-timestamp,power_w,appliance,tv_active
-2026-06-24T10:00:00Z,800,coffee,0
-2026-06-24T10:04:00Z,120,tv,1
-```
-
-Feature prodotte:
-
-- `nilm_total_wh`;
-- `nilm_kitchen_events`;
-- `nilm_tv_minutes`;
-- `nilm_coffee_events`;
-- `nilm_stove_events`.
-
-## Dashboard e backend
-
-La fase successiva prevede due interfacce diverse:
-
-```text
-Paziente -> app mobile Android con dashboard semplice, notifiche, esercizi e test
-Medico   -> dashboard web clinico-operativa
-```
-
-La scelta consigliata e' usare:
-
-```text
-BLE       -> localizzazione indoor paziente
-MQTT      -> Raspberry Pi verso backend
-WebSocket -> backend verso dashboard medico realtime
-Push      -> backend verso app paziente
-REST API  -> storico, dettagli paziente e report
-```
-
-Stato Cloud attuale:
-
-```text
-Raspberry/Edge
-      |
-      | MQTT / MQTT-TLS
-      v
-cloud/mqtt
-  Mosquitto
-  - ACL per paziente
-  - Last Will
-  - retained solo stato corrente
-      |
-      | D4, subscriber MQTT completato
-      v
-cloud/backend
-  FastAPI unico e modulare
-  - health / ready
-  - OpenAPI
-  - errori centralizzati
-  - log JSON
-      |
-      v
-PostgreSQL
-  - pazienti, utenti, Edge device
-  - finestre, decisioni, alert
-  - task, risultati, notifiche
-  - deduplicazione message_id
-```
-
-Per ora non conviene partire con microservizi separati: abbiamo scelto un backend unico
-ma modulare, con moduli separati per auth, patients, telemetry, alerts, tasks,
-notifications, realtime e subscriber MQTT.
-
-L'app paziente non serve solo a raccogliere BLE: puo' mostrare stato giornaliero,
-promemoria, esercizi, notifiche e test cognitivi inviati dal medico. La dashboard medico
-puo' inviare questi task quando vede dati sospetti o vuole fare un controllo a distanza.
-
-La panoramica completa e' in:
-
-```text
-Documenti/Generale/DASHBOARD_ARCHITECTURE.md
-```
-
-## Comandi principali
-
-Tutti questi comandi vanno eseguiti da `edge_node/`:
-
-```bash
-cd edge_node
-```
-
-Se nel terminale vedi gia' `(.venv)`, dopo `cd edge_node` puoi usare direttamente
-`python`. Non usare `..\.venv\Scripts\python.exe` dalla root del progetto: quel percorso
-vale solo quando sei gia' dentro `edge_node/`.
-
-### Comando unico consigliato
-
-Questo è il comando breve da usare normalmente dalla root del progetto:
+Clonare il repository e creare l'ambiente Python usato dagli strumenti Edge:
 
 ```powershell
-.\Script\avvio\avviaSistema.ps1
+git clone https://github.com/emipasca12/ProgettoIoT.git
+cd ProgettoIoT
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r edge_node\requirements.txt
 ```
 
-Su Windows, se PowerShell non esegue lo script senza estensione, usa:
-
-```powershell
-.\Script\avvio\avviaSistema.cmd
-```
-
-Sul Raspberry Pi, dopo il clone, la prima volta rendi eseguibile lo script:
-
-```bash
-chmod +x Script/avvio/avviaSistema
-```
-
-Poi avvii tutto con:
-
-```bash
-./Script/avvio/avviaSistema
-```
-
-Il launcher entra automaticamente in `edge_node/`, sceglie il Python giusto e
-avvia lo stack reale: receiver BLE per l'app Android e runtime continuo per Google
-Health / Pixel Watch 2. In pratica avvia insieme:
-
-```text
-edge_receiver
--> resta in ascolto su http://0.0.0.0:8000
--> riceve i campioni BLE inviati dall'app Android
--> salva/aggiorna data/raw/ble_samples.csv
-
-edge_runtime --loop
--> ogni 4 minuti legge Google Health / Pixel Watch 2
--> legge i campioni BLE gia' ricevuti dal receiver
--> aggrega la finestra da 4 minuti
--> scrive data/processed/latest_window.csv
--> esegue i modelli AI disponibili
--> salva outputs/patient-001-decision.json
--> salva outputs/last-quality-report.json
--> salva outputs/last-cycle.json
-```
-
-Il file `config/edge.yml` deve avere abilitate le sorgenti reali:
-
-```yaml
-google_health:
-  enabled: true
-  data_delay_minutes: 0
-
-ble:
-  enabled: true
-```
-
-Con `google_health.data_delay_minutes: 0`, Watch e BLE vengono letti sulla stessa
-finestra corrente da 4 minuti. Quindi, a ogni ciclo, `latest_window.csv` prova a
-contenere insieme dati biometrici del Google Watch 2 e permanenza nelle stanze.
-Se Google Health non ha ancora sincronizzato un valore, quel campo puo' restare
-vuoto/`nan`, ma il sistema non sposta piu' artificialmente la finestra nel passato.
-
-Come per il BLE, anche Google Watch ora ha uno storico raw append-only:
-
-```text
-data/raw/google_health_samples.csv
-```
-
-Per vedere le ultime righe raccolte dall'orologio:
+Creare i file locali partendo dagli esempi e sostituire tutti i placeholder:
 
 ```powershell
-Import-Csv data\raw\google_health_samples.csv | Select-Object -Last 10 | ConvertTo-Json -Depth 4
+Copy-Item cloud\.env.example cloud\.env
+Copy-Item cloud\backend\.env.example cloud\backend\.env
+Copy-Item Dashboard\env.production.example Dashboard\.env
 ```
 
-Il comando resta attivo finche' non viene premuto `CTRL+C`. La baseline personale
-e' automatica: se `models/patient-001.pkl` non esiste, `avviaSistema` crea da solo
-`data/state/baseline-session.json`, raccoglie finestre valide per 7 giorni e poi
-addestra automaticamente il modello personale. Se il modello personale esiste gia',
-il sistema lo usa subito e non riapre la baseline.
+Nel file `Dashboard/.env`, per la demo locale, usare:
 
-Se invece vogliamo fare un solo ciclo manuale, senza tenere acceso anche il receiver,
-si puo' ancora usare:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml
+```dotenv
+VITE_API_BASE_URL=http://127.0.0.1:8080/api/v1
+VITE_WS_BASE_URL=ws://127.0.0.1:8080/ws/v1
+VITE_DATA_SOURCE=real
 ```
 
-Il singolo ciclo fa:
+Creare `cloud/mqtt/passwd` con `mosquitto_passwd` per gli utenti
+`edge_patient_001`, `backend` e `mqtt_test`. Le password devono coincidere con quelle
+in `cloud/.env`; non copiare mai il file password nel repository.
 
-```text
-legge i dati gia' ricevuti in data/raw/
--> aggrega la finestra da 4 minuti
--> scrive data/processed/latest_window.csv
--> se trova models/generic_spatial.pkl, fa inferenza generica spaziale
--> se trova models/generic_wearable.pkl, fa inferenza generica wearable
--> se trova models/patient-001.pkl, fa inferenza personale
--> fonde tutti i risultati disponibili
--> salva outputs/patient-001-decision.json
--> salva outputs/last-quality-report.json
--> salva outputs/last-cycle.json con lo stato del ciclo
-```
-
-Se nessun modello esiste ancora, non fallisce: aggiorna la finestra e scrive nello stato
-`skipped_all_models_missing`.
-
-In modalita baseline automatica, il runtime appende anche la finestra a
-`data/processed/baseline.csv`, ma solo se i controlli qualita non trovano errori.
-Se i dati sono rotti o incompleti, il ciclo scrive
-`baseline_skipped_reason: quality_error` e non sporca la baseline.
-Se almeno un modello generico e' gia' presente, durante questi giorni il sistema puo'
-produrre comunque una decisione basata sui modelli disponibili.
-Se un modello generico segnala una finestra sospetta, il ciclo scrive
-`baseline_skipped_reason: generic_safety_gate` e non usa quella finestra per addestrare
-la normalita personale.
-
-Dopo 7 giorni, se ci sono almeno 1000 finestre accettate, il runtime genera:
-
-```text
-models/patient-001.pkl
-```
-
-Da quel ciclo in poi la fusion usa i pesi:
-
-```text
-modello personale: 70%
-generico spaziale: 15%
-generico wearable: 15%
-```
-
-Controllo qualita manuale sull'ultima finestra:
-
-```bash
-python -m edge_quality.cli --config config/edge.example.yml
-```
-
-Il report viene salvato in:
-
-```text
-outputs/last-quality-report.json
-```
-
-### Fase baseline
-
-Quando hardware reale e dati veri sono pronti, la baseline parte automaticamente
-con il comando unico:
-
-```bash
-./Script/avvio/avviaSistema
-```
-
-Per il progetto useremo una baseline da 7 giorni. Una baseline piu' lunga, ad
-esempio 14 giorni, sarebbe piu' rappresentativa; nel progetto va dichiarato che
-il training e' basato su una finestra ridotta ma reale.
-
-Il runtime aggiunge una finestra a `data/processed/baseline.csv` solo se i controlli
-qualita non hanno errori. Lo stato della raccolta viene salvato in:
-
-```text
-data/state/baseline-session.json
-```
-
-Per vedere avanzamento, finestre accettate/rifiutate e prontezza al training:
-
-```bash
-python -m edge_baseline.cli --config config/edge.yml status
-```
-
-Dopo circa 7 giorni, se ci sono almeno 1000 finestre valide, il runtime addestra
-automaticamente il modello personale. Se il Raspberry e' rimasto spento troppo a
-lungo o i dati validi sono meno di 1000, la baseline resta in attesa e il sistema
-continua a raccogliere senza creare un modello debole.
-
-Il modello viene salvato in `models/patient-001.pkl`.
-
-### Procedura completa per addestrare il modello sul Raspberry Pi
-
-Questa e' la procedura che seguiremo quando il sistema sara' reale:
-
-```text
-Raspberry Pi
-  -> esegue edge_receiver, edge_runtime, edge_quality, edge_baseline, edge_ai
-
-Beacon BLE nelle stanze
-  -> identificano la stanza tramite segnale BLE
-
-Braccialetto / wearable al polso
-  -> produce dati reali del paziente
-  -> nel caso Google Pixel Watch 2: dati biometrici via Google Health API
-  -> nel caso tag BLE: dati di prossimita/localizzazione da trasformare in campioni BLE
-```
-
-Nota importante: il modello non viene addestrato direttamente sui beacon o sul braccialetto
-grezzo. Il modello viene addestrato su `data/processed/baseline.csv`, cioe' sulle feature
-aggregate ogni 4 minuti dal Raspberry.
-
-I modelli generici, invece, si addestrano prima su dataset esterni gia' trasformati nello
-stesso schema feature. Gli artefatti saranno `models/generic_spatial.pkl` e
-`models/generic_wearable.pkl`, installabili sul Raspberry prima della baseline del paziente.
-
-#### 1. Preparare Raspberry Pi
-
-Sul Raspberry metteremo questa repository e useremo la cartella:
-
-```bash
-cd edge_node
-```
-
-Poi installeremo le dipendenze Python:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-Sul Raspberry reale creeremo anche:
-
-```text
-config/edge.yml
-```
-
-partendo da:
-
-```text
-config/edge.example.yml
-```
-
-Nel file reale imposteremo anche i percorsi AI:
-
-```yaml
-ai:
-  generic_model: models/generic_spatial.pkl
-  generic_spatial_model: models/generic_spatial.pkl
-  generic_wearable_model: models/generic_wearable.pkl
-  personal_model: models/patient-001.pkl
-  baseline_gate_enabled: true
-  baseline_gate_block_score: 60.0
-```
-
-#### 2. Configurare beacon e braccialetto
-
-Per le stanze:
-
-```text
-1 beacon BLE in cucina
-1 beacon BLE in camera
-1 beacon BLE in bagno
-1 beacon BLE in soggiorno
-```
-
-Per ogni beacon dobbiamo annotare:
-
-```text
-MAC address o UUID
-nome beacon
-stanza associata
-posizione fisica nella stanza
-```
-
-Esempio mappa:
-
-```text
-AA:BB:CC:DD:EE:01=kitchen
-AA:BB:CC:DD:EE:02=bedroom
-AA:BB:CC:DD:EE:03=bathroom
-AA:BB:CC:DD:EE:04=living_room
-```
-
-Il braccialetto sul polso serve a rappresentare il paziente. Nel nostro progetto puo'
-avere due ruoli:
-
-```text
-Google Pixel Watch 2 / Google Health
-  -> dati biometrici: frequenza cardiaca, HRV, SpO2, sonno, batteria
-
-Tag BLE / dispositivo indossabile BLE
-  -> dati di posizione indoor rispetto ai beacon
-```
-
-Se useremo l'app Android `Applicazione IoT Companion/companion_Android_app`, sara' il telefono Android a scansionare i beacon
-e inviare al Raspberry la stanza stimata. Se invece useremo un vero braccialetto BLE/tag,
-dovremo assicurarci che il Raspberry riceva comunque righe nel formato:
-
-```csv
-timestamp,room,scanner_id,address,name,rssi,tx_power,distance_m,service_uuids,manufacturer_data
-2026-06-26T10:00:00Z,kitchen,bracelet-001,AA:BB:CC:DD:EE:01,KitchenBeacon,-61,-59,1.2,[],{}
-```
-
-Queste righe devono finire in:
-
-```text
-data/raw/ble_samples.csv
-```
-
-#### 3. Avviare il receiver sul Raspberry
-
-Il receiver deve rimanere acceso per ricevere campioni dall'app Android o dal sistema BLE:
-
-```bash
-python -m edge_receiver.cli --config config/edge.yml --host 0.0.0.0 --port 8000
-```
-
-L'endpoint sara':
-
-```text
-http://IP_DEL_RASPBERRY:8000/ble/sample
-```
-
-#### 4. Verificare che arrivino dati reali
-
-Prima della baseline controlliamo che i campioni BLE arrivino davvero:
+Generare il certificato per l'indirizzo LAN stabile del PC:
 
 ```powershell
-type data\raw\ble_samples.csv
+.\Script\avvio\preparaCertificatiLAN.ps1 -PcHost 192.168.1.100
 ```
 
-Su Raspberry/Linux:
-
-```bash
-cat data/raw/ble_samples.csv
-```
-
-Poi generiamo una finestra di prova:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml
-```
-
-File da controllare:
-
-```text
-data/processed/latest_window.csv
-outputs/last-quality-report.json
-outputs/last-cycle.json
-```
-
-Il report qualita deve idealmente essere:
-
-```text
-quality_status: ok
-```
-
-oppure al massimo:
-
-```text
-quality_status: warning
-```
-
-Non dobbiamo iniziare la baseline se i dati sono in `error`, per esempio se mancano
-campioni BLE o se Fitbit e' abilitato ma non sta inviando dati.
-
-#### 5. Preparare i modelli generici, se abbiamo dataset validi
-
-Da CASAS creeremo il modello spaziale:
-
-```bash
-python -m edge_ai.cli train-generic \
-  --input data/processed/generic_spatial_dataset.csv \
-  --output models/generic_spatial.pkl \
-  --model-id generic-spatial \
-  --model-kind generic_spatial
-```
-
-Da WESAD/PAMAP2 o dataset wearable equivalente creiamo il modello wearable:
-
-```bash
-python -m edge_ai.cli train-generic \
-  --input data/processed/generic_wearable_dataset.csv \
-  --output models/generic_wearable.pkl \
-  --model-id generic-wearable \
-  --model-kind generic_wearable
-```
-
-Questi modelli non rappresentano il singolo paziente: servono come base iniziale mentre
-il Raspberry raccoglie la baseline personale.
-
-#### 6. Avviare baseline reale automatica di 7 giorni
-
-Quando beacon, braccialetto/wearable e Raspberry sono stabili:
-
-Per il progetto useremo 7 giorni perche' non abbiamo 14 giorni disponibili. Questo
-e' accettabile come baseline dimostrativa reale, pur essendo meno robusta di una
-baseline clinica piu' lunga.
-
-```bash
-./Script/avvio/avviaSistema
-```
-
-Questo avvia receiver, runtime continuo e crea automaticamente lo stato:
-
-```text
-data/state/baseline-session.json
-```
-
-Il comando:
-
-```text
-legge i dati grezzi
--> crea latest_window.csv
--> controlla la qualita
--> se models/generic_spatial.pkl esiste, produce triage spaziale
--> se models/generic_wearable.pkl esiste, produce triage wearable
--> se uno score generico e' troppo alto, blocca inserimento in baseline
--> se la qualita e' valida, appende a baseline.csv
--> se la qualita e' error, rifiuta la finestra
-```
-
-La baseline viene raccolta qui:
-
-```text
-data/processed/baseline.csv
-```
-
-#### 7. Controllare ogni giorno la baseline
-
-Durante i 7 giorni controlleremo:
-
-```bash
-python -m edge_baseline.cli --config config/edge.yml status
-```
-
-e:
-
-```bash
-python -m edge_quality.cli --config config/edge.yml
-```
-
-Dobbiamo guardare:
-
-```text
-accepted_windows
-rejected_windows
-quality_error_cycles
-baseline_row_count
-min_training_windows
-ready_for_training
-```
-
-Se `rejected_windows` o `quality_error_cycles` crescono troppo, non addestriamo ancora:
-prima correggiamo il problema dei dati.
-
-#### 8. Chiusura baseline e training automatico
-
-Dopo circa 7 giorni, quando la baseline e' pronta, `avviaSistema` addestra
-automaticamente `models/patient-001.pkl`. I comandi manuali
-`edge_baseline finalize/train` restano disponibili solo per debug tecnico.
-
-Il training usa:
-
-```text
-data/processed/baseline.csv
-```
-
-e salva il modello in:
-
-```text
-models/patient-001.pkl
-```
-
-Questo modello e' personale: rappresenta la routine del paziente osservato durante la
-baseline. Non sostituisce i modelli generici: dopo questa fase i tre modelli lavorano
-insieme, quando disponibili.
-
-#### 9. Usare i modelli addestrati
-
-Dopo il training, il ciclo normale diventa:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml
-```
-
-Per lasciarlo acceso e farlo lavorare automaticamente ogni 4 minuti:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml --loop
-```
-
-A questo punto il runtime:
-
-```text
-crea latest_window.csv
--> carica models/generic_spatial.pkl, se presente
--> carica models/generic_wearable.pkl, se presente
--> carica models/patient-001.pkl, se presente
--> calcola generic_spatial_score, generic_wearable_score e personal_score
--> fonde i risultati in anomaly_score finale
--> applica debounce
--> salva outputs/patient-001-decision.json
-```
-
-Output finale:
-
-```text
-outputs/patient-001-decision.json
-```
-
-Questo file sara' poi collegabile al backend/dashboard.
-Nel JSON decisione manteniamo sia gli orari UTC (`window_start`, `window_end`) sia gli
-orari locali (`window_start_local`, `window_end_local`). UTC serve per backend, AI e
-allineamento sensori; local time serve al frontend e alla lettura umana.
-
-### Comandi separati
-
-Raccogliere ultima finestra reale:
-
-```bash
-python -m edge_ingest.cli --config config/edge.example.yml
-```
-
-Raccogliere ultima finestra e aggiungerla alla baseline:
-
-```bash
-python -m edge_ingest.cli --config config/edge.example.yml --append-baseline
-```
-
-Training su baseline reale:
-
-```bash
-python -m edge_ai.cli train \
-  --input data/processed/baseline.csv \
-  --patient-id patient-001 \
-  --output models/patient-001.pkl
-```
-
-Training modello generico spaziale:
-
-Prima si converte CASAS:
-
-```bash
-python -m edge_datasets.cli casas \
-  --input-dir data/external/casas \
-  --output data/processed/generic_spatial_dataset.csv \
-  --window-minutes 4
-```
-
-Poi si addestra:
-
-```bash
-python -m edge_ai.cli train-generic \
-  --input data/processed/generic_spatial_dataset.csv \
-  --output models/generic_spatial.pkl \
-  --model-id generic-spatial \
-  --model-kind generic_spatial
-```
-
-Training modello generico wearable:
-
-Prima si convertono i dataset Fitbit-style messi in `data/external/fitbitdata`:
-
-```bash
-python -m edge_datasets.cli fitbitdata \
-  --input-dir data/external/fitbitdata \
-  --output data/processed/generic_wearable_dataset_fitbitdata.csv \
-  --window-minutes 4 \
-  --hrv-condition "no stress" \
-  --health-status 0 \
-  --oxi-label 0 \
-  --oxi-min-spo2 92
-```
-
-Questo CSV usa:
-
-- `archive2/train.csv` e `archive2/test.csv`, se presenti, per `heart_rate_mean`,
-  `heart_rate_std` e `hrv_rmssd` con filtro sulla colonna `condition`;
-- in alternativa, `archive2/time_domain_features_train.csv` piu'
-  `archive2/heart_rate_non_linear_features_train.csv`;
-- `Activity.csv` per passi e minuti sedentari, scalati su finestre da 4 minuti;
-- `Sleep_health_and_lifestyle_dataset.csv` per heart rate, resting heart rate, sleep minutes e daily steps;
-- `Health data.csv` per pulse e SpO2, usando di default solo `Status = 0`;
-- `HuGCDN2014-OXI` per RR e SpO2 dai file MATLAB, usando di default solo label `0`
-  e finestre con SpO2 media almeno 92.
-
-Prima si converte PAMAP2 nello schema del progetto:
-
-```bash
-python -m edge_datasets.cli pamap2 \
-  --input-dir data/external/pamap2/Protocol \
-  --output data/processed/generic_wearable_dataset_pamap2.csv \
-  --window-minutes 4
-```
-
-Questo CSV contiene soprattutto feature fisiologiche/motorie:
-
-- `heart_rate_mean`;
-- `heart_rate_std`;
-- `steps`, stimati dagli activity id PAMAP2;
-- `sedentary_minutes`, stimati dagli activity id PAMAP2;
-- `wearable_present`.
-
-Poi si converte WESAD:
-
-```bash
-python -m edge_datasets.cli wesad \
-  --input-dir data/external/wesad \
-  --output data/processed/generic_wearable_dataset_wesad.csv \
-  --window-minutes 4
-```
-
-WESAD viene usato per estrarre feature da BVP/HRV. Di default il converter usa
-solo label normali:
-
-```text
-1 = baseline
-3 = amusement
-4 = meditation
-```
-
-La label `2 = stress` e i transitori vengono scartati perche' il modello
-`IsolationForest` deve imparare la normalita.
-
-Poi uniamo fitbitdata, PAMAP2 e WESAD in:
-
-```text
-data/processed/generic_wearable_dataset.csv
-```
-
-con:
-
-```bash
-python -m edge_datasets.cli merge \
-  --inputs data/processed/generic_wearable_dataset_fitbitdata.csv,data/processed/generic_wearable_dataset_pamap2.csv,data/processed/generic_wearable_dataset_wesad.csv \
-  --output data/processed/generic_wearable_dataset.csv
-```
-
-Poi addestriamo il modello wearable. Il generico attuale include `hrv_rmssd`
-usando il dataset sintetico controllato: HRV alta/sana viene normalizzata e non
-genera allarme, mentre HRV molto bassa puo' contribuire allo score prima della
-baseline personale.
-
-```bash
-python -m edge_ai.cli train-generic \
-  --input data/processed/generic_wearable_dataset.csv \
-  --output models/generic_wearable.pkl \
-  --model-id generic-wearable \
-  --model-kind generic_wearable
-```
-
-Inferenza su ultima finestra reale:
-
-```bash
-python -m edge_ai.cli infer \
-  --model models/patient-001.pkl \
-  --input data/processed/latest_window.csv \
-  --state data/state/patient-001-debounce.json \
-  --output outputs/patient-001-decision.json
-```
-
-## Flusso sul Raspberry Pi
-
-Avvio unico reale:
-
-```bash
-./Script/avvio/avviaSistema
-```
-
-Questo comando:
-
-```text
--> avvia receiver Android/BLE
--> avvia runtime ogni 4 minuti
--> se manca il modello personale, avvia baseline 7 giorni
--> dopo 7 giorni addestra models/patient-001.pkl
--> quando il modello personale esiste, usa fusion 70/15/15
-```
-
-Per vedere lo stato baseline:
-
-```bash
-python -m edge_baseline.cli --config config/edge.yml status
-```
-
-## Prossimi step
-
-1. Emilio: implementare publisher MQTT sull'Edge/Raspberry usando i contratti in
-   `Documenti/contracts/MQTT_CONTRACT.md`.
-2. Daniel: passare a D10, Firebase Cloud Messaging e notifiche push.
-3. Collegare `last-cycle.json`, `latest_window.csv` e `patient-001-decision.json` ai
-   topic MQTT definitivi.
-4. Collegare dashboard/app alle API D5 reali e verificare i dati con PostgreSQL.
-5. Collegare e verificare dashboard reale con REST D5, WebSocket D6 e auth D7.
-6. Testare il Foreground Service BLE su telefono Android fisico con beacon reali.
-7. Configurare la mappa reale dei 3 BlueBeacon nell'app Android.
-8. Preparare `edge_node/config/edge.yml` reale per Raspberry Pi 5.
-9. Spostare repository, modelli generici e configurazione sul Raspberry.
-10. Avviare raccolta baseline reale e addestrare `models/patient-001.pkl`.
-11. Implementare collector Shelly reale via HTTP e salvataggio campioni, se useremo Shelly.
-
-## Stato attuale del progetto
-
-Questa sezione riassume in parole povere cosa e' stato fatto finora. Va aggiornata
-ogni volta che aggiungiamo un nuovo pezzo al sistema.
-
-### 1. Modulo AI
-
-Abbiamo creato il modulo `edge_ai`.
-
-Questo e' il cervello del sistema. Legge dati aggregati ogni 4 minuti, usa
-`IsolationForest` in due modalita' e produce un livello di rischio:
-
-- modello generico spaziale: `models/generic_spatial.pkl`;
-- modello generico wearable: `models/generic_wearable.pkl`;
-- modello personale: `models/patient-001.pkl`;
-- fusione: confronto tra score spaziale, wearable e personale.
-
-- verde: routine normale;
-- giallo: sospetto lieve;
-- rosso: anomalia severa;
-- tecnico: problema non clinico, per esempio wearable scarico o non indossato.
-
-Il modello non fa diagnosi medica. Serve solo a segnalare anomalie nella routine del
-paziente.
-
-### 2. Aggregatore dati
-
-Abbiamo creato il modulo `edge_ingest`.
-
-Questo modulo prende dati da Fitbit, BLE e Shelly, li mette tutti nello stesso formato
-e produce il file:
-
-```text
-data/processed/latest_window.csv
-```
-
-Durante la fase di baseline puo' anche costruire:
-
-```text
-data/processed/baseline.csv
-```
-
-Questi file sono quelli che il modello AI sa leggere.
-
-### 3. Google Health / Pixel Watch
-
-Abbiamo implementato il percorso attuale per Pixel Watch 2 tramite Google Health API.
-
-Il setup OAuth salva `config/google_health_client.json` e
-`config/google_health_token.json`, gestisce access token, refresh token e scadenza.
-L'adapter Google Health usa questi file e prova a fare refresh automatico quando il token
-scade.
-
-Il runtime ora puo' leggere battito, HRV, SpO2, sonno, passi, batteria e presenza
-wearable quando Google li espone. Per ridurre buchi dovuti alla sincronizzazione cloud
-abbiamo aggiunto `data_delay_minutes` e `heart_rate_lookback_minutes` sotto
-`google_health`.
-
-Fitbit Web API resta nel codice come compatibilita legacy, ma per nuove credenziali il
-percorso documentato e' Google Health.
-
-### 4. BLE indoor positioning
-
-Abbiamo chiarito l'architettura corretta per il nostro caso:
-
-```text
-Beacon BLE fissi nelle stanze
-        +
-Telefono Android come scanner mobile
-        +
-Raspberry Pi come receiver/gateway
-```
-
-Il telefono Android stara' vicino/addosso al paziente, scansionera' i beacon nelle stanze
-e inviera' al Raspberry la stanza stimata.
-
-Il sistema sa gia' leggere campioni BLE da CSV e trasformarli in feature come:
-
-- minuti in camera;
-- minuti in cucina;
-- minuti in bagno;
-- minuti in soggiorno;
-- cambi stanza;
-- cambi stanza notturni;
-- permanenza piu' lunga in una singola stanza.
-
-### 5. Receiver Raspberry per app mobile
-
-Abbiamo creato il modulo `edge_receiver`.
-
-Questo sara' il server locale sul Raspberry Pi. Espone l'endpoint:
-
-```text
-POST /ble/sample
-```
-
-L'app Android o iOS inviera' dati di questo tipo:
-
-```json
-{
-  "room": "kitchen",
-  "rssi": -61,
-  "beacon_id": "AA:BB:CC:DD:EE:01"
-}
-```
-
-Il Raspberry salva questi campioni in:
-
-```text
-data/raw/ble_samples.csv
-```
-
-Poi `edge_ingest` li aggrega e li passa al modello AI.
-
-### 6. Runtime Edge
-
-Abbiamo creato il modulo `edge_runtime`.
-
-Questo modulo esegue il ciclo logico dell'edge node. Invece di lanciare manualmente
-prima `edge_ingest` e poi `edge_ai`, ora possiamo usare:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml
-```
-
-Per test manuali continui, su Windows o Raspberry:
-
-```bash
-python -m edge_runtime.cli --config config/edge.yml --loop
-```
-
-Il comando produce `latest_window.csv`, controlla se esistono i modelli addestrati e,
-se almeno un modello c'e', salva anche la decisione JSON. Se i modelli non ci sono
-ancora, non fallisce: aggiorna la finestra dati e registra che l'inferenza e' stata
-saltata.
-
-In modalita loop il runtime ripete il ciclo ogni 4 minuti e stampa log `INFO` compatti,
-simili al receiver BLE. Questo ci permette di provare anche Google Health come raccolta
-periodica, non solo come chiamata singola.
-
-Per il funzionamento reale continuo, pero', usiamo `edge_stack`, che avvia insieme
-il receiver BLE e `edge_runtime --loop`:
-
-```bash
-python -m edge_stack.cli --config config/edge.yml
-```
-
-### 7. Qualita Dati
-
-Abbiamo creato il modulo `edge_quality`.
-
-Questo modulo controlla se i dati raccolti sono utilizzabili prima di inserirli nella
-baseline. Per esempio segnala errori o warning tecnici come:
-
-- BLE abilitato ma senza campioni;
-- timestamp BLE invalidi o nel futuro;
-- wearable cloud abilitato ma senza dati biometrici;
-- wearable dichiarato non presente;
-- Shelly abilitato ma senza campioni.
-
-La permanenza nella stessa stanza per molte ore viene invece registrata come osservazione
-`info`: non e' un errore del dato, ma un possibile segnale comportamentale che il modello
-o la dashboard potranno usare.
-
-Il report viene scritto in `outputs/last-quality-report.json`. Se il report ha stato
-`error`, il runtime non appende quella finestra alla baseline, cosi' evitiamo di
-addestrare il modello con dati sporchi.
-
-### 8. Fase Baseline
-
-Abbiamo creato il modulo `edge_baseline`.
-
-Questo modulo serve a gestire la raccolta reale della routine del paziente:
-
-```text
-start baseline
--> raccolta per 7 giorni
--> controllo qualita a ogni finestra
--> conteggio finestre accettate/rifiutate
--> training automatico modello
-```
-
-Lo stato viene salvato in `data/state/baseline-session.json`. Il modello finale viene
-salvato in `models/patient-001.pkl`, ma solo quando avremo dati reali sufficienti.
-
-### 9. App Android
-
-Abbiamo creato l'app `IoT Edge Companion` dentro `Applicazione IoT Companion/companion_Android_app/`.
-
-L'app serve per due cose:
-
-- configurazione protetta della mappa beacon;
-- scansione BLE reale con telefono Android e BlueBeacon.
-
-In modalita reale l'app scansionera' i beacon nelle stanze, scegliera' quello con RSSI
-piu' forte e inviera' la stanza stimata al Raspberry.
-
-Abbiamo aggiunto anche un Foreground Service BLE: quando viene premuto `Avvia monitoraggio
-BLE`, Android mantiene l'app attiva in background con una notifica persistente. Il servizio
-fa cicli periodici di scansione, sceglie il beacon/stanza piu' forte e invia il campione
-al receiver locale.
-
-### 10. App iOS
-
-Abbiamo creato la base dell'app iPhone dentro:
-
-```text
-Applicazione IoT Companion/companion_iOS_app/
-```
-
-Questa cartella contiene i sorgenti Swift/SwiftUI e una guida per creare il progetto su
-Mac con Xcode, firmarlo e installarlo su iPhone.
-
-L'app iOS permette:
-
-- test manuale senza beacon fisici;
-- scansione BLE reale tramite CoreBluetooth;
-- visualizzazione dei beacon rilevati;
-- mappatura nome/UUID beacon verso stanza;
-- invio campioni al receiver Raspberry.
-
-Nota: su iOS non possiamo fare affidamento sul MAC address BLE. Useremo nome beacon o
-identificativo CoreBluetooth, e quando avremo i beacon veri valuteremo se passare a
-CoreLocation per iBeacon.
-
-### 11. Shelly / NILM
-
-Abbiamo predisposto un adapter per dati Shelly/NILM.
-
-Per ora non abbiamo ancora deciso se useremo davvero Shelly o un altro dispositivo di
-misurazione consumi. Il codice e' pronto a leggere dati da:
-
-```text
-data/raw/shelly_samples.csv
-```
-
-### 12. Broker MQTT Cloud
-
-Abbiamo creato il broker MQTT locale/Cloud in:
-
-```text
-cloud/mqtt/
-```
-
-Il broker usa Mosquitto in Docker e supporta:
-
-- MQTT locale su `1883`;
-- MQTT/TLS su `8883`;
-- MQTT over WSS su `9001`;
-- utenti separati per Edge, backend e test;
-- ACL per impedire a un Raspberry di pubblicare su pazienti diversi;
-- Last Will per rilevare disconnessioni anomale;
-- retained message solo per stato corrente.
-
-Il test automatico e':
+La prima volta, da PowerShell aperto come amministratore, autorizzare soltanto le porte
+LAN necessarie:
 
 ```powershell
-.\Script\test\test_mqtt_local.ps1
+.\Script\avvio\abilitaFirewallLAN.ps1
 ```
 
-### 13. Backend FastAPI
+Per abilitare le push, collocare localmente il service account in
+`cloud/firebase/service-account.json`, inserire `google-services.json` nell'app Android
+e attivare Firebase nel file `cloud/backend/.env`.
 
-Abbiamo creato il backend Cloud in:
+### Avvio del PC
 
-```text
-cloud/backend/
-```
-
-Il backend e' unico ma modulare. Per ora espone:
-
-- `GET /health`;
-- `GET /ready`;
-- `GET /docs`;
-- `GET /openapi.json`;
-- moduli placeholder per auth, patients, telemetry, alerts, tasks, notifications e realtime;
-- errori centralizzati;
-- log JSON;
-- export OpenAPI in `Documenti/contracts/openapi.json`.
-
-### 14. Database PostgreSQL
-
-Abbiamo aggiunto PostgreSQL nello stack Docker Compose `progetto-iot`.
-
-Il database e' gestito dal backend con:
-
-- SQLAlchemy per i modelli Python;
-- Alembic per migrazioni versionate;
-- migration iniziale `20260710_0001`;
-- tabelle per utenti, pazienti, Edge device, finestre, decisioni, alert, task,
-  risultati, notifiche e stati sensori/app;
-- vincoli `message_id` per deduplicare messaggi MQTT;
-- indici su paziente, timestamp, livello e stato;
-- procedura backup/restore.
-
-### 15. Subscriber MQTT backend
-
-Abbiamo aggiunto il subscriber MQTT in:
-
-```text
-cloud/backend/app/mqtt/
-```
-
-Il worker:
-
-- si collega al broker MQTT/TLS come utente backend;
-- ascolta topic Edge con wildcard paziente;
-- valida `schema_version`, `message_id`, `patient_id`, timestamp e payload;
-- rifiuta valori mancanti scritti come stringa `"nan"`;
-- deduplica i messaggi tramite `message_id`;
-- salva finestre, decisioni, alert e stato sensori nelle tabelle corrette;
-- non sovrascrive stati sensore piu' recenti con messaggi arrivati in ritardo.
-
-Test dedicato:
+Aprire Docker Desktop, attendere che il motore sia pronto e, dalla radice:
 
 ```powershell
-.\Script\test\test_backend_mqtt_ingest.ps1
+.\Script\avvio\avviaPC.ps1
 ```
 
-### 16. Documentazione
+Lo script applica le migrazioni, avvia broker, database, backend e worker, costruisce la
+dashboard e la espone su <http://127.0.0.1:5173>.
 
-Abbiamo documentato architettura, comandi, deployment Raspberry, schema feature e vincoli
-reali delle API.
+Negli avvii successivi, se il frontend non e' cambiato:
 
-Il README deve rimanere il punto principale da leggere per capire lo stato del progetto.
+```powershell
+.\Script\avvio\avviaPC.ps1 -SkipBuild
+```
 
-### 17. Cosa manca ancora
+Per fermare PC e dashboard senza cancellare i volumi:
 
-Mancano ancora:
+```powershell
+.\Script\avvio\avviaPC.ps1 -Stop
+```
 
-- beacon BLE fisici nelle stanze;
-- Raspberry Pi reale;
-- credenziali Google Health OAuth reali e consenso account;
-- eventuale Shelly o alternativa per consumi;
-- publisher MQTT sull'Edge;
-- autorizzazione reale per ruoli doctor/caregiver/patient;
-- dashboard medico e dashboard/app paziente finali.
+Non avviare sul PC anche la pipeline Edge quando il Raspberry e' operativo.
+
+### Prima configurazione del Raspberry Pi
+
+Usare Raspberry Pi OS a 64 bit con Python 3.11 o successivo:
+
+```bash
+sudo apt update
+sudo apt install -y git python3-venv python3-dev build-essential ca-certificates openssl
+git clone https://github.com/emipasca12/ProgettoIoT.git ~/progetto-iot
+cd ~/progetto-iot
+```
+
+Trasferire sul Pi, fuori da Git:
+
+- il solo certificato pubblico `ca.crt` del broker;
+- `google_health_client.json`;
+- `google_health_token.json`.
+
+Non trasferire `server.key`, gli `.env` del backend o il service account Firebase.
+Proteggere i file OAuth con permessi `600`.
+
+Con il servizio ancora fermo, eseguire il setup. Il comando chiede una volta la password
+MQTT e installa il servizio automatico:
+
+```bash
+cd ~/progetto-iot
+bash Script/rpi/setup-rpi \
+  --pc-host 192.168.1.100 \
+  --ca-file "$HOME/progetto-iot/edge_node/config/certs/ca.crt"
+```
+
+Dopo il setup, `iot-edge.service` parte a ogni accensione senza richiedere password.
+La password MQTT e' salvata localmente in un file protetto e ignorato da Git.
+
+### Controllo via SSH
+
+```bash
+ssh utente@IP_RPI
+cd ~/progetto-iot
+bash Script/rpi/stato-rpi --network
+sudo journalctl -u iot-edge -f
+```
+
+Comandi utili:
+
+```bash
+sudo systemctl status iot-edge --no-pager
+sudo systemctl restart iot-edge
+sudo systemctl stop iot-edge
+```
+
+### Configurazione Android
+
+Nelle impostazioni amministrative dell'app configurare:
+
+```text
+Receiver Raspberry: http://IP_RPI:8000/ble/sample
+Backend clinico:    http://IP_PC:8080/api/v1
+```
+
+La demo usa due beacon validati: **Cucina** e **Bagno**. La Camera da letto non e'
+monitorata e non deve essere interpretata come assenza del paziente.
+
+Per generare l'APK debug:
+
+```powershell
+cd "Applicazione IoT Companion\companion_Android_app"
+.\gradlew.bat clean assembleDebug
+```
+
+APK prodotto:
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+## Verifica
+
+Prima della demo attendere almeno un ciclo Edge completo, circa quattro o cinque
+minuti, quindi verificare che dashboard e database mostrino timestamp nuovi.
+
+Test Edge:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest edge_node\tests -q
+```
+
+Test backend:
+
+```powershell
+cd cloud\backend
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Test e build dashboard:
+
+```powershell
+cd Dashboard
+npm ci
+npm test
+npm run build
+```
+
+Test Android:
+
+```powershell
+cd "Applicazione IoT Companion\companion_Android_app"
+.\gradlew.bat test assembleDebug
+```
+
+Il collaudo manuale completo e' descritto in [Test.md](Test.md).
+
+## Pulizia dati e modello provvisorio di `patient-001`
+
+Questa procedura serve prima di una nuova raccolta dimostrativa. Non elimina account,
+associazioni medico/paziente/caregiver, registrazioni dei dispositivi, token FCM o
+template dei questionari.
+
+Il reset Edge archivia i file invece di distruggerli. La pulizia del database crea
+prima un dump PostgreSQL in `cloud/backups/`. Nessuno dei comandi seguenti viene
+eseguito automaticamente.
+
+### 1. Controllare senza modificare
+
+Sul Raspberry:
+
+```bash
+cd ~/progetto-iot
+bash Script/rpi/modello-paziente status
+```
+
+Sul PC, con lo stack avviato:
+
+```powershell
+.\Script\manutenzione\pulisciDatiPaziente.ps1 -PatientId patient-001
+```
+
+Il comando PC e' un `dry-run`: mostra quanti record verrebbero rimossi.
+
+### 2. Fermare e archiviare il Raspberry
+
+```bash
+sudo systemctl stop iot-edge
+cd ~/progetto-iot
+git pull --ff-only origin main
+bash Script/rpi/modello-paziente reset patient-001
+```
+
+Il comando sposta baseline, dati raw, stato, output, modello personale e coda MQTT in
+`edge_node/data/archive/patient-001/<timestamp>/`. I modelli generici, OAuth,
+configurazione e certificati non vengono toccati. Non riavviare ancora il servizio.
+
+### 3. Pulire il database PC
+
+```powershell
+.\Script\manutenzione\pulisciDatiPaziente.ps1 `
+  -PatientId patient-001 `
+  -Execute `
+  -ConfirmPatientId patient-001
+```
+
+Per impostazione predefinita l'audit viene conservato. Solo per una demo completamente
+vuota si puo aggiungere `-IncludeAudit`; non e' consigliato per l'uso ordinario.
+
+### 4. Avviare la nuova raccolta
+
+Sul Raspberry:
+
+```bash
+sudo systemctl start iot-edge
+bash Script/rpi/stato-rpi --network
+```
+
+Ogni finestra richiede quattro minuti. Un modello provvisorio richiede comunque almeno
+50 finestre reali valide, quindi almeno 3 ore e 20 minuti senza finestre scartate. Lo
+stato si controlla con:
+
+```bash
+bash Script/rpi/modello-paziente status
+```
+
+### 5. Addestrare il modello provvisorio
+
+Quando `baseline_rows` e' almeno `50`:
+
+```bash
+sudo systemctl stop iot-edge
+bash Script/rpi/modello-paziente train-provisional patient-001
+sudo systemctl start iot-edge
+bash Script/rpi/modello-paziente status
+```
+
+Il modello viene salvato come `models/patient-001.pkl` con origine
+`patient_baseline_provisional`. Non viene inserito in Git. Per il modello definitivo si
+deve ripetere il reset, raccogliere la baseline reale completa di sette giorni e
+raggiungere almeno 1000 finestre valide. Il runtime esegue automaticamente il training
+definitivo quando tali condizioni sono soddisfatte.
+
+## Sequenza della demo
+
+1. Avviare lo stack sul PC e verificare `/ready`.
+2. Accendere il Raspberry e controllare `iot-edge.service` via SSH.
+3. Accedere dall'app come paziente e mostrare monitoraggio e beacon.
+4. Attendere o mostrare una finestra Edge gia acquisita.
+5. Aprire la dashboard e illustrare score AI, confidenza e timeline.
+6. Creare un'attivita e completarla dall'app paziente.
+7. Inviare un messaggio caregiver e mostrare la separazione dei destinatari.
+8. Mostrare stato sistema, report e audit.
+
+Piano di riserva: usare dati gia presenti nel backend; se FCM non e' disponibile,
+mostrare task e messaggi sincronizzati dentro l'app; se i beacon non trasmettono,
+mostrare lo stato tecnico senza inventare dati.
+
+## Sicurezza e limiti
+
+- MQTT usa TLS, ACL e credenziali distinte per Edge e backend.
+- API e WebSocket verificano ruolo e associazione al paziente.
+- Token mobili sono conservati tramite Android Keystore.
+- I segreti non vengono registrati nei log e non devono entrare in Git.
+- Il receiver BLE opera nella LAN ed e' destinato al prototipo controllato.
+- I modelli non sono stati validati come dispositivo medico.
+- Il sistema dimostrativo dipende dalla disponibilita del PC nella rete locale.
+- L'app iOS e' un prototipo e non fa parte della demo ufficiale.
+
+## Licenza e dati
+
+Il repository e' destinato all'attivita didattica del corso. Dataset, credenziali e dati
+personali non sono distribuiti. Qualsiasi dato usato durante la demo deve essere
+anonimizzato o riferito a un profilo dimostrativo.

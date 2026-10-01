@@ -26,7 +26,7 @@ from app.services.drift import (
 TEST_PASSWORD = "unit-test-password-not-secret"
 DOCTOR_EMAIL = "doctor.drift.d27@example.invalid"
 
-REFERENCE = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc)
+REFERENCE = datetime.now(timezone.utc).replace(microsecond=0)
 
 
 def utc(year, month, day, hour, minute=0):

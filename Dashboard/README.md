@@ -1,84 +1,87 @@
-# Dashboard Medico IoT
+# Triage IoT - Dashboard medico
 
-Dashboard web React per il triage clinico del progetto IoT.
+Dashboard React/Vite usata dal medico per consultare dati, score AI, timeline, alert,
+attivita, questionari, report e stato tecnico del sistema.
 
-## Avvio con mock backend
+I dati arrivano dal backend FastAPI tramite REST e WebSocket. La dashboard non interroga
+direttamente Raspberry, broker o database.
 
-Terminale 1:
-
-```powershell
-cd mock_backend
-.\.venv\Scripts\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8090
-```
-
-Terminale 2:
-
-```powershell
-cd Dashboard
-npm install
-npm run dev
-```
-
-Aprire:
+## Progetto completo
 
 ```text
-http://127.0.0.1:5173
+Sensori e app -> Raspberry Edge -> MQTT -> Backend/PostgreSQL -> Dashboard
+                                                        \-> App Android / FCM
 ```
 
-Login locale:
+Repository del progetto:
 
-```text
-Usare email e password configurate nel file .env locale del backend.
-```
+- [integrazione](https://github.com/emipasca12/ProgettoIoT)
+- [Edge](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-edge-Pascadopoli-Spedicato)
+- [Cloud](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-cloud-Pascadopoli-Spedicato)
+- [Dashboard](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-dashboard-Pascadopoli-Spedicato)
+- [Android](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-android-Pascadopoli-Spedicato)
+- [Presentazione](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-presentation-Pascadopoli-Spedicato)
 
-## Configurazione
+I link dell'organizzazione diventano disponibili dopo la creazione dei repository per
+la consegna.
 
-Sviluppo mock:
+## Funzioni
 
-```text
-VITE_API_BASE_URL=http://127.0.0.1:8090/api/v1
-VITE_WS_BASE_URL=ws://127.0.0.1:8090/ws/v1
-VITE_DATA_SOURCE=mock
-```
+- login e sessione medico;
+- selezione paziente e anagrafica separata;
+- riepilogo 24 ore e confronto con baseline;
+- dati fisiologici e routine ambientale;
+- grafici interattivi e storico dello score AI;
+- spiegazione, confidenza, metriche modello, trend e drift;
+- timeline unificata;
+- alert con workflow clinico;
+- attivita e questionari per il paziente;
+- messaggi personalizzati a paziente e caregiver;
+- report esportabile e stato tecnico;
+- cache locale leggera in caso di indisponibilita temporanea del backend.
 
-Produzione o backend reale:
+## Requisiti e configurazione
 
-```text
-VITE_API_BASE_URL=https://host-backend/api/v1
-VITE_WS_BASE_URL=wss://host-backend/ws/v1
+- Node.js 20 o successivo;
+- backend disponibile sulla porta `8080`.
+
+Creare `.env` senza versionarlo:
+
+```dotenv
+VITE_API_BASE_URL=http://127.0.0.1:8080/api/v1
+VITE_WS_BASE_URL=ws://127.0.0.1:8080/ws/v1
 VITE_DATA_SOURCE=real
 ```
 
-La dashboard usa solo queste variabili per passare da mock a backend reale.
+## Avvio
 
-## Schermate
+Nel repository integrato, il comando ufficiale e':
 
-- Login e sessione locale.
-- Lista pazienti ordinata per severita'.
-- Dettaglio paziente con stato corrente e ultime finestre.
-- Grafici wearable/spaziali con intervallo giornaliero o settimanale.
-- Valutazione comportamentale con sintesi clinica, contributo delle fonti, fattori principali e avanzamento del profilo personale.
-- Alert con presa in carico e risoluzione.
-- Task con creazione check-in dimostrativo.
-- Stato tecnico del sistema con ultimo ciclo Edge, durata finestra, sensori, Google Health/OAuth, MQTT, coda locale e distinzione warning/guasti.
+```powershell
+.\Script\avvio\avviaPC.ps1
+```
 
-## Esperienza dell'interfaccia
+Per sviluppo del solo frontend:
 
-La dashboard usa un design system clinico responsive condiviso da tutte le viste:
+```powershell
+cd Dashboard
+npm ci
+npm run dev
+```
 
-- navigazione laterale con ricerca paziente, filtri e indicatori di attivita;
-- header realtime con aggiornamento manuale e accesso rapido alle segnalazioni;
-- gerarchia visiva uniforme per routine, attenzione, anomalie e guasti tecnici;
-- grafici interattivi, tabelle leggibili e pannelli AI con terminologia comprensibile;
-- dialoghi interni per presa in carico, risoluzione alert e creazione attivita;
-- feedback di caricamento, errore, esito operazione e assenza dati;
-- animazioni brevi disattivate automaticamente quando il sistema richiede movimento ridotto;
-- layout desktop, tablet e mobile senza scorrimento orizzontale della pagina.
+Aprire <http://127.0.0.1:5173>.
 
-Gli stili di base restano in `src/styles.css`; il livello visuale moderno e le regole
-responsive sono isolati in `src/modern.css`.
+## Test e build
 
-## Nota clinica
+```powershell
+npm test
+npm run build
+```
 
-La UI usa sempre linguaggio da triage: segnala livelli, score e dati tecnici, ma non
-presenta diagnosi automatiche.
+La build viene prodotta in `dist/`, cartella esclusa da Git.
+
+## Sicurezza e uso clinico
+
+La dashboard mostra solo i pazienti autorizzati dal backend. Token e password non
+devono essere inseriti nel codice o nei log. Gli score sono indicatori di supporto e
+non sostituiscono il giudizio medico.

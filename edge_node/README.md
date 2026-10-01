@@ -1,784 +1,137 @@
-# Edge Node Raspberry
+# Triage IoT - Edge e gateway
 
-Questa cartella contiene tutto cio' che gira sul Raspberry Pi o sul PC durante i test
-locali.
+Questo componente gira sul Raspberry Pi 5. Riceve i campioni BLE dall'app Android,
+acquisisce i dati Google Health, costruisce finestre temporali, esegue i modelli AI e
+pubblica i risultati verso il PC tramite MQTT TLS.
 
-## Contenuto
+Il progetto completo comprende anche backend FastAPI, PostgreSQL, dashboard medico e
+app Android per paziente e caregiver.
+
+## Architettura
 
 ```text
-edge_ai/        modelli generici/personale, fusione, debounce e CLI train/infer
-edge_auth/      setup OAuth Google Health/Fitbit, token e refresh per Pixel Watch 2
-edge_baseline/  gestione fase baseline: start, status, finalize, train
-edge_datasets/  convertitori dataset pubblici CASAS/fitbitdata/PAMAP2/WESAD
-edge_ingest/    aggregazione dati Google Health/Fitbit, BLE e Shelly in finestre da 4 minuti
-edge_mqtt/      publisher MQTT verso il broker Cloud con coda offline
-edge_receiver/  receiver FastAPI per campioni BLE inviati dall'app Android
-edge_runtime/   ciclo edge: aggregazione, qualita, inferenza e decisione
-edge_stack/     comando unico che avvia receiver BLE e runtime continuo
-edge_quality/   controlli qualita dati per baseline/training
-config/         configurazioni YAML dell'edge node
-data/           dati grezzi, feature aggregate e stato locale
-models/         modelli generici e modelli paziente-specifici
-outputs/        decisioni JSON prodotte dall'AI
+Pixel Watch / Google Health ----+
+                                +-> aggregazione 4 min -> AI -> coda MQTT -> PC
+Beacon BLE -> app -> receiver ---+
 ```
 
-## Setup
+Repository del progetto:
 
-Da questa cartella:
+- [integrazione](https://github.com/emipasca12/ProgettoIoT)
+- [Edge](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-edge-Pascadopoli-Spedicato)
+- [Cloud](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-cloud-Pascadopoli-Spedicato)
+- [Dashboard](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-dashboard-Pascadopoli-Spedicato)
+- [Android](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-android-Pascadopoli-Spedicato)
+- [Presentazione](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-presentation-Pascadopoli-Spedicato)
+
+I link dell'organizzazione diventano disponibili dopo la creazione dei repository per
+la consegna.
+
+## Moduli
+
+```text
+edge_auth/       OAuth per sorgenti wearable
+edge_ingest/     adapter, receiver BLE e aggregazione
+edge_ai/         modelli, score, confidenza e baseline
+edge_mqtt/       payload, TLS e coda locale
+edge_runtime/    ciclo periodico completo
+edge_stack/      supervisore receiver + runtime
+edge_deploy/     preparazione e diagnostica Raspberry
+deploy/          template systemd
+tests/           test automatici Edge
+```
+
+## Configurazione
+
+`config/edge.example.yml` e' versionato. Il setup genera invece
+`config/edge.rpi.yml` e `config/edge-service.env`, che rimangono locali e sono ignorati
+da Git.
+
+Devono restare fuori dal repository:
+
+- token e client OAuth;
+- password MQTT;
+- certificati locali;
+- dati grezzi e processati;
+- output clinici e modello personale.
+
+La demo usa soltanto i beacon validati di Cucina e Bagno. Camera da letto non e'
+monitorata.
+
+## Installazione sul Raspberry
+
+Nel repository integrato:
 
 ```bash
-pip install -r requirements.txt
+sudo apt update
+sudo apt install -y git python3-venv python3-dev build-essential ca-certificates openssl
+git clone https://github.com/emipasca12/ProgettoIoT.git ~/progetto-iot
+cd ~/progetto-iot
+bash Script/rpi/setup-rpi \
+  --pc-host 192.168.1.100 \
+  --ca-file "$HOME/progetto-iot/edge_node/config/certs/ca.crt"
 ```
 
-Se usi la virtualenv creata nella root del progetto su Windows:
+Prima del setup trasferire localmente il certificato pubblico del broker e i file OAuth
+Google Health. Il comando verifica configurazione e modelli, installa
+`iot-edge.service` e lo abilita al boot.
 
-```powershell
-..\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-## Google Health OAuth / Pixel Watch 2
-
-Il Pixel Watch 2 sincronizza i dati biometrici con Fitbit/Google. Il Raspberry li legge
-via API solo dopo autorizzazione OAuth.
-
-Per nuove credenziali usiamo Google Health API. I file locali sono:
-
-```text
-config/google_health_client.json
-config/google_health_token.json
-```
-
-Sono ignorati da Git perche' contengono credenziali e token.
-
-Controllo stato:
-
-```powershell
-python -m edge_auth.cli google-health status
-```
-
-Refresh manuale, se serve:
-
-```powershell
-python -m edge_auth.cli google-health refresh
-```
-
-Poi in `config/edge.yml`:
-
-```yaml
-fitbit:
-  enabled: false
-
-google_health:
-  enabled: true
-  token_file: config/google_health_token.json
-  client_file: config/google_health_client.json
-  api_base_url: https://health.googleapis.com
-  data_delay_minutes: 12
-  heart_rate_lookback_minutes: 30
-```
-
-Durante il ciclo edge il token viene rinfrescato automaticamente quando scade. Il delay e
-il lookback sono specifici di Google Health: servono per compensare la sincronizzazione
-cloud del watch senza spostare indietro la finestra BLE.
-
-Fitbit resta supportato come adapter legacy, ma per il Pixel Watch 2 nuovo percorso e'
-Google Health. La procedura completa e' in `../Documenti/Generale/GOOGLE_WATCH_SETUP.md`.
-
-## Receiver Android BLE
+## Esecuzione e diagnostica
 
 ```bash
-python -m edge_receiver.cli --config config/edge.example.yml --host 0.0.0.0 --port 8000
+sudo systemctl status iot-edge --no-pager
+sudo journalctl -u iot-edge -f
+bash Script/rpi/stato-rpi --network
 ```
 
-L'app Android invia campioni a:
+Il receiver ascolta sulla porta `8000`; il runtime produce una finestra ogni quattro
+minuti. In assenza del broker, la coda in `data/state/mqtt_queue` conserva i payload e
+li ritenta quando la connessione torna disponibile.
 
-```text
-POST /ble/sample
-```
-
-Il receiver salva i campioni in:
-
-```text
-data/raw/ble_samples.csv
-```
-
-## Comando Unico Edge Stack
-
-Normalmente dalla root del progetto usiamo il launcher breve:
-
-```powershell
-.\Script\avvio\avviaSistema.ps1
-```
-
-Su Windows, se PowerShell non lo esegue senza estensione:
-
-```powershell
-.\Script\avvio\avviaSistema.cmd
-```
-
-Sul Raspberry Pi:
+Avvio manuale, solo per sviluppo e con il servizio fermo:
 
 ```bash
-chmod +x Script/avvio/avviaSistema
-./Script/avvio/avviaSistema
-```
-
-Internamente il launcher entra in `edge_node/` ed esegue:
-
-```bash
-python -m edge_stack.cli --config config/edge.yml
-```
-
-Questo avvia due processi coordinati:
-
-```text
-edge_receiver
-  -> resta in ascolto su http://0.0.0.0:8000
-  -> riceve campioni BLE dall'app Android
-  -> aggiorna data/raw/ble_samples.csv
-
-edge_runtime --loop
-  -> ogni 4 minuti legge tutte le sorgenti abilitate
-  -> Google Health / Pixel Watch 2
-  -> BLE gia' ricevuti dal receiver
-  -> Shelly/NILM se abilitato in futuro
-  -> aggiorna latest_window.csv e decision JSON
-  -> se manca il modello personale, gestisce la baseline automatica
-  -> se mqtt.enabled=true, pubblica ciclo, finestra, decisione e alert al Cloud
-```
-
-Il comando si ferma con `CTRL+C`.
-
-## Publisher MQTT Edge -> Cloud
-
-Il modulo `edge_mqtt/` pubblica sul broker MQTT preparato da Daniel gli stessi output
-che il Raspberry continua a salvare localmente. Il runtime locale resta sempre
-prioritario: se il broker, Internet o TLS non sono disponibili, i messaggi vengono
-accodati su disco e il ciclo da 4 minuti continua.
-
-Configurazione in `config/edge.yml`:
-
-```yaml
-mqtt:
-  enabled: true
-  host: localhost
-  port: 8883
-  use_tls: true
-  username: edge_patient_001
-  password: ""
-  password_env: MQTT_EDGE_PASSWORD
-  client_id: edge-rpi5-001
-  edge_id: edge-rpi5-001
-  ca_file: ../cloud/mqtt/certs/ca.crt
-  queue_dir: data/state/mqtt_queue
-  retain_status: true
-```
-
-La password non va messa nei README o nei log. In locale Windows:
-
-```powershell
-$env:MQTT_EDGE_PASSWORD = "password-edge-scelta"
-```
-
-Sul Raspberry:
-
-```bash
-export MQTT_EDGE_PASSWORD='password-edge-scelta'
-```
-
-Topic pubblicati:
-
-```text
-iot/patients/patient-001/edge/status
-iot/patients/patient-001/telemetry/window
-iot/patients/patient-001/telemetry/decision
-iot/patients/patient-001/alerts/critical
-```
-
-Ogni messaggio contiene `schema_version`, `message_id`, `event_type`, `patient_id`,
-`edge_id`, timestamp UTC e `payload`, come richiesto dal subscriber D4. I valori `nan`
-del CSV vengono convertiti in `null`.
-
-Dry-run senza broker:
-
-```bash
-python -m edge_mqtt.cli --config config/edge.yml --dry-run
-```
-
-Test unitari:
-
-```bash
-python -m pytest tests/test_edge_mqtt.py
-```
-
-Quando il broker non risponde, la coda locale e' in:
-
-```text
-data/state/mqtt_queue/
-```
-
-Al ciclo successivo il publisher prova prima a svuotare la coda in ordine FIFO e poi
-pubblica i messaggi nuovi. `outputs/last-cycle.json` riporta anche `mqtt_publish` con
-stato, messaggi pubblicati, messaggi accodati ed eventuali errori sintetici senza
-mostrare password.
-
-La baseline non richiede piu' un comando separato: se `models/patient-001.pkl`
-non esiste, `avviaSistema` crea automaticamente la sessione baseline, raccoglie
-finestre valide per 7 giorni e addestra il modello personale appena la baseline
-e' completata. Se il modello personale esiste gia', viene usato subito nella
-fusion.
-
-Il file `config/edge.yml` decide quali sorgenti entrano in `latest_window.csv`.
-Per avere Watch e beacon insieme servono entrambe:
-
-```yaml
-google_health:
-  enabled: true
-  data_delay_minutes: 0
-
-ble:
-  enabled: true
-```
-
-Con `google_health.data_delay_minutes: 0`, il runtime usa la stessa finestra
-corrente da 4 minuti per Google Watch 2 e BLE. Se Google Health non ha ancora
-sincronizzato un valore, quel campo resta vuoto/`nan`, ma la decisione viene
-comunque prodotta senza ritardare artificialmente la finestra.
-
-Quando Google Health e' abilitato, ogni ciclo salva anche una riga storica in:
-
-```text
-data/raw/google_health_samples.csv
-```
-
-Questo file e' l'equivalente wearable di `data/raw/ble_samples.csv`: cresce nel tempo e
-serve per debug/storico dei dati raccolti dall'orologio. Per vedere le ultime righe:
-
-```powershell
-Import-Csv data\raw\google_health_samples.csv | Select-Object -Last 10 | ConvertTo-Json -Depth 4
-```
-
-## Modello AI ibrido
-
-Il sistema ora supporta tre modelli:
-
-```text
-models/generic_spatial.pkl    modello generico spaziale/domestico, da CASAS
-models/generic_wearable.pkl   modello generico fisiologico/wearable, da fitbitdata/WESAD/PAMAP2
-models/patient-001.pkl        modello personale creato dalla baseline reale
-```
-
-I due modelli generici servono nei primi giorni, quando non abbiamo ancora abbastanza
-dati del paziente. Il modello personale viene creato automaticamente dopo la
-baseline da 7 giorni.
-Quando piu' modelli sono presenti, `edge_runtime` li esegue e produce una decisione
-fusa:
-
-```text
-latest_window.csv
--> modello generico spaziale   -> generic_spatial_score
--> modello generico wearable   -> generic_wearable_score
--> modello personale           -> personal_score
--> fusion.py                   -> anomaly_score finale
--> debounce.py                 -> livello green/yellow/orange/red/technical
-```
-
-Nel JSON finale la sezione `evidence.fusion` conserva i punteggi separati, cosi'
-possiamo capire se l'allarme nasce dalla routine spaziale, dai dati wearable, dalla
-baseline personale o da una concordanza tra piu' modelli.
-
-Scala operativa:
-
-```text
-0-35    green     normale
-35-65   yellow    attenzione lieve, non pubblicata come alert
-65-80   orange    anomalia importante, pubblicata se confermata dal debounce
-80-100  red       anomalia severa, pubblicata subito
-```
-
-`technical` resta separato dai colori clinici e segnala problemi di device o dati.
-
-Per capire quale parte ha causato lo score, leggere la decisione:
-
-```powershell
-Get-Content outputs\patient-001-decision.json
-```
-
-Poi isolare la spiegazione del Watch:
-
-```powershell
-$d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
-$d.evidence.fusion.models.generic_wearable.feature_explanation | ConvertTo-Json -Depth 8
-```
-
-oppure quella dei Beacon/BLE:
-
-```powershell
-$d = Get-Content outputs\patient-001-decision.json | ConvertFrom-Json
-$d.evidence.fusion.models.generic_spatial.feature_explanation | ConvertTo-Json -Depth 8
-```
-
-`generic_wearable` guarda feature come battito, HRV, SpO2, passi e minuti
-sedentari. L'HRV viene inclusa solo con dataset sintetici controllati e peso
-moderato: HRV alta/sana non genera allarme, mentre HRV molto bassa puo'
-produrre attenzione prima della baseline personale.
-`generic_spatial` guarda room changes e minuti nelle stanze.
-
-Durante la baseline i modelli generici vengono usati anche come filtro di sicurezza:
-se uno dei loro score supera `ai.baseline_gate_block_score`, la finestra puo' generare
-triage ma non viene aggiunta a `baseline.csv`. Cosi' evitiamo che un comportamento
-gia' sospetto venga imparato come normalita personale.
-
-## Ciclo edge unico
-
-Questo e' il comando principale da usare sul Raspberry:
-
-```powershell
-python -m edge_runtime.cli --config config/edge.example.yml
-```
-
-Attenzione: questo comando va lanciato da dentro `edge_node/`. Se sei nella root del
-progetto:
-
-```powershell
 cd edge_node
-python -m edge_runtime.cli --config config\edge.example.yml
+../.venv/bin/python -m edge_stack.cli --config config/edge.rpi.yml --host 0.0.0.0 --port 8000
 ```
 
-Se la virtualenv non e' attiva, sempre da dentro `edge_node/` puoi usare:
-
-```powershell
-..\.venv\Scripts\python.exe -m edge_runtime.cli --config config\edge.example.yml
-```
-
-Fa questo flusso:
-
-```text
-legge i dati ricevuti in data/raw/
--> crea data/processed/latest_window.csv
--> se esiste models/generic_spatial.pkl, esegue il modello generico spaziale
--> se esiste models/generic_wearable.pkl, esegue il modello generico wearable
--> se esiste models/patient-001.pkl, esegue il modello personale
--> fonde tutti i risultati disponibili
--> aggiorna data/state/patient-001-debounce.json
--> salva outputs/patient-001-decision.json
--> salva outputs/last-quality-report.json
--> salva outputs/last-cycle.json
-```
-
-Nello status JSON del ciclo trovi anche la parte orologio:
-
-```text
-google_health_enabled
-google_health_samples_logged
-received_google_health_csv
-google_health_available_feature_count
-google_health_available_features
-```
-
-Questi campi sono l'equivalente wearable di `received_ble_csv`: confermano che Google
-Health e' attivo, che il raw CSV e' stato scritto e quali feature sono arrivate.
-
-Se nessun modello esiste ancora, il ciclo non fallisce: produce comunque
-`latest_window.csv` e segna `skipped_all_models_missing` in `outputs/last-cycle.json`.
-
-Ogni ciclo controlla anche la qualita dei dati. Se il report ha stato `error`, la finestra
-non viene considerata adatta alla baseline.
-
-Durante la baseline, se almeno un modello generico e' disponibile, il runtime continua a
-produrre triage mentre raccoglie i dati personali:
+## Test
 
 ```bash
-python -m edge_runtime.cli --config config/edge.example.yml --loop --auto-baseline --auto-train-baseline
+cd ~/progetto-iot
+.venv/bin/python -m pytest edge_node/tests -q
 ```
 
-Nel funzionamento normale non lo lanciamo a mano: ci pensa `./Script/avvio/avviaSistema`, che
-passa automaticamente questi argomenti al runtime.
+## Baseline e modello personale
 
-Se i dati non superano i controlli qualita, il runtime non appende la riga a
-`data/processed/baseline.csv` e scrive `baseline_skipped_reason: quality_error`.
-Se invece la qualita e' buona ma un modello generico segnala rischio alto, scrive
-`baseline_skipped_reason: generic_safety_gate`.
-
-Sul Raspberry, quando useremo `config/edge.yml` reale:
+Dal repository integrato, sul Raspberry:
 
 ```bash
-python -m edge_runtime.cli --config config/edge.yml
+bash Script/rpi/modello-paziente status
 ```
 
-Per lasciarlo acceso e far partire automaticamente un ciclo ogni 4 minuti:
+Per archiviare i dati Edge precedenti e iniziare una baseline nuova, fermare prima il
+servizio:
 
 ```bash
-python -m edge_runtime.cli --config config/edge.yml --loop
+sudo systemctl stop iot-edge
+bash Script/rpi/modello-paziente reset patient-001
+sudo systemctl start iot-edge
 ```
 
-In modalita loop il terminale mostra log `INFO` compatti e ogni ciclo aggiorna
-`latest_window.csv`, report qualita e decisione AI.
-
-## Controllo qualita manuale
+Un modello provvisorio puo essere creato dopo almeno 50 finestre reali valide:
 
 ```bash
-python -m edge_quality.cli --config config/edge.example.yml
+sudo systemctl stop iot-edge
+bash Script/rpi/modello-paziente train-provisional patient-001
+sudo systemctl start iot-edge
 ```
 
-Output:
+Il modello definitivo richiede almeno 1000 finestre valide e la baseline pianificata di
+sette giorni. I modelli personali sono locali e non vengono pubblicati su Git.
 
-```text
-outputs/last-quality-report.json
-```
+## Limiti
 
-Il report segnala problemi tecnici come:
-
-- pochi o zero campioni BLE nella finestra;
-- timestamp BLE invalidi o nel futuro;
-- wearable cloud abilitato ma senza dati biometrici;
-- wearable non presente;
-- Shelly/NILM abilitato ma senza campioni.
-
-La stessa stanza per molte ore viene salvata come osservazione `info`, non come errore:
-ci interessa proprio come possibile comportamento da analizzare.
-
-## Fase baseline
-
-La baseline e' la raccolta della routine reale del paziente. Non va fatta con dati
-simulati: parte solo quando Raspberry, app Android/beacon e sorgenti reali sono pronti.
-
-Per il funzionamento automatico useremo una baseline da 7 giorni. Con finestre da
-4 minuti il sistema puo' raccogliere fino a 2520 finestre reali. Una baseline piu'
-lunga sarebbe migliore in produzione, ma 7 giorni sono un compromesso pratico per
-il progetto. Il training automatico richiede comunque almeno 1000 finestre valide:
-se il Raspberry resta spento troppo a lungo o molte finestre vengono scartate, il
-sistema continua a raccogliere senza creare un modello personale debole.
-
-Avvio baseline automatico:
-
-```bash
-./Script/avvio/avviaSistema
-```
-
-Questo crea:
-
-```text
-data/state/baseline-session.json
-```
-
-Durante la baseline il runtime lanciato da `avviaSistema` continua a girare ogni
-4 minuti.
-
-Ogni ciclo:
-
-```text
-controlla qualita
--> se qualita ok/warning, appende a data/processed/baseline.csv
--> se qualita error, rifiuta la finestra
--> aggiorna data/state/baseline-session.json
-```
-
-Controllare avanzamento:
-
-```bash
-python -m edge_baseline.cli --config config/edge.yml status
-```
-
-Dopo 7 giorni, se ci sono almeno 1000 finestre valide, il runtime addestra
-automaticamente il modello personale.
-
-Il modello viene salvato in:
-
-```text
-models/patient-001.pkl
-```
-
-Da questo momento il runtime usera' i due generici e `models/patient-001.pkl`, se
-gli artefatti sono presenti.
-
-Con il modello personale presente, la fusion usa questi pesi:
-
-```text
-modello personale: 70%
-generico spaziale: 15%
-generico wearable: 15%
-```
-
-## Aggregazione dati
-
-```bash
-python -m edge_ingest.cli --config config/edge.example.yml
-```
-
-Output:
-
-```text
-data/processed/latest_window.csv
-```
-
-Per costruire la baseline:
-
-```bash
-python -m edge_ingest.cli --config config/edge.example.yml --append-baseline
-```
-
-Output baseline:
-
-```text
-data/processed/baseline.csv
-```
-
-## Conversione Dataset Pubblici
-
-I dataset pubblici non vengono dati direttamente al modello: prima devono essere
-convertiti nello stesso schema di `latest_window.csv` e `baseline.csv`.
-
-Il converter CASAS e' gia' disponibile:
-
-```bash
-python -m edge_datasets.cli casas \
-  --input-dir data/external/casas \
-  --output data/processed/generic_spatial_dataset.csv \
-  --window-minutes 4
-```
-
-Per un test veloce su pochi file:
-
-```bash
-python -m edge_datasets.cli casas \
-  --input-dir data/external/casas \
-  --include aruba.csv,milan.csv \
-  --limit-rows-per-file 50000 \
-  --output data/processed/generic_spatial_dataset.sample.csv
-```
-
-Il risultato e' un CSV compatibile con:
-
-```bash
-python -m edge_ai.cli train-generic \
-  --input data/processed/generic_spatial_dataset.csv \
-  --output models/generic_spatial.pkl \
-  --model-id generic-spatial \
-  --model-kind generic_spatial
-```
-
-Nota: CASAS contiene dati ambientali/spaziali, quindi le colonne wearable e NILM restano
-vuote. Questo e' previsto per il modello `generic_spatial.pkl`.
-
-Il converter PAMAP2 e' disponibile per costruire il dataset wearable generico:
-
-```bash
-python -m edge_datasets.cli pamap2 \
-  --input-dir data/external/pamap2/Protocol \
-  --output data/processed/generic_wearable_dataset_pamap2.csv \
-  --window-minutes 4
-```
-
-Per un test veloce prima della conversione completa:
-
-```bash
-python -m edge_datasets.cli pamap2 \
-  --input-dir data/external/pamap2/Protocol \
-  --limit-rows-per-file 200000 \
-  --output data/processed/generic_wearable_dataset_pamap2.sample.csv \
-  --window-minutes 4
-```
-
-PAMAP2 contiene heart rate e activity id ad alta frequenza. Il converter produce:
-
-- media e deviazione standard della frequenza cardiaca;
-- passi stimati dagli activity id;
-- minuti sedentari stimati dagli activity id;
-- `wearable_present = 1`;
-- colonne spaziali, sonno, SpO2 e NILM vuote.
-
-Questo e' previsto per `generic_wearable.pkl`: fitbitdata, WESAD e PAMAP2
-completano la parte fisiologica/wearable, mentre CASAS resta dedicato alla parte
-spaziale/domestica.
-
-Il converter WESAD crea invece finestre wearable da BVP/HRV del polso:
-
-```bash
-python -m edge_datasets.cli wesad \
-  --input-dir data/external/wesad \
-  --output data/processed/generic_wearable_dataset_wesad.csv \
-  --window-minutes 4
-```
-
-Di default vengono usate solo label WESAD normali:
-
-```text
-1 = baseline
-3 = amusement
-4 = meditation
-```
-
-La label `2 = stress` e i transitori vengono scartati perche' il modello
-`IsolationForest` deve imparare la normalita, non considerare lo stress come routine.
-
-Il converter `fitbitdata` usa invece i dataset locali messi in
-`data/external/fitbitdata`:
-
-```bash
-python -m edge_datasets.cli fitbitdata \
-  --input-dir data/external/fitbitdata \
-  --output data/processed/generic_wearable_dataset_fitbitdata.csv \
-  --window-minutes 4 \
-  --hrv-condition "no stress" \
-  --health-status 0 \
-  --oxi-label 0 \
-  --oxi-min-spo2 92
-```
-
-Questo converter legge:
-
-- `archive2/train.csv` e `archive2/test.csv`, se presenti, per heart rate e HRV
-  con filtro diretto sulla colonna `condition`;
-- in alternativa, `archive2/time_domain_features_train.csv` piu'
-  `archive2/heart_rate_non_linear_features_train.csv` per tenere, di default,
-  solo la condizione `no stress`;
-- `Activity.csv` per passi e minuti sedentari;
-- `Sleep_health_and_lifestyle_dataset.csv` per heart rate, resting heart rate, sleep minutes e daily steps;
-- `Health data.csv` per pulse e SpO2, usando di default solo `Status = 0`;
-- `HuGCDN2014-OXI` per RR e SpO2 dai file MATLAB, usando di default solo label `0`
-  e finestre con SpO2 media almeno 92.
-
-Dopo fitbitdata, PAMAP2 e WESAD, i CSV wearable si uniscono cosi':
-
-```bash
-python -m edge_datasets.cli merge \
-  --inputs data/processed/generic_wearable_dataset_fitbitdata.csv,data/processed/generic_wearable_dataset_pamap2.csv,data/processed/generic_wearable_dataset_wesad.csv \
-  --output data/processed/generic_wearable_dataset.csv
-```
-
-## Addestramento modello
-
-Modello generico spaziale, da CASAS gia' convertito nello schema feature del progetto:
-
-```bash
-python -m edge_ai.cli train-generic \
-  --input data/processed/generic_spatial_dataset.csv \
-  --output models/generic_spatial.pkl \
-  --model-id generic-spatial \
-  --model-kind generic_spatial
-```
-
-Modello generico wearable, da fitbitdata/WESAD/PAMAP2 o dataset wearable equivalente:
-
-Prima si converte fitbitdata:
-
-```bash
-python -m edge_datasets.cli fitbitdata \
-  --input-dir data/external/fitbitdata \
-  --output data/processed/generic_wearable_dataset_fitbitdata.csv \
-  --window-minutes 4 \
-  --hrv-condition "no stress" \
-  --health-status 0 \
-  --oxi-label 0 \
-  --oxi-min-spo2 92
-```
-
-Poi si converte PAMAP2:
-
-```bash
-python -m edge_datasets.cli pamap2 \
-  --input-dir data/external/pamap2/Protocol \
-  --output data/processed/generic_wearable_dataset_pamap2.csv \
-  --window-minutes 4
-```
-
-Poi uniamo fitbitdata, PAMAP2 e WESAD in `data/processed/generic_wearable_dataset.csv`
-e addestriamo:
-
-```bash
-python -m edge_ai.cli train-generic \
-  --input data/processed/generic_wearable_dataset.csv \
-  --output models/generic_wearable.pkl \
-  --model-id generic-wearable \
-  --model-kind generic_wearable
-```
-
-Nota: `hrv_rmssd` viene incluso nel modello generico wearable quando si usa il
-dataset sintetico controllato. Non viene trattato come feature dominante: valori
-alti/sani vengono normalizzati, valori molto bassi possono aumentare lo score.
-Inoltre `spo2_mean` viene normalizzata quando e' in fascia sana/alta: il
-generico wearable deve reagire a SpO2 basse, non a valori 99-100 che non sono
-preoccupanti.
-
-### Dataset sintetici controllati per i modelli generici
-
-Per stabilizzare i modelli generici prima della baseline personale, abbiamo
-aggiunto un generatore di dataset sintetici controllati. Questi CSV non sono
-dataset clinici reali: descrivono finestre normali/standard utili a calibrare
-il comportamento tecnico dei modelli.
-
-```bash
-python -m edge_datasets.cli synthetic-generic \
-  --output-dir ../Dataset_Modelli_Generali \
-  --rows 300000 \
-  --seed 20260709
-```
-
-Il comando genera:
-
-```text
-Dataset_Modelli_Generali/generic_spatial_synthetic_300k.csv
-Dataset_Modelli_Generali/generic_wearable_synthetic_300k.csv
-```
-
-Training spatial sintetico:
-
-```bash
-python -m edge_ai.cli train-generic \
-  --input ../Dataset_Modelli_Generali/generic_spatial_synthetic_300k.csv \
-  --output models/generic_spatial.pkl \
-  --model-id generic-spatial \
-  --model-kind generic_spatial \
-  --include-features room_changes,night_room_changes,bedroom_minutes,kitchen_minutes,bathroom_minutes,living_room_minutes,longest_single_room_minutes
-```
-
-Training wearable sintetico:
-
-```bash
-python -m edge_ai.cli train-generic \
-  --input ../Dataset_Modelli_Generali/generic_wearable_synthetic_300k.csv \
-  --output models/generic_wearable.pkl \
-  --model-id generic-wearable \
-  --model-kind generic_wearable \
-  --include-features heart_rate_mean,heart_rate_std,hrv_rmssd,spo2_mean,steps,sedentary_minutes
-```
-
-Nel generico wearable, HRV e' incluso con peso moderato. Inoltre il modello
-applica pesi e calibrazioni leggere: battito molto alto a riposo pesa piu' di
-una SpO2 al 92%, HRV bassa pesa in modo intermedio, mentre SpO2 sana/alta e HRV
-alta/sana non generano anomalia.
-
-Con i dati attuali il modello generico wearable seleziona le feature realmente
-coperte in modo solido: `heart_rate_mean`, `heart_rate_std`, `hrv_rmssd` e
-`spo2_mean`.
-Le feature piu' rare, come sleep/steps/resting heart rate, restano nei CSV ma non
-vengono forzate nel generico se non hanno abbastanza copertura.
-
-Modello personale, dalla baseline reale del paziente:
-
-```bash
-python -m edge_ai.cli train \
-  --input data/processed/baseline.csv \
-  --patient-id patient-001 \
-  --output models/patient-001.pkl
-```
-
-## Inferenza
-
-Il comando consigliato resta il runtime unico, perche' gestisce automaticamente i due
-generici, il modello personale, la fusione e il debounce:
-
-```bash
-python -m edge_runtime.cli --config config/edge.example.yml
-```
-
-La CLI `edge_ai infer` resta utile per testare un singolo modello isolato:
-
-```bash
-python -m edge_ai.cli infer \
-  --model models/patient-001.pkl \
-  --input data/processed/latest_window.csv \
-  --state data/state/patient-001-debounce.json \
-  --output outputs/patient-001-decision.json
-```
+Il modello e' un supporto al triage e non un dispositivo medico. L'associazione del
+paziente e le autorizzazioni cliniche sono verificate dal backend; il receiver BLE e'
+un endpoint tecnico previsto per la LAN controllata della demo.
