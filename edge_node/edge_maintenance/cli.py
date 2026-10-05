@@ -15,6 +15,10 @@ from edge_baseline.session import (
     start_session,
 )
 from edge_ingest.config import load_config
+from edge_maintenance.personal_model import (
+    DEFAULT_BOOTSTRAP_ROWS,
+    train_personal_reference_model,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +35,16 @@ def build_parser() -> argparse.ArgumentParser:
     reset.add_argument("--confirm", required=True)
     reset.add_argument("--days", type=int, default=7)
     reset.add_argument("--archive-root", default="data/archive")
+
+    build_model = subparsers.add_parser(
+        "build-personal-model",
+        help="Build the configured patient model from the available baseline",
+    )
+    build_model.add_argument("--confirm", required=True)
+    build_model.add_argument("--rows", type=int, default=DEFAULT_BOOTSTRAP_ROWS)
+    build_model.add_argument("--seed", type=int, default=42)
+    build_model.add_argument("--contamination", type=float, default=0.05)
+    build_model.add_argument("--replace", action="store_true")
     return parser
 
 
@@ -44,13 +58,80 @@ def main() -> None:
         return
 
     if args.confirm != patient_id:
-        raise SystemExit("Reset refused: --confirm must match the configured patient_id.")
+        raise SystemExit("Operation refused: --confirm must match the configured patient_id.")
+
+    if args.command == "build-personal-model":
+        payload = build_personal_model(
+            config,
+            rows=max(50, int(args.rows)),
+            seed=int(args.seed),
+            contamination=float(args.contamination),
+            replace=bool(args.replace),
+        )
+        print(json.dumps(payload, indent=2, default=str))
+        return
+
     payload = archive_and_reset(
         config,
         archive_root=Path(args.archive_root),
         days=max(1, int(args.days)),
     )
     print(json.dumps(payload, indent=2, default=str))
+
+
+def build_personal_model(
+    config: Any,
+    *,
+    rows: int,
+    seed: int,
+    contamination: float,
+    replace: bool,
+) -> dict[str, Any]:
+    """Produce l'artefatto personale usato direttamente dal runtime Edge."""
+    model_output = Path(
+        config.ai.personal_model
+        or Path("models") / f"{config.patient.patient_id}.pkl"
+    )
+    if model_output.exists() and not replace:
+        raise FileExistsError(
+            f"Personal model already exists at {model_output}. Use --replace to overwrite it."
+        )
+    if not 0.0 < contamination <= 0.5:
+        raise ValueError("contamination must be greater than 0 and at most 0.5")
+
+    detector = train_personal_reference_model(
+        baseline_csv=config.paths.baseline_csv,
+        model_output=model_output,
+        patient_id=config.patient.patient_id,
+        rows=rows,
+        seed=seed,
+        window_minutes=config.window.minutes,
+        contamination=contamination,
+    )
+    _mark_baseline_model_ready(config, detector.metadata.training_rows)
+    return {
+        "status": "personal_model_created",
+        "patient_id": detector.metadata.patient_id,
+        "model": str(model_output),
+        "model_scope": detector.metadata.model_scope,
+        "training_rows": detector.metadata.training_rows,
+        "feature_columns": detector.metadata.feature_columns,
+    }
+
+
+def _mark_baseline_model_ready(config: Any, training_rows: int) -> None:
+    state_path = DEFAULT_BASELINE_STATE
+    if not state_path.exists():
+        return
+    from edge_baseline.session import load_session, save_session
+
+    session = load_session(state_path)
+    if session.patient_id != config.patient.patient_id:
+        return
+    session.status = "trained"
+    session.finalized_at = datetime.now(timezone.utc).isoformat()
+    session.notes.append(f"Personal model prepared with {training_rows} reference windows.")
+    save_session(session, state_path)
 
 
 def archive_and_reset(config: Any, *, archive_root: Path, days: int) -> dict[str, Any]:
@@ -148,3 +229,7 @@ def _inside_edge_root(path: Path, edge_root: Path) -> Path:
     except ValueError as exc:
         raise ValueError(f"Refusing path outside Edge root: {resolved}") from exc
     return resolved
+
+
+if __name__ == "__main__":
+    main()

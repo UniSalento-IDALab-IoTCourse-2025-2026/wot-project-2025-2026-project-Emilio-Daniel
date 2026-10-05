@@ -1029,6 +1029,11 @@ def _publish_mqtt_outputs(
             config=config,
             status_payload=status,
             decision_output=decision_output,
+            absence_output=(
+                Path(status["absence_file"])
+                if status.get("absence_file")
+                else None
+            ),
         ).to_dict()
     except Exception as exc:
         return {

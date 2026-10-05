@@ -22,6 +22,7 @@ class DiskMqttQueue:
 
     def __init__(self, queue_dir: Path) -> None:
         self.queue_dir = queue_dir
+        self.last_quarantined: list[Path] = []
 
     def enqueue(self, message: MqttMessage) -> Path:
         self.queue_dir.mkdir(parents=True, exist_ok=True)
@@ -45,21 +46,25 @@ class DiskMqttQueue:
 
     def iter_messages(self, limit: int) -> list[QueuedMessage]:
         self.queue_dir.mkdir(parents=True, exist_ok=True)
+        self.last_quarantined = []
         queued: list[QueuedMessage] = []
         for path in sorted(self.queue_dir.glob("*.json"))[: max(0, limit)]:
-            with path.open("r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-            queued.append(
-                QueuedMessage(
-                    path=path,
-                    message=MqttMessage(
-                        topic=str(payload["topic"]),
-                        qos=int(payload.get("qos", 1)),
-                        retain=bool(payload.get("retain", False)),
-                        payload=dict(payload["payload"]),
-                    ),
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    payload = json.load(handle)
+                queued.append(
+                    QueuedMessage(
+                        path=path,
+                        message=MqttMessage(
+                            topic=str(payload["topic"]),
+                            qos=int(payload.get("qos", 1)),
+                            retain=bool(payload.get("retain", False)),
+                            payload=dict(payload["payload"]),
+                        ),
+                    )
                 )
-            )
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+                self.last_quarantined.append(self._quarantine(path))
         return queued
 
     def remove(self, queued: QueuedMessage) -> None:
@@ -74,3 +79,13 @@ class DiskMqttQueue:
         safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", message.message_id)[:96]
         return f"{now}-{safe_id}.json"
 
+    def _quarantine(self, path: Path) -> Path:
+        quarantine_dir = self.queue_dir / "quarantine"
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+        target = quarantine_dir / path.name
+        counter = 1
+        while target.exists():
+            target = quarantine_dir / f"{path.stem}-{counter}{path.suffix}"
+            counter += 1
+        path.replace(target)
+        return target

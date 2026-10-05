@@ -271,3 +271,88 @@ def test_fifo_order_is_preserved(tmp_path) -> None:
     queued = queue.iter_messages(limit=10)
     ids = [item.message.payload["message_id"] for item in queued]
     assert ids == ["fifo-000", "fifo-001", "fifo-002"]
+
+
+def test_corrupt_queue_file_is_quarantined_without_blocking_valid_messages(tmp_path) -> None:
+    from edge_mqtt.messages import MqttMessage
+
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir()
+    (queue_dir / "000-corrupt.json").write_text("", encoding="utf-8")
+    queue = DiskMqttQueue(queue_dir)
+    queue.enqueue(
+        MqttMessage(
+            topic="iot/patients/patient-001/edge/status",
+            payload={"message_id": "valid-after-corrupt"},
+        )
+    )
+
+    queued = queue.iter_messages(limit=10)
+
+    assert [item.message.message_id for item in queued] == ["valid-after-corrupt"]
+    assert len(queue.last_quarantined) == 1
+    assert queue.last_quarantined[0].parent == queue_dir / "quarantine"
+    assert not (queue_dir / "000-corrupt.json").exists()
+    assert queue.depth() == 1
+
+
+def test_runtime_publisher_forwards_technical_absence_signal(tmp_path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from edge_mqtt.publisher import EdgeMqttPublisher, PublishSummary, publish_runtime_outputs
+
+    latest = tmp_path / "latest.csv"
+    latest.write_text(
+        "patient_id,window_start,window_end\n"
+        "patient-001,2026-10-05T10:00:00Z,2026-10-05T10:04:00Z\n",
+        encoding="utf-8",
+    )
+    decision = tmp_path / "decision.json"
+    decision.write_text(
+        json.dumps({"patient_id": "patient-001", "level": "green", "should_publish": False}),
+        encoding="utf-8",
+    )
+    absence = tmp_path / "absence.json"
+    absence.write_text(
+        json.dumps(
+            {
+                "patient_id": "patient-001",
+                "kind": "ble_unreliable",
+                "level": "technical",
+                "category": "technical",
+                "title": "Sensore di movimento non affidabile",
+                "message_id": "absence-technical-001",
+            }
+        ),
+        encoding="utf-8",
+    )
+    mqtt = SimpleNamespace(
+        enabled=True,
+        queue_dir=tmp_path / "queue",
+        edge_id="edge-rpi5-001",
+        retain_status=True,
+    )
+    config = SimpleNamespace(
+        patient=SimpleNamespace(patient_id="patient-001"),
+        paths=SimpleNamespace(latest_window_csv=latest),
+        mqtt=mqtt,
+    )
+    captured = []
+
+    def capture_publish(self, messages):
+        captured.extend(messages)
+        return PublishSummary(enabled=True, status="published", published=len(messages))
+
+    monkeypatch.setattr(EdgeMqttPublisher, "publish", capture_publish)
+
+    publish_runtime_outputs(
+        config=config,
+        status_payload={"status": "cycle_completed"},
+        decision_output=decision,
+        absence_output=absence,
+    )
+
+    alerts = [message for message in captured if message.topic.endswith("/alerts/critical")]
+    assert len(alerts) == 1
+    assert alerts[0].message_id == "absence-technical-001"
+    assert alerts[0].payload["payload"]["category"] == "technical"

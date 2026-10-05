@@ -41,6 +41,7 @@ def publish_runtime_outputs(
     config: EdgeIngestConfig,
     status_payload: dict[str, Any],
     decision_output: Path,
+    absence_output: Path | None = None,
 ) -> PublishSummary:
     """Pubblica gli output del ciclo Edge senza far fallire il runtime locale."""
     mqtt_config = config.mqtt
@@ -60,6 +61,7 @@ def publish_runtime_outputs(
             latest_window_csv=config.paths.latest_window_csv,
             decision_json=decision_output,
             retain_status=mqtt_config.retain_status,
+            absence_json=absence_output,
         )
         return EdgeMqttPublisher(mqtt_config, config.patient.patient_id).publish(messages)
     except Exception as exc:
@@ -130,7 +132,7 @@ class EdgeMqttPublisher:
             raise RuntimeError("paho-mqtt non installato. Eseguire pip install -r requirements.txt") from exc
 
         client = mqtt.Client(
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+            mqtt.CallbackAPIVersion.VERSION2,
             client_id=self.config.client_id,
             clean_session=True,
         )
@@ -173,6 +175,11 @@ class EdgeMqttPublisher:
 
     def _flush_queue(self, client: Any, summary: PublishSummary) -> None:
         queued_messages = self.queue.iter_messages(self.config.max_flush_messages)
+        if self.queue.last_quarantined:
+            summary.errors.append(
+                "queue: quarantined "
+                f"{len(self.queue.last_quarantined)} malformed message(s)"
+            )
         for queued in queued_messages:
             if self._publish_one(client, queued.message, summary):
                 self.queue.remove(queued)

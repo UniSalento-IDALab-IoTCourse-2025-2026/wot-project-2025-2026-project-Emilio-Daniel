@@ -46,8 +46,21 @@ case "$ACTION" in
     fi
     "$PYTHON" -m edge_baseline.cli --config "$CONFIG" train --allow-early --provisional
     ;;
+  build-personal)
+    PATIENT_ID="${2:-}"
+    if [[ -z "$PATIENT_ID" ]]; then
+      echo "Uso: bash Script/rpi/modello-paziente build-personal patient-001"
+      exit 1
+    fi
+    if systemctl is-active --quiet iot-edge.service; then
+      echo "Arrestare prima il servizio: sudo systemctl stop iot-edge"
+      exit 1
+    fi
+    "$PYTHON" -m edge_maintenance.cli --config "$CONFIG" build-personal-model \
+      --confirm "$PATIENT_ID" --rows 1000 --seed 42
+    ;;
   *)
-    echo "Uso: bash Script/rpi/modello-paziente {status|reset patient-001|train-provisional patient-001}"
+    echo "Uso: bash Script/rpi/modello-paziente {status|reset patient-001|train-provisional patient-001|build-personal patient-001}"
     exit 1
     ;;
 esac
