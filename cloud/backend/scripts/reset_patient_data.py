@@ -4,7 +4,12 @@ import argparse
 import json
 
 from app.db.session import SessionLocal
-from app.services.patient_reset import patient_data_summary, reset_patient_data
+from app.services.patient_reset import (
+    patient_data_summary,
+    patient_telemetry_summary,
+    reset_patient_data,
+    reset_patient_telemetry,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -13,6 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--patient-id", required=True)
     parser.add_argument("--include-audit", action="store_true")
+    parser.add_argument(
+        "--telemetry-only",
+        action="store_true",
+        help="Delete Edge telemetry and derived alerts, preserving tasks and messages.",
+    )
     parser.add_argument("--execute", action="store_true")
     parser.add_argument(
         "--confirm",
@@ -30,18 +40,24 @@ def main() -> None:
     with SessionLocal() as db:
         try:
             if args.execute:
-                payload = reset_patient_data(
-                    db,
-                    args.patient_id,
-                    include_audit=args.include_audit,
-                )
+                if args.telemetry_only:
+                    payload = reset_patient_telemetry(db, args.patient_id)
+                else:
+                    payload = reset_patient_data(
+                        db,
+                        args.patient_id,
+                        include_audit=args.include_audit,
+                    )
                 db.commit()
             else:
-                payload = patient_data_summary(
-                    db,
-                    args.patient_id,
-                    include_audit=args.include_audit,
-                )
+                if args.telemetry_only:
+                    payload = patient_telemetry_summary(db, args.patient_id)
+                else:
+                    payload = patient_data_summary(
+                        db,
+                        args.patient_id,
+                        include_audit=args.include_audit,
+                    )
                 payload["status"] = "dry_run"
         except Exception:
             db.rollback()

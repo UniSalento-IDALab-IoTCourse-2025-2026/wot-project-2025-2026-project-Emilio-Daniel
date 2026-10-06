@@ -2,7 +2,8 @@ param(
     [string] $PatientId = "patient-001",
     [switch] $Execute,
     [string] $ConfirmPatientId = "",
-    [switch] $IncludeAudit
+    [switch] $IncludeAudit,
+    [switch] $TelemetryOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,6 +11,7 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $Cloud = Join-Path $Root "cloud"
 $BackupDir = Join-Path $Cloud "backups"
 $AuditArg = if ($IncludeAudit) { @("--include-audit") } else { @() }
+$ScopeArg = if ($TelemetryOnly) { @("--telemetry-only") } else { @() }
 
 Push-Location $Cloud
 try {
@@ -20,7 +22,7 @@ try {
 
     if (-not $Execute) {
         docker compose exec -T backend python -m scripts.reset_patient_data `
-            --patient-id $PatientId @AuditArg
+            --patient-id $PatientId @AuditArg @ScopeArg
         if ($LASTEXITCODE -ne 0) { throw "Anteprima pulizia fallita." }
         Write-Host "Anteprima soltanto: nessun dato e' stato modificato."
         Write-Host "Per eseguire: aggiungere -Execute -ConfirmPatientId $PatientId"
@@ -54,7 +56,7 @@ try {
         }
 
         docker compose run --rm --no-deps backend python -m scripts.reset_patient_data `
-            --patient-id $PatientId --execute --confirm $ConfirmPatientId @AuditArg
+            --patient-id $PatientId --execute --confirm $ConfirmPatientId @AuditArg @ScopeArg
         if ($LASTEXITCODE -ne 0) { throw "Pulizia database fallita; il backup resta disponibile." }
     } finally {
         docker compose exec -T postgres rm -f $ContainerBackup 2>$null

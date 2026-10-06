@@ -33,7 +33,7 @@ def refresh_access_token(
             f"Missing refresh_token in {token_file}. Generate it with OAuth Playground."
         )
 
-    client = load_json(client_file)
+    client = _extract_client_credentials(load_json(client_file), client_file)
     client_id = str(client.get("client_id") or "").strip()
     client_secret = str(client.get("client_secret") or "").strip()
     token_uri = str(client.get("token_uri") or TOKEN_URL).strip()
@@ -120,6 +120,22 @@ def load_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Expected JSON object in {path}")
     return payload
+
+
+def _extract_client_credentials(
+    payload: dict[str, Any],
+    client_file: Path,
+) -> dict[str, Any]:
+    """Accetta sia il formato piatto sia il JSON ufficiale scaricato da Google."""
+    if payload.get("client_id") or payload.get("client_secret"):
+        return payload
+
+    for wrapper in ("web", "installed"):
+        nested = payload.get(wrapper)
+        if isinstance(nested, dict):
+            return nested
+
+    raise ValueError(f"Missing client_id/client_secret in {client_file}")
 
 
 def token_is_expired(

@@ -127,6 +127,90 @@ def reset_patient_data(
     }
 
 
+def patient_telemetry_summary(db: Session, patient_id: str) -> dict[str, Any]:
+    """Return only Edge-derived records affected by a telemetry cleanup."""
+    _require_patient(db, patient_id)
+    generated_alerts = _generated_alert_ids(patient_id)
+    counts = {
+        "alert_events": _count(db, AlertEvent, AlertEvent.alert_id.in_(generated_alerts)),
+        "generated_alerts": _count(db, Alert, Alert.id.in_(generated_alerts)),
+        "alert_notifications": _count(
+            db,
+            Notification,
+            (Notification.patient_id == patient_id)
+            & (Notification.payload["type"].as_string() == "alert_created"),
+        ),
+        "weekly_reports": _count(db, WeeklyReport, WeeklyReport.patient_id == patient_id),
+        "patient_model_drift": _count(db, PatientModelDrift, PatientModelDrift.patient_id == patient_id),
+        "sensor_status": _count(db, SensorStatus, SensorStatus.patient_id == patient_id),
+        "feature_windows": _count(db, FeatureWindow, FeatureWindow.patient_id == patient_id),
+        "edge_cycles": _count(db, EdgeCycle, EdgeCycle.patient_id == patient_id),
+        "decisions": _count(db, Decision, Decision.patient_id == patient_id),
+    }
+    return {
+        "patient_id": patient_id,
+        "scope": "telemetry_only",
+        "counts": counts,
+        "total_records": sum(counts.values()),
+        "preserved": [
+            "patient profile and account associations",
+            "tasks, task results and questionnaires",
+            "doctor and caregiver messages",
+            "device registrations and FCM tokens",
+            "model files and model retraining audit",
+            "manual alerts and audit logs",
+        ],
+    }
+
+
+def reset_patient_telemetry(db: Session, patient_id: str) -> dict[str, Any]:
+    """Delete captured/derived telemetry while preserving the personal model workflow."""
+    before = patient_telemetry_summary(db, patient_id)
+    generated_alerts = _generated_alert_ids(patient_id)
+    operations = [
+        ("alert_events", delete(AlertEvent).where(AlertEvent.alert_id.in_(generated_alerts))),
+        (
+            "alert_notifications",
+            delete(Notification).where(
+                Notification.patient_id == patient_id,
+                Notification.payload["type"].as_string() == "alert_created",
+            ),
+        ),
+        ("generated_alerts", delete(Alert).where(Alert.id.in_(generated_alerts))),
+        ("weekly_reports", delete(WeeklyReport).where(WeeklyReport.patient_id == patient_id)),
+        ("patient_model_drift", delete(PatientModelDrift).where(PatientModelDrift.patient_id == patient_id)),
+        ("sensor_status", delete(SensorStatus).where(SensorStatus.patient_id == patient_id)),
+        ("feature_windows", delete(FeatureWindow).where(FeatureWindow.patient_id == patient_id)),
+        ("edge_cycles", delete(EdgeCycle).where(EdgeCycle.patient_id == patient_id)),
+        ("decisions", delete(Decision).where(Decision.patient_id == patient_id)),
+    ]
+    deleted: dict[str, int] = {}
+    for name, statement in operations:
+        result = db.execute(statement)
+        deleted[name] = int(result.rowcount or 0)
+
+    edge_result = db.execute(
+        update(EdgeDevice)
+        .where(EdgeDevice.patient_id == patient_id)
+        .values(status="unknown", last_seen_at=None)
+    )
+    return {
+        **before,
+        "status": "telemetry_reset_completed",
+        "deleted": deleted,
+        "deleted_total": sum(deleted.values()),
+        "device_rows_reset": {"edge_devices": int(edge_result.rowcount or 0)},
+    }
+
+
+def _generated_alert_ids(patient_id: str) -> Any:
+    return select(Alert.id).where(
+        Alert.patient_id == patient_id,
+        (Alert.decision_id.is_not(None))
+        | (Alert.source.in_(("edge", "ai", "trend", "system"))),
+    )
+
+
 def _require_patient(db: Session, patient_id: str) -> None:
     if db.get(Patient, patient_id) is None:
         raise ValueError(f"Patient not found: {patient_id}")

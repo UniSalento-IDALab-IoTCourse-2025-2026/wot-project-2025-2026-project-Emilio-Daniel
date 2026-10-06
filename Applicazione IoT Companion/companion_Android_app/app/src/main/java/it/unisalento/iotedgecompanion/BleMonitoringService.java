@@ -58,8 +58,9 @@ public class BleMonitoringService extends Service {
     private PowerManager.WakeLock wakeLock;
     private boolean running = false;
     private boolean scanning = false;
-    private boolean useIBeaconFilter = true;
+    private boolean useIBeaconFilter = false;
     private int emptyReportCount = 0;
+    private int scanResultsSinceLastReport = 0;
 
     private final ScanCallback scanCallback = new ScanCallback() {
         @Override
@@ -243,12 +244,13 @@ public class BleMonitoringService extends Service {
                 switchToCompatibilityScan();
             } else {
                 startAsForeground(
-                        useIBeaconFilter
-                                ? "Nessun beacon iBeacon mappato"
-                                : "Nessun beacon mappato rilevato"
+                        scanResultsSinceLastReport == 0
+                                ? "Nessun dispositivo BLE rilevato"
+                                : scanResultsSinceLastReport + " pacchetti BLE, nessun beacon mappato"
                 );
             }
         }
+        scanResultsSinceLastReport = 0;
         scheduleNextReport(REPORT_INTERVAL_MS);
     }
 
@@ -273,6 +275,7 @@ public class BleMonitoringService extends Service {
          * l'ultima osservazione valida. Per i beacon iBeacon prova a usare
          * l'identificativo stabile uuid-major-minor, piu' adatto di nome/MAC.
          */
+        scanResultsSinceLastReport++;
         Map<String, String> beaconMap = parseBeaconMap();
         String address = result.getDevice().getAddress();
         String name = result.getDevice().getName();
@@ -414,6 +417,16 @@ public class BleMonitoringService extends Service {
         String normalizedName = name == null ? "" : name.toLowerCase(Locale.ROOT);
         for (Map.Entry<String, String> entry : beaconMap.entrySet()) {
             if (!entry.getKey().isEmpty() && normalizedName.contains(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        for (Map.Entry<String, String> entry : beaconMap.entrySet()) {
+            String key = entry.getKey();
+            int separator = key.lastIndexOf('-');
+            String minor = separator >= 0 ? key.substring(separator + 1) : "";
+            if (!minor.isEmpty()
+                    && minor.matches("\\d+")
+                    && normalizedName.endsWith(minor)) {
                 return entry.getValue();
             }
         }

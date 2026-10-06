@@ -21,7 +21,12 @@ from app.db.models import (
     Task,
     TaskResult,
 )
-from app.services.patient_reset import patient_data_summary, reset_patient_data
+from app.services.patient_reset import (
+    patient_data_summary,
+    patient_telemetry_summary,
+    reset_patient_data,
+    reset_patient_telemetry,
+)
 
 
 NOW = datetime(2026, 10, 1, 10, 0, tzinfo=timezone.utc)
@@ -193,3 +198,30 @@ def test_reset_can_include_audit() -> None:
         session.commit()
         assert payload["deleted"]["audit_logs"] == 1
         assert count(session, AuditLog) == 0
+
+
+def test_telemetry_reset_preserves_tasks_messages_and_device_registration() -> None:
+    with make_session() as session:
+        seed(session)
+        summary = patient_telemetry_summary(session, "patient-001")
+        assert summary["counts"]["feature_windows"] == 1
+
+        payload = reset_patient_telemetry(session, "patient-001")
+        session.commit()
+
+        assert payload["status"] == "telemetry_reset_completed"
+        assert count(session, FeatureWindow) == 1
+        assert count(session, EdgeCycle) == 0
+        assert count(session, Decision) == 0
+        assert count(session, Alert) == 0
+        assert count(session, AlertEvent) == 0
+        assert count(session, SensorStatus) == 0
+        assert count(session, Task) == 1
+        assert count(session, TaskResult) == 1
+        assert count(session, Notification) == 1
+        assert count(session, AuditLog) == 1
+        app_status = session.scalar(
+            select(PatientAppStatus).where(PatientAppStatus.patient_id == "patient-001")
+        )
+        assert app_status is not None
+        assert app_status.fcm_token == "preserve-me"

@@ -31,8 +31,9 @@ public class AdminSettingsActivity extends Activity {
     private static final String ADMIN_PASSWORD = "admin";
     private static final String DEFAULT_BEACON_MAP =
             "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14592=kitchen\n" +
-            "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14582=bedroom\n" +
-            "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14599=bathroom";
+            "acfd065e-c3c0-11e3-9bbe-1a514932ac01-0-14599=bathroom\n" +
+            "blueup-01-014592=kitchen\n" +
+            "blueup-01-014599=bathroom";
     private boolean startServiceAfterPermissionGrant = false;
 
     private EditText receiverUrlInput;

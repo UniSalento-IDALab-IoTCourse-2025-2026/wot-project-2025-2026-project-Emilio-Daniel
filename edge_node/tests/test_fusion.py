@@ -48,8 +48,23 @@ def test_fusion_renormalizes_weights_with_two_models() -> None:
     assert fused.model_label == "generic_spatial_anomaly_only"
     assert fused.anomaly_score == pytest.approx(79.9, abs=0.01)
     weights = fused.context["fusion"]["weights"]
-    assert weights["personal"] == pytest.approx(0.7 / 0.85, abs=0.001)
-    assert weights["generic_spatial"] == pytest.approx(0.15 / 0.85, abs=0.001)
+    assert weights["personal"] == pytest.approx(0.30 / 0.65, abs=0.001)
+    assert weights["generic_spatial"] == pytest.approx(0.35 / 0.65, abs=0.001)
+
+
+def test_fusion_personal_model_has_thirty_percent_weight() -> None:
+    fused = fuse_model_results(
+        generic_spatial_result=result(40.0),
+        generic_wearable_result=result(40.0),
+        personal_result=result(40.0),
+    )
+
+    weights = fused.context["fusion"]["weights"]
+    assert weights == {
+        "generic_spatial": pytest.approx(0.35),
+        "generic_wearable": pytest.approx(0.35),
+        "personal": pytest.approx(0.30),
+    }
 
 
 def test_fusion_agreement_bonus_two_yellow_models() -> None:
