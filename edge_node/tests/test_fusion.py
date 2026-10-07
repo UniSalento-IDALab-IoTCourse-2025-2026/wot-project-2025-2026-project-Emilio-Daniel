@@ -36,7 +36,7 @@ def test_fusion_requires_at_least_one_model() -> None:
 
 def test_fusion_single_personal_result_is_kept() -> None:
     fused = fuse_model_results(personal_result=result(80.0))
-    assert fused.anomaly_score == pytest.approx(80.0)
+    assert fused.anomaly_score == pytest.approx(79.9)
     assert fused.model_label == "personal_anomaly_only"
     assert fused.patient_id == "patient-001"
 
@@ -48,8 +48,8 @@ def test_fusion_renormalizes_weights_with_two_models() -> None:
     assert fused.model_label == "generic_spatial_anomaly_only"
     assert fused.anomaly_score == pytest.approx(79.9, abs=0.01)
     weights = fused.context["fusion"]["weights"]
-    assert weights["personal"] == pytest.approx(0.30 / 0.65, abs=0.001)
-    assert weights["generic_spatial"] == pytest.approx(0.35 / 0.65, abs=0.001)
+    assert weights["personal"] == pytest.approx(0.30 / 0.45, abs=0.001)
+    assert weights["generic_spatial"] == pytest.approx(0.15 / 0.45, abs=0.001)
 
 
 def test_fusion_personal_model_has_thirty_percent_weight() -> None:
@@ -61,10 +61,28 @@ def test_fusion_personal_model_has_thirty_percent_weight() -> None:
 
     weights = fused.context["fusion"]["weights"]
     assert weights == {
-        "generic_spatial": pytest.approx(0.35),
-        "generic_wearable": pytest.approx(0.35),
+        "generic_spatial": pytest.approx(0.15),
+        "generic_wearable": pytest.approx(0.55),
         "personal": pytest.approx(0.30),
     }
+
+
+def test_unconfirmed_personal_anomaly_uses_weighted_score() -> None:
+    fused = fuse_model_results(
+        generic_spatial_result=result(0.0, label="normal"),
+        generic_wearable_result=result(0.0, label="normal"),
+        personal_result=result(100.0, label="anomaly"),
+    )
+
+    assert fused.model_label == "personal_anomaly_only"
+    assert fused.anomaly_score == pytest.approx(30.0)
+
+
+def test_personal_model_alone_cannot_generate_red() -> None:
+    fused = fuse_model_results(personal_result=result(100.0, label="anomaly"))
+
+    assert fused.model_label == "personal_anomaly_only"
+    assert fused.anomaly_score == pytest.approx(79.9)
 
 
 def test_fusion_agreement_bonus_two_yellow_models() -> None:
@@ -115,3 +133,16 @@ def test_fusion_config_can_be_customized() -> None:
     custom = FusionConfig(personal_weight=1.0, single_model_penalty=0.0)
     fused = fuse_model_results(personal_result=result(60.0), config=custom)
     assert fused.anomaly_score == pytest.approx(60.0)
+
+
+def test_output_score_cap_limits_only_the_operational_score() -> None:
+    fused = fuse_model_results(
+        generic_spatial_result=result(90.0),
+        generic_wearable_result=result(92.0),
+        config=FusionConfig(output_score_cap=44.99),
+    )
+
+    assert fused.anomaly_score == pytest.approx(44.99)
+    assert fused.context["fusion"]["score"] == pytest.approx(44.99)
+    assert fused.context["fusion"]["uncapped_score"] == pytest.approx(97.0)
+    assert fused.context["fusion"]["output_score_cap"] == pytest.approx(44.99)

@@ -124,7 +124,13 @@ public class TaskActivity extends Activity {
                 group.addView(option);
             }
             panel.addView(group);
-            answerFields.add(AnswerField.choice(question.optString("id", "q" + number), questionText, group));
+            answerFields.add(AnswerField.choice(
+                    question.optString("id", "q" + number),
+                    questionText,
+                    type,
+                    question.optBoolean("required", true),
+                    group
+            ));
         } else {
             EditText input = new EditText(this);
             input.setBackgroundResource(R.drawable.bg_input);
@@ -144,7 +150,12 @@ public class TaskActivity extends Activity {
             inputParams.topMargin = dp(10);
             input.setLayoutParams(inputParams);
             panel.addView(input);
-            answerFields.add(AnswerField.text(question.optString("id", "q" + number), questionText, input));
+            answerFields.add(AnswerField.text(
+                    question.optString("id", "q" + number),
+                    questionText,
+                    question.optBoolean("required", true),
+                    input
+            ));
         }
         questionsContainer.addView(panel);
     }
@@ -203,11 +214,15 @@ public class TaskActivity extends Activity {
         JSONObject payload;
         try {
             for (AnswerField field : answerFields) {
-                String value = field.value();
-                if (value == null || value.trim().isEmpty()) {
+                Object value = field.value();
+                boolean empty = value == null || (value instanceof String && ((String) value).trim().isEmpty());
+                if (empty && field.required) {
                     statusText.setText("Completa tutti i passaggi prima di inviare.");
                     field.focus();
                     return;
+                }
+                if (empty) {
+                    continue;
                 }
                 answers.put(new JSONObject()
                         .put("question_id", field.id)
@@ -304,25 +319,29 @@ public class TaskActivity extends Activity {
     private static final class AnswerField {
         final String id;
         final String questionText;
+        final String type;
+        final boolean required;
         final EditText input;
         final RadioGroup choices;
 
-        private AnswerField(String id, String questionText, EditText input, RadioGroup choices) {
+        private AnswerField(String id, String questionText, String type, boolean required, EditText input, RadioGroup choices) {
             this.id = id;
             this.questionText = questionText;
+            this.type = type;
+            this.required = required;
             this.input = input;
             this.choices = choices;
         }
 
-        static AnswerField text(String id, String questionText, EditText input) {
-            return new AnswerField(id, questionText, input, null);
+        static AnswerField text(String id, String questionText, boolean required, EditText input) {
+            return new AnswerField(id, questionText, "text", required, input, null);
         }
 
-        static AnswerField choice(String id, String questionText, RadioGroup choices) {
-            return new AnswerField(id, questionText, null, choices);
+        static AnswerField choice(String id, String questionText, String type, boolean required, RadioGroup choices) {
+            return new AnswerField(id, questionText, type, required, null, choices);
         }
 
-        String value() {
+        Object value() {
             if (input != null) {
                 return input.getText().toString().trim();
             }
@@ -331,7 +350,23 @@ public class TaskActivity extends Activity {
                 return null;
             }
             RadioButton button = choices.findViewById(checked);
-            return button == null ? null : button.getText().toString();
+            if (button == null) {
+                return null;
+            }
+            if ("yes_no".equals(type)) {
+                String selected = button.getText().toString().trim().toLowerCase(Locale.ITALY);
+                return "si".equals(selected) || "sì".equals(selected) || "yes".equals(selected) || "true".equals(selected);
+            }
+            if ("scale".equals(type)) {
+                String selected = button.getText().toString().trim();
+                try {
+                    double numeric = Double.parseDouble(selected);
+                    return numeric == Math.rint(numeric) ? (int) numeric : numeric;
+                } catch (NumberFormatException ignored) {
+                    return choices.indexOfChild(button);
+                }
+            }
+            return button.getText().toString();
         }
 
         void focus() {

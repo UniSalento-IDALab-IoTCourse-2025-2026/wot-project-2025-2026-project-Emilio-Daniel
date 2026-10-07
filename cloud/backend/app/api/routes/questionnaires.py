@@ -7,7 +7,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from app.api.routes.task_rules import QUESTION_TYPES, validate_task_creation_payload
+from app.api.routes.task_rules import QUESTION_TYPES, questionnaire_metadata, validate_task_creation_payload
 from app.api.routes.utils import paginated, utc_iso
 from app.auth.dependencies import CurrentUser, can_access_patient, get_current_user, write_audit
 from app.db.models import Patient, QuestionnaireSchedule, QuestionnaireTemplate, Task, TaskResult
@@ -254,8 +254,8 @@ def patient_questionnaire_results(
     ).all()
     items = []
     for result, task in rows:
-        questionnaire = (task.payload or {}).get("questionnaire")
-        if not isinstance(questionnaire, dict):
+        questionnaire = questionnaire_metadata(task.payload or {})
+        if not questionnaire:
             continue
         if template_key and questionnaire.get("template_key") != template_key:
             continue

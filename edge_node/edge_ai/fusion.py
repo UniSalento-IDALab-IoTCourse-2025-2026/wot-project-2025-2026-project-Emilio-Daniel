@@ -10,8 +10,8 @@ from edge_ai.schema import InferenceResult
 
 @dataclass(frozen=True)
 class FusionConfig:
-    generic_spatial_weight: float = 0.35
-    generic_wearable_weight: float = 0.35
+    generic_spatial_weight: float = 0.15
+    generic_wearable_weight: float = 0.55
     personal_weight: float = 0.30
     yellow_score: float = 35.0
     orange_score: float = 65.0
@@ -21,7 +21,9 @@ class FusionConfig:
     normal_label_max_score: float = 34.9
     normal_label_alert_floor: float = 60.0
     unconfirmed_generic_max_score: float = 79.9
+    unconfirmed_personal_max_score: float = 79.9
     disagreement_margin: float = 25.0
+    output_score_cap: float | None = None
 
 
 def fuse_model_results(
@@ -53,11 +55,12 @@ def fuse_model_results(
         normalized_weights,
         "model_decision_value",
     )
-    score, label, reasons = _fuse_scores(
+    uncapped_score, label, reasons = _fuse_scores(
         results=results,
         weighted_score=weighted_score,
         config=active_config,
     )
+    score = _apply_output_score_cap(uncapped_score, active_config.output_score_cap)
 
     base_result = _base_result(results)
     mode = "_plus_".join(name for name, _result in results)
@@ -77,6 +80,9 @@ def fuse_model_results(
             "personal": _result_summary(personal_result),
         },
     }
+    if active_config.output_score_cap is not None:
+        context["fusion"]["output_score_cap"] = round(float(active_config.output_score_cap), 3)
+        context["fusion"]["uncapped_score"] = round(float(uncapped_score), 3)
 
     return InferenceResult(
         patient_id=base_result.patient_id,
@@ -88,6 +94,14 @@ def fuse_model_results(
         feature_values=base_result.feature_values,
         context=context,
     )
+
+
+def _apply_output_score_cap(score: float, cap: float | None) -> float:
+    """Limita opzionalmente lo score operativo mantenendo intatto il calcolo."""
+    if cap is None:
+        return float(score)
+    normalized_cap = float(np.clip(cap, 0.0, 100.0))
+    return float(np.clip(score, 0.0, normalized_cap))
 
 
 def _available_results(
@@ -204,7 +218,13 @@ def _fuse_scores(
     if len(yellow_models) == 1:
         model_name = yellow_models[0]
         high_score = scores[model_name]
-        score = max(weighted_score, high_score - config.single_model_penalty)
+        if model_name == "personal":
+            # Il modello personale contribuisce soltanto con il peso assegnato.
+            # Un suo outlier non deve aggirare la fusione usando direttamente
+            # lo score grezzo, ne' produrre da solo un livello rosso.
+            score = min(weighted_score, config.unconfirmed_personal_max_score)
+        else:
+            score = max(weighted_score, high_score - config.single_model_penalty)
         if model_name.startswith("generic_"):
             # Un solo modello generico puo' essere utile per triage iniziale,
             # ma prima della baseline personale non deve generare da solo un

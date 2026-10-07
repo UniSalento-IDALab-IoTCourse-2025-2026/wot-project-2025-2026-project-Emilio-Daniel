@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.text.InputType;
+import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -44,6 +45,7 @@ public class MainActivity extends Activity {
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private AppPreferences preferences;
+    private LinearLayout mainContent;
     private LinearLayout loginPanel;
     private LinearLayout dailyPanel;
     private LinearLayout caregiverPanel;
@@ -131,6 +133,7 @@ public class MainActivity extends Activity {
     }
 
     private void bindViews() {
+        mainContent = findViewById(R.id.mainContent);
         loginPanel = findViewById(R.id.loginPanel);
         dailyPanel = findViewById(R.id.dailyPanel);
         caregiverPanel = findViewById(R.id.caregiverPanel);
@@ -235,6 +238,7 @@ public class MainActivity extends Activity {
     private void renderScreen() {
         boolean authenticated = preferences.isAuthenticated();
         boolean caregiver = authenticated && "caregiver".equals(preferences.userRole());
+        mainContent.setGravity(authenticated ? Gravity.TOP : Gravity.CENTER_VERTICAL);
         loginPanel.setVisibility(authenticated ? View.GONE : View.VISIBLE);
         caregiverPanel.setVisibility(caregiver ? View.VISIBLE : View.GONE);
         dailyPanel.setVisibility(authenticated && !caregiver ? View.VISIBLE : View.GONE);

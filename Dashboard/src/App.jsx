@@ -164,87 +164,51 @@ const taskTemplates = {
     scoring: null,
   },
   cognitive_short: {
-    label: "Test breve dimostrativo",
-    type: "cognitive_test",
-    title: "Test cognitivo breve",
-    instructions: "Completa il breve test dimostrativo proposto dal medico.",
-    expectedScore: "0-100, risposte esatte",
+    label: "Test cognitivo breve - benessere",
+    type: "check_in",
+    title: "Test cognitivo breve - benessere",
+    instructions: "Rispondi pensando a come ti senti oggi. Non ci sono risposte giuste o sbagliate.",
+    expectedScore: "Andamento del benessere percepito",
     payload: {
-      questionnaire: "short_cognitive_demo",
+      questionnaire: "short_wellbeing_checkin",
       questions: [
-        { id: "simple_sum", type: "text", text: "Quanto fa 2 + 2?" },
-        { id: "recall_word", type: "text", text: "Ripeti la parola indicata nell'app companion." },
+        { id: "overall", type: "scale", text: "Come valuti il tuo benessere generale oggi?", options: ["Molto basso", "Basso", "Discreto", "Buono", "Molto buono"] },
+        { id: "mood", type: "single_choice", text: "Quale descrizione rappresenta meglio il tuo umore?", options: ["Sereno", "Abbastanza sereno", "Preoccupato", "Triste", "Irritabile"] },
+        { id: "contact", type: "yes_no", text: "Vorresti essere contattato dal team di cura?" },
       ],
     },
-    scoring: {
-      type: "exact_match",
-      expected_answers: {
-        simple_sum: "4",
-        recall_word: "casa",
-      },
-    },
+    scoring: null,
   },
   mmse: {
-    label: "MMSE",
-    type: "cognitive_test",
-    title: "MMSE - somministrazione ufficiale",
-    instructions: "Esegui il test solo con supervisione clinica e modulo ufficiale autorizzato. La dashboard non riproduce gli item del test.",
-    expectedScore: "0-30, da modulo ufficiale",
+    label: "MMSE - check-in benessere",
+    type: "check_in",
+    title: "MMSE - check-in benessere",
+    instructions: "Breve autovalutazione sullo stato emotivo e sulla gestione della giornata.",
+    expectedScore: "Risposte descrittive, senza punteggio diagnostico",
     payload: {
-      questionnaire: "mmse_official_supervised",
-      license_note: "MMSE/MMSE-2 richiede verifica di licenza e uso del materiale ufficiale autorizzato.",
-      administration_mode: "clinician_supervised_official_form",
-      max_score: 30,
+      questionnaire: "mmse_wellbeing_checkin",
       questions: [
-        {
-          id: "official_total_score",
-          type: "number",
-          text: "Punteggio totale riportato dal modulo ufficiale autorizzato",
-          min: 0,
-          max: 30,
-        },
-        {
-          id: "clinical_domains_note",
-          type: "text",
-          text: "Nota sulle aree osservate, senza trascrivere domande o item del test",
-        },
+        { id: "mood", type: "scale", text: "Come descriveresti il tuo umore oggi?", options: ["Molto negativo", "Negativo", "Neutro", "Positivo", "Molto positivo"] },
+        { id: "clarity", type: "scale", text: "Quanto ti senti lucido e orientato nelle attivita di oggi?", options: ["Per niente", "Poco", "Abbastanza", "Molto", "Completamente"] },
+        { id: "worry", type: "yes_no", text: "Ti senti piu confuso o preoccupato del solito?" },
+        { id: "note", type: "text", text: "Vuoi aggiungere qualcosa su come ti senti?", required: false },
       ],
     },
     scoring: null,
   },
   moca: {
-    label: "MoCA",
-    type: "cognitive_test",
-    title: "MoCA - somministrazione ufficiale",
-    instructions: "Esegui il test solo con supervisione clinica e materiale MoCA autorizzato. La dashboard non riproduce gli item del test.",
-    expectedScore: "0-30, da modulo ufficiale",
+    label: "MoCA - check-in quotidiano",
+    type: "check_in",
+    title: "MoCA - check-in quotidiano",
+    instructions: "Racconta come stanno andando energia, autonomia e attivita quotidiane.",
+    expectedScore: "Andamento riferito dal paziente",
     payload: {
-      questionnaire: "moca_official_supervised",
-      license_note: "MoCA richiede rispetto delle condizioni ufficiali di uso, riproduzione e distribuzione.",
-      administration_mode: "clinician_supervised_official_form",
-      max_score: 30,
-      domains: [
-        "visuospaziale/esecutivo",
-        "denominazione",
-        "attenzione",
-        "linguaggio",
-        "astrazione",
-        "memoria differita",
-        "orientamento",
-      ],
+      questionnaire: "moca_daily_checkin",
       questions: [
-        {
-          id: "official_total_score",
-          type: "number",
-          text: "Punteggio totale riportato dal modulo ufficiale autorizzato",
-          min: 0,
-          max: 30,
-        },
-        {
-          id: "clinical_domains_note",
-          type: "text",
-          text: "Nota sulle aree osservate, senza trascrivere domande o item del test",
-        },
+        { id: "energy", type: "scale", text: "Quanta energia senti di avere oggi?", options: ["Nessuna", "Poca", "Moderata", "Buona", "Molta"] },
+        { id: "daily_tasks", type: "single_choice", text: "Come sono andate le normali attivita quotidiane?", options: ["Senza difficolta", "Con qualche difficolta", "Con molta difficolta", "Non sono riuscito a svolgerle"] },
+        { id: "sleep", type: "single_choice", text: "Come hai dormito?", options: ["Molto bene", "Bene", "Cosi cosi", "Male", "Molto male"] },
+        { id: "help", type: "yes_no", text: "Hai avuto bisogno di piu aiuto del solito?" },
       ],
     },
     scoring: null,
@@ -882,7 +846,7 @@ function Dashboard({ session, onLogout }) {
               {activeTab === "timeline" && <TimelineView data={state.data} />}
               {activeTab === "evaluations" && <EvaluationsView data={state.data} session={session} patientId={selectedPatientId} onChanged={() => loadPatientData(selectedPatientId, { background: true })} />}
               {activeTab === "day-profile" && <DayProfileView data={state.data} patient={selectedPatient} />}
-              {activeTab === "routine" && <RoutineView data={state.data} />}
+              {activeTab === "routine" && <RoutineView data={state.data} session={session} patientId={selectedPatientId} />}
               {activeTab === "alerts" && (
                 <AlertsView
                   data={state.data}
@@ -1301,10 +1265,10 @@ function PatientView({ data, patient, session, patientId, onChanged }) {
 
   return (
     <div className="content-grid">
-      <PatientClinicalHero current={current} patient={patient} stale={stale} />
+      <PatientClinicalHero current={current} patient={patient} stale={stale} system={data.system} />
 
       <section className="panel span-2">
-        <Summary24hPanel summary={data.summary24h} current={current} />
+        <Summary24hPanel summary={data.summary24h} current={current} windows={windows} />
       </section>
 
       <section className="panel span-2">
@@ -1451,7 +1415,7 @@ function PatientView({ data, patient, session, patientId, onChanged }) {
   );
 }
 
-function Summary24hPanel({ summary, current }) {
+function Summary24hPanel({ summary, current, windows = [] }) {
   if (!summary) {
     return (
       <div>
@@ -1472,10 +1436,10 @@ function Summary24hPanel({ summary, current }) {
   const ai = summary.ai ?? {};
   const spatial = summary.spatial ?? {};
   const wearable = summary.wearable ?? {};
-  const completeness = summary.data_completeness ?? summary.completeness ?? {};
   const baseline = summary.baseline ?? {};
   const roomMinutes = spatial.room_minutes ?? {};
-  const reliability = reliabilityFromCompleteness(completeness);
+  const heartRate = wearable.heart_rate?.average ?? wearable.heart_rate_mean ?? latestFeatureValue(windows, "heart_rate_mean");
+  const spo2 = wearable.spo2?.average ?? wearable.spo2_mean ?? latestFeatureValue(windows, "spo2_mean");
   const baselineText = baseline.baseline_available === false
     ? "Baseline personale non ancora pronta"
     : baseline.summary ?? baseline.message ?? "Confronto baseline disponibile";
@@ -1490,15 +1454,14 @@ function Summary24hPanel({ summary, current }) {
             <p className="panel-subtitle">Sintesi automatica per orientare la revisione, non una diagnosi.</p>
           </div>
         </div>
-        <span className={`badge reliability-${reliability.key}`}>Affidabilita {reliability.label}</span>
       </div>
       <div className="summary24-grid">
         <Metric icon={<Gauge size={18} />} label="Indice medio" value={scoreBandText(ai.mean_score ?? ai.average_score)} tone={aiScoreBand(ai.mean_score ?? ai.average_score).key} />
         <Metric icon={<AlertTriangle size={18} />} label="Picco massimo" value={scoreBandText(ai.max_score)} tone={aiScoreBand(ai.max_score).key} />
         <Metric icon={<MapPin size={18} />} label="Stanza prevalente" value={roomLabel(spatial.prevalent_room ?? current?.current_room)} />
         <Metric icon={<ArrowDownUp size={18} />} label="Cambi stanza" value={formatNumber(spatial.room_changes ?? spatial.transitions_count)} />
-        <Metric icon={<HeartPulse size={18} />} label="Battito medio" value={formatFeatureValue(wearable.heart_rate_mean, "bpm")} />
-        <Metric icon={<Watch size={18} />} label="SpO2" value={formatFeatureValue(wearable.spo2_mean, "%")} />
+        {!isMissingValue(heartRate) && <Metric icon={<HeartPulse size={18} />} label="Battito medio" value={formatFeatureValue(heartRate, "bpm")} />}
+        {!isMissingValue(spo2) && <Metric icon={<Watch size={18} />} label="SpO2" value={formatFeatureValue(spo2, "%")} />}
       </div>
       <div className="summary24-bottom">
         <div className="room-share-list">
@@ -1511,7 +1474,7 @@ function Summary24hPanel({ summary, current }) {
           )) : <p className="empty-text">Permanenze stanza non disponibili nelle ultime 24 ore.</p>}
         </div>
         <div className="summary24-note">
-          <strong>Confronto routine</strong>
+          <strong>Confronto personale</strong>
           <p>{baselineText}</p>
           <small>{summary.range?.start ? `${formatDateTime(summary.range.start)} - ${formatDateTime(summary.range.end)}` : "Intervallo non indicato"}</small>
         </div>
@@ -1540,9 +1503,6 @@ function MorningBriefPanel({ brief, windows, decisions }) {
             <p className="panel-subtitle">{payload.summary ?? fallback.summary}</p>
           </div>
         </div>
-        <span className={`badge reliability-${payload.confidence ?? "media"}`}>
-          {brief ? "calcolato dal backend" : "fallback demo"}
-        </span>
       </div>
       <div className="summary24-grid compact-summary-grid">
         {metrics.map((item) => (
@@ -1699,11 +1659,11 @@ function DayProfileOverlayChart({ profile, metric }) {
   );
 }
 
-function PatientClinicalHero({ current, patient, stale }) {
+function PatientClinicalHero({ current, patient, stale, system }) {
   const band = aiScoreBand(current.anomaly_score);
   const level = current.level ?? band.key ?? "green";
-  const wearablePresent = current.wearable_present ?? current.watch_present;
-  const edgeOnline = current.edge_online;
+  const wearablePresent = current.watch?.present ?? current.wearable_present ?? current.watch_present ?? system?.sensors?.watch?.present;
+  const edgeOnline = current.edge?.online ?? current.edge_online ?? system?.edge?.online;
   const displayName = patientDisplayName(patient, current.patient_id);
 
   return (
@@ -1718,7 +1678,6 @@ function PatientClinicalHero({ current, patient, stale }) {
           </div>
         </div>
         <div className="patient-clinical-score">
-          <span className={`clinical-level-badge ${level}`}>{levelLabel(level)}</span>
           <strong>{scoreBandText(current.anomaly_score)}</strong>
           <small>Indice AI</small>
         </div>
@@ -1999,7 +1958,6 @@ function AiExplanationPanel({ decision, system, current, decisions = [], modelMe
   const personalAvailable = personalModel?.available === true || system?.ai?.personal_model_available === true;
   const activeModels = models.filter((model) => model.available).length;
   const normalizedExplanation = decision?.ai_explanation ?? current?.ai_explanation ?? null;
-  const confidence = confidenceFromPayload(decision, current, system);
 
   if (!decision) {
     return (
@@ -2024,10 +1982,7 @@ function AiExplanationPanel({ decision, system, current, decisions = [], modelMe
       </div>
 
       <section className={`clinical-ai-summary ${finalLevel}`}>
-        <div className="score-with-confidence">
-          <ScoreGauge score={finalScore} level={finalLevel} />
-          <ConfidenceMiniBadge confidence={confidence} />
-        </div>
+        <ScoreGauge score={finalScore} level={finalLevel} />
         <div className="clinical-summary-copy">
           <span className="clinical-kicker">Valutazione corrente</span>
           <h4>{decisionHeadline(finalLevel)}</h4>
@@ -2042,10 +1997,7 @@ function AiExplanationPanel({ decision, system, current, decisions = [], modelMe
 
       <AdvancedAiExplanation explanation={normalizedExplanation} finalScore={finalScore} />
 
-      <div className="ai-support-grid">
-        <ConfidenceQualityPanel confidence={confidence} system={system} />
-        <ModelReliabilityPanel metrics={modelMetrics ?? decision?.model_metrics ?? system?.ai?.model_metrics} baseline={baseline} />
-      </div>
+      <ModelReliabilityPanel metrics={modelMetrics ?? decision?.model_metrics ?? system?.ai?.model_metrics} />
 
       <TrendDriftPanel
         decision={decision}
@@ -2252,44 +2204,39 @@ function ConfidenceQualityPanel({ confidence, system }) {
   );
 }
 
-function ModelReliabilityPanel({ metrics, baseline }) {
+function ModelReliabilityPanel({ metrics }) {
   const rows = normalizeModelMetrics(metrics);
-  const lastTraining = metrics?.last_training_at ?? metrics?.trained_at ?? metrics?.generated_at;
+  const f1Values = rows.map((row) => Number(row.f1)).filter(Number.isFinite);
+  const meanF1 = f1Values.length ? f1Values.reduce((total, value) => total + value, 0) / f1Values.length : null;
+  const normalizedF1 = meanF1 !== null && meanF1 <= 1 ? meanF1 * 100 : meanF1;
+  const reliability = normalizedF1 === null ? null : normalizedF1 >= 80 ? "Alta" : normalizedF1 >= 60 ? "Media" : "Bassa";
 
   return (
     <section className="ai-support-section model-reliability-panel">
       <div className="ai-section-heading compact-heading">
         <div>
           <h4>Affidabilita' modello</h4>
-          <p>Metriche di validazione, quando disponibili.</p>
+          <p>Indicatore sintetico ricavato dalla validazione dei modelli attivi.</p>
         </div>
-        <span className="badge">{rows.length ? "validazione disponibile" : "in attesa"}</span>
+        <span className="badge">{reliability ?? "In attesa"}</span>
       </div>
       {rows.length === 0 ? (
         <div className="baseline-empty compact-empty">
           <BrainCircuit size={20} />
           <div>
             <strong>Metriche non ancora disponibili</strong>
-            <p>Quando Daniel produrra i report D21, qui saranno mostrati precision, recall, F1 e finestre usate.</p>
+            <p>L'affidabilita comparira quando il backend avra prodotto le metriche di validazione.</p>
           </div>
         </div>
       ) : (
-        <div className="model-metrics-grid">
-          {rows.map((row) => (
-            <div key={row.key} className="model-metric-row">
-              <strong>{modelContributionLabel(row.key)}</strong>
-              <span>F1 {formatModelMetric(row.f1)}</span>
-              <span>Precision {formatModelMetric(row.precision)}</span>
-              <span>Recall {formatModelMetric(row.recall)}</span>
-              <small>{formatNumber(row.validation_rows, "0")} righe validation</small>
-            </div>
-          ))}
+        <div className="model-reliability-value">
+          <ShieldCheck size={24} />
+          <div>
+            <strong>{Number.isFinite(normalizedF1) ? `${Math.round(normalizedF1)}%` : "n/d"}</strong>
+            <span>Affidabilita complessiva {String(reliability).toLowerCase()}</span>
+          </div>
         </div>
       )}
-      <div className="model-reliability-meta">
-        <span>Ultimo training: <strong>{formatDateTime(lastTraining)}</strong></span>
-        <span>Finestre baseline: <strong>{formatNumber(baseline?.accepted_windows, "0")}</strong></span>
-      </div>
     </section>
   );
 }
@@ -2391,13 +2338,7 @@ function FusionWeights({ weights, personalAvailable }) {
           <strong>{entry.weight === null ? "n/d" : `${entry.weight.toFixed(0)}%`}</strong>
         </div>
       )) : <p className="empty-text">Pesi non disponibili nel payload corrente.</p>}
-      <div className="future-weight-note">
-        <UserRoundCheck size={18} />
-        <p>
-          <strong>Dopo la baseline:</strong> routine negli ambienti 15%, parametri wearable 15%, profilo personale 70%.
-          {!personalAvailable && " Fino ad allora il calcolo usa soltanto le fonti generali disponibili."}
-        </p>
-      </div>
+      {!personalAvailable && <p className="empty-text">Il calcolo usa le fonti generali finche il profilo personale non e disponibile.</p>}
     </div>
   );
 }
@@ -2556,7 +2497,7 @@ function WearableSpatialDashboard({ windows, current, onExpandChart }) {
           <FeatureTrendCard title="SpO2 media" feature="spo2_mean" unit="%" windows={windows} color="#17686c" onExpand={onExpandChart} />
           <FeatureTrendCard title="Passi" feature="steps" unit="" windows={windows} color="#4452ba" onExpand={onExpandChart} />
           <FeatureTrendCard title="Sonno" feature="sleep_minutes" unit="min" windows={windows} color="#6271d9" onExpand={onExpandChart} />
-          <FeatureTrendCard title="Sedentarieta" feature="sedentary_minutes" unit="min" windows={windows} color="#744d00" onExpand={onExpandChart} />
+          <FeatureTrendCard title="Sedentarieta" feature="sedentary_minutes" unit="min" windows={windows} color="#744d00" onExpand={onExpandChart} missingAsZero />
         </div>
       </section>
 
@@ -2607,10 +2548,11 @@ function DecisionScoreTrendPanel({ decisions, windows, onExpandChart }) {
   );
 }
 
-function FeatureTrendCard({ title, feature, unit, windows, color, onExpand, large = false, minimal = false }) {
-  const status = featureStatus(windows, feature);
-  const latest = latestFeatureValue(windows, feature);
-  const chartPayload = { title, feature, unit, color, windows, large, minimal };
+function FeatureTrendCard({ title, feature, unit, windows, color, onExpand, large = false, minimal = false, missingAsZero = false }) {
+  const displayWindows = missingAsZero ? windowsWithFeatureDefault(windows, feature, 0) : windows;
+  const status = featureStatus(displayWindows, feature);
+  const latest = latestFeatureValue(displayWindows, feature);
+  const chartPayload = { title, feature, unit, color, windows: displayWindows, large, minimal };
   function openChart(event) {
     event.preventDefault();
     event.stopPropagation();
@@ -2658,7 +2600,7 @@ function FeatureTrendCard({ title, feature, unit, windows, color, onExpand, larg
           <Maximize2 size={16} />
         </button>
       )}
-      <TrendChart windows={windows} feature={feature} color={color} unit={unit} title={title} large={large} minimal={minimal} />
+      <TrendChart windows={displayWindows} feature={feature} color={color} unit={unit} title={title} large={large} minimal={minimal} />
     </article>
   );
 }
@@ -3731,7 +3673,7 @@ function TimelineView({ data }) {
         <span className="badge">{events.length} eventi</span>
       </div>
       <div className="filter-toolbar timeline-toolbar">
-        <label>
+        <label className="timeline-type-filter">
           Tipo evento
           <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
             <option value="all">Tutti</option>
@@ -3766,6 +3708,16 @@ function TimelineView({ data }) {
       )}
     </section>
   );
+}
+
+function windowsWithFeatureDefault(windows, feature, defaultValue) {
+  return windows.map((window) => ({
+    ...window,
+    features: {
+      ...(window.features ?? {}),
+      [feature]: isMissingValue(window.features?.[feature]) ? defaultValue : window.features[feature],
+    },
+  }));
 }
 
 function EvaluationsView({ data, session, patientId, onChanged }) {
@@ -3871,24 +3823,28 @@ function EvaluationsView({ data, session, patientId, onChanged }) {
         <section className="evaluation-card">
           <h4>Programma questionario</h4>
           <div className="task-form-grid">
-            <PrettySelect
-              label="Questionario"
-              value={scheduleForm.templateId}
-              options={(data.questionnaireTemplates ?? []).map((template) => ({ value: template.template_id, label: template.title ?? template.name ?? template.template_id }))}
-              onChange={(value) => setScheduleForm((previous) => ({ ...previous, templateId: value }))}
-            />
-            <PrettySelect
-              label="Frequenza"
-              value={scheduleForm.frequency}
-              options={[{ value: "daily", label: "Giornaliera" }, { value: "weekly", label: "Settimanale" }]}
-              onChange={(value) => setScheduleForm((previous) => ({ ...previous, frequency: value }))}
-            />
-            <PrettySelect
-              label="Priorita"
-              value={scheduleForm.priority}
-              options={priorityOptions}
-              onChange={(value) => setScheduleForm((previous) => ({ ...previous, priority: value }))}
-            />
+            <label>
+              Questionario
+              <select value={scheduleForm.templateId} onChange={(event) => setScheduleForm((previous) => ({ ...previous, templateId: event.target.value }))}>
+                <option value="" disabled>Seleziona questionario</option>
+                {(data.questionnaireTemplates ?? []).map((template) => (
+                  <option key={template.template_id} value={template.template_id}>{template.title ?? template.name ?? template.template_id}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Frequenza
+              <select value={scheduleForm.frequency} onChange={(event) => setScheduleForm((previous) => ({ ...previous, frequency: event.target.value }))}>
+                <option value="daily">Giornaliera</option>
+                <option value="weekly">Settimanale</option>
+              </select>
+            </label>
+            <label>
+              Priorita
+              <select value={scheduleForm.priority} onChange={(event) => setScheduleForm((previous) => ({ ...previous, priority: event.target.value }))}>
+                {priorityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
             <label>
               Primo invio
               <input type="datetime-local" value={scheduleForm.nextRunAt} onChange={(event) => setScheduleForm((previous) => ({ ...previous, nextRunAt: event.target.value }))} />
@@ -3951,9 +3907,34 @@ function EvaluationsView({ data, session, patientId, onChanged }) {
   );
 }
 
-function RoutineView({ data }) {
-  const summary = data.spatialSummary;
+function RoutineView({ data, session, patientId }) {
   const [days, setDays] = useState("7");
+  const [summary, setSummary] = useState(data.spatialSummary);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setSummary(data.spatialSummary);
+  }, [data.spatialSummary, patientId]);
+
+  useEffect(() => {
+    if (!patientId || data._offline) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    api.spatialSummary(patientId, session, { days: Number(days) })
+      .then((payload) => {
+        if (!cancelled) setSummary(payload);
+      })
+      .catch((apiError) => {
+        if (!cancelled) setError(readableApiError(apiError));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [days, patientId, session?.access_token, data._offline]);
+
   if (!summary) {
     return (
       <section className="panel page-panel">
@@ -3977,12 +3958,16 @@ function RoutineView({ data }) {
             <p>Permanenze, transizioni e movimenti notturni rilevati dai beacon.</p>
           </div>
         </div>
-        <select value={days} onChange={(event) => setDays(event.target.value)} aria-label="Periodo routine">
-          <option value="1">Oggi</option>
-          <option value="2">Oggi e ieri</option>
-          <option value="7">Settimana</option>
-        </select>
+        <label className="routine-period-select">
+          <span>Periodo</span>
+          <select value={days} onChange={(event) => setDays(event.target.value)} aria-label="Periodo routine" disabled={loading}>
+            <option value="1">Oggi</option>
+            <option value="2">Oggi e ieri</option>
+            <option value="7">Ultimi 7 giorni</option>
+          </select>
+        </label>
       </div>
+      {error && <p className="inline-feedback error"><AlertTriangle size={17} />{error}</p>}
       <div className="routine-summary-grid">
         <Metric icon={<MapPin size={18} />} label="Stanza prevalente" value={roomLabel(summary.prevalent_room)} />
         <Metric icon={<ArrowDownUp size={18} />} label="Transizioni" value={formatNumber(summary.room_changes ?? summary.transitions_count)} />
@@ -4026,6 +4011,10 @@ function RoutineView({ data }) {
 function ReportView({ data, patient }) {
   const report = data.reportData;
   const displayName = patientDisplayName(patient, data.current?.patient_id);
+  const reliabilityRows = normalizeModelMetrics(data.modelMetrics);
+  const reliabilityValues = reliabilityRows.map((metric) => Number(metric.f1)).filter(Number.isFinite);
+  const reliabilityMean = reliabilityValues.length ? reliabilityValues.reduce((total, value) => total + value, 0) / reliabilityValues.length : null;
+  const reliabilityPercent = reliabilityMean !== null ? (reliabilityMean <= 1 ? reliabilityMean * 100 : reliabilityMean) : null;
   const printable = report ?? {
     patient: { display_name: displayName, patient_id: data.current?.patient_id },
     current: data.current,
@@ -4054,7 +4043,7 @@ function ReportView({ data, patient }) {
       <article className="print-report">
         <header>
           <div>
-            <span className="clinical-kicker">Supporto al triage</span>
+            <span className="clinical-kicker">Report clinico sintetico</span>
             <h3>{displayName}</h3>
           </div>
           <span>Generato: {formatDateTime(new Date().toISOString())}</span>
@@ -4071,17 +4060,7 @@ function ReportView({ data, patient }) {
         </section>
         <section>
           <h4>Affidabilita modello</h4>
-          {normalizeModelMetrics(data.modelMetrics).length === 0 ? (
-            <p>Metriche di validazione non ancora disponibili dal backend.</p>
-          ) : (
-            <ul className="report-list">
-              {normalizeModelMetrics(data.modelMetrics).slice(0, 3).map((metric) => (
-                <li key={metric.key}>
-                  {modelContributionLabel(metric.key)} - F1 {formatModelMetric(metric.f1)}, precision {formatModelMetric(metric.precision)}, recall {formatModelMetric(metric.recall)}
-                </li>
-              ))}
-            </ul>
-          )}
+          <p>{Number.isFinite(reliabilityPercent) ? `${Math.round(reliabilityPercent)}% complessiva` : "Non ancora disponibile"}</p>
         </section>
         <DayProfileReportSection data={data} />
         <section>
@@ -4121,6 +4100,14 @@ function DayProfileReportSection({ data }) {
 function WeeklyReportsSection({ reports }) {
   const items = Array.isArray(reports) ? reports : [];
   const [selectedReportId, setSelectedReportId] = useState(items[0]?.report_id ?? items[0]?.week_start ?? "0");
+  useEffect(() => {
+    if (items.length === 0) {
+      setSelectedReportId("0");
+      return;
+    }
+    const selectionExists = items.some((report, index) => String(report.report_id ?? report.week_start ?? index) === String(selectedReportId));
+    if (!selectionExists) setSelectedReportId(String(items[0].report_id ?? items[0].week_start ?? 0));
+  }, [reports, selectedReportId]);
   const selected = items.find((report, index) => String(report.report_id ?? report.week_start ?? index) === String(selectedReportId)) ?? items[0] ?? null;
   return (
     <section className="weekly-report-section">
@@ -5458,7 +5445,7 @@ function TaskDetailPanel({ task, noteDraft, busy, offline = false, onClose, onNo
                 {answers.map((answer, index) => (
                   <React.Fragment key={`${answer.question_id ?? "answer"}-${index}`}>
                     <dt>{answer.question_text ?? answer.question_id ?? `Risposta ${index + 1}`}</dt>
-                    <dd>{String(answer.value ?? answer.answer ?? "n/d")}</dd>
+                    <dd>{String(answer.display_value ?? answer.value ?? answer.answer ?? "n/d")}</dd>
                   </React.Fragment>
                 ))}
               </dl>

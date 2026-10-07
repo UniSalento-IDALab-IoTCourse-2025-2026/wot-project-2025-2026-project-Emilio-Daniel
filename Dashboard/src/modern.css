@@ -220,6 +220,15 @@ button:focus-visible {
   gap: 14px;
 }
 
+.summary24-bottom > *,
+.routine-layout > *,
+.evaluation-grid > *,
+.day-profile-layout > * {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .summary24-note,
 .routine-card,
 .evaluation-card,
@@ -229,6 +238,21 @@ button:focus-visible {
   border-radius: 8px;
   background: var(--surface-soft);
   padding: 16px;
+}
+
+.evaluation-card,
+.routine-card,
+.day-profile-chart-card,
+.day-profile-aside {
+  overflow: hidden;
+}
+
+.evaluation-card .task-form-grid,
+.evaluation-card .template-list,
+.evaluation-card .schedule-list,
+.evaluation-card .result-list {
+  width: 100%;
+  min-width: 0;
 }
 
 .summary24-note strong,
@@ -278,16 +302,27 @@ button:focus-visible {
 }
 
 .timeline-toolbar {
+  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
   align-items: end;
   margin-bottom: 16px;
 }
 
-.timeline-toolbar .window-interval-filters {
-  flex: 1 1 520px;
+.timeline-toolbar .timeline-type-filter {
+  min-width: 0;
+}
+
+.timeline-toolbar .window-interval-filter {
   margin: 0;
   padding: 0;
   border: 0;
   background: transparent;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.timeline-toolbar .window-interval-filter label {
+  flex: 1 1 110px;
+  min-width: 90px;
 }
 
 .timeline-list {
@@ -504,6 +539,18 @@ button:focus-visible {
   padding-bottom: 14px;
   margin-bottom: 14px;
   border-bottom: 1px solid var(--line);
+}
+
+.print-report {
+  display: grid;
+  gap: 18px;
+  background: #ffffff;
+}
+
+.print-report > section,
+.weekly-report-section {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 16px;
 }
 
 .report-list {
@@ -5660,6 +5707,62 @@ button:focus-visible {
   gap: 16px;
 }
 
+.day-profile-page > .day-profile-toolbar,
+.day-profile-page > .day-profile-layout,
+.evaluations-page > .evaluation-grid,
+.routine-page > .routine-summary-grid,
+.routine-page > .routine-layout,
+.routine-page > .inline-feedback {
+  margin-left: 22px;
+  margin-right: 22px;
+}
+
+.day-profile-page > .day-profile-layout,
+.evaluations-page > .evaluation-grid:last-child,
+.routine-page > .routine-layout {
+  margin-bottom: 22px;
+}
+
+.report-page > .print-report {
+  margin: 18px 22px 22px;
+}
+
+.routine-layout {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.routine-period-select {
+  min-width: 190px;
+  display: grid;
+  gap: 5px;
+  color: var(--ink-600);
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.routine-period-select select,
+.weekly-report-toolbar select {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0 38px 0 12px;
+  color: var(--ink-800);
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--ink-600) 50%) calc(100% - 18px) 18px / 6px 6px no-repeat,
+    linear-gradient(135deg, var(--ink-600) 50%, transparent 50%) calc(100% - 13px) 18px / 6px 6px no-repeat,
+    #ffffff;
+  font-weight: 800;
+}
+
+.routine-period-select select:focus,
+.weekly-report-toolbar select:focus {
+  border-color: #7fb2b2;
+  outline: 0;
+  box-shadow: 0 0 0 4px rgba(127, 178, 178, 0.16);
+}
+
 .day-profile-toolbar button {
   min-height: 38px;
   border: 1px solid var(--line-strong);
@@ -5757,11 +5860,15 @@ button:focus-visible {
 }
 
 .weekly-report-toolbar {
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   display: flex;
   flex-wrap: wrap;
   align-items: end;
   gap: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-soft);
 }
 
 .weekly-report-toolbar label {
@@ -5786,6 +5893,34 @@ button:focus-visible {
 
 .weekly-report-selected .report-grid {
   margin-top: 10px;
+}
+
+.model-reliability-value {
+  min-height: 92px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--teal-700);
+  background: #ffffff;
+}
+
+.model-reliability-value div {
+  display: grid;
+  gap: 3px;
+}
+
+.model-reliability-value strong {
+  color: var(--ink-900);
+  font-size: 1.35rem;
+}
+
+.model-reliability-value span {
+  color: var(--ink-700);
+  font-size: 0.82rem;
+  font-weight: 750;
 }
 
 .score-with-confidence {
@@ -5829,5 +5964,14 @@ button:focus-visible {
 @media (max-width: 980px) {
   .day-profile-layout {
     grid-template-columns: 1fr;
+  }
+
+  .routine-layout,
+  .timeline-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .timeline-toolbar .window-interval-filter {
+    flex-wrap: wrap;
   }
 }

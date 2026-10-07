@@ -157,6 +157,67 @@ def test_invalid_checkin_answer_is_rejected(client: TestClient) -> None:
     assert result.status_code == 422
 
 
+def test_manual_android_questionnaire_result_reaches_dashboard_history(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/patients/patient-001/tasks",
+        json={
+            "type": "check_in",
+            "title": "Test cognitivo breve - benessere",
+            "payload": {
+                "questionnaire": "short_wellbeing_checkin",
+                "questions": [
+                    {
+                        "id": "overall",
+                        "type": "scale",
+                        "text": "Come valuti il tuo benessere generale oggi?",
+                        "options": ["Molto basso", "Basso", "Discreto", "Buono", "Molto buono"],
+                    },
+                    {"id": "contact", "type": "yes_no", "text": "Vuoi essere contattato?"},
+                    {"id": "note", "type": "text", "text": "Nota facoltativa", "required": False},
+                ],
+            },
+        },
+        headers=auth_headers(client, DOCTOR_EMAIL),
+    )
+    assert created.status_code == 200
+
+    submitted = client.post(
+        f"/api/v1/tasks/{created.json()['task_id']}/results",
+        json={
+            "patient_id": "patient-001",
+            "message_id": "android-manual-result-001",
+            "completed_at": "2026-07-16T10:03:00Z",
+            "duration_seconds": 45,
+            "answers": [
+                {"question_id": "overall", "value": "Buono"},
+                {"question_id": "contact", "value": False},
+            ],
+            "device_info": {"device_id": "android-test", "platform": "android"},
+        },
+        headers=auth_headers(client, PATIENT_EMAIL),
+    )
+    assert submitted.status_code == 200
+    assert submitted.json()["answers"][0]["value"] == 3
+    assert submitted.json()["answers"][0]["display_value"] == "Buono"
+    assert submitted.json()["answers"][0]["question_text"].startswith("Come valuti")
+
+    history = client.get(
+        "/api/v1/questionnaires/patients/patient-001/results",
+        headers=auth_headers(client, DOCTOR_EMAIL),
+    )
+    assert history.status_code == 200
+    assert history.json()["items"][0]["task_id"] == created.json()["task_id"]
+    assert history.json()["items"][0]["template_key"] == "short_wellbeing_checkin"
+
+    tasks = client.get(
+        "/api/v1/patients/patient-001/tasks",
+        headers=auth_headers(client, DOCTOR_EMAIL),
+    )
+    completed = next(item for item in tasks.json()["items"] if item["task_id"] == created.json()["task_id"])
+    assert completed["status"] == "completed"
+    assert completed["result"]["answers"][0]["value"] == 3
+
+
 def create_template(client: TestClient):
     return client.post(
         "/api/v1/questionnaires/templates",

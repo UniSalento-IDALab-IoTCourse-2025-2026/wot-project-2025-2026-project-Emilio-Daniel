@@ -615,7 +615,7 @@ def _run_inference(
     solo i due generici; dopo la baseline si aggiunge quello personale. La
     fusione normalizza automaticamente i pesi sui modelli presenti.
     """
-    from edge_ai.fusion import fuse_model_results
+    from edge_ai.fusion import FusionConfig, fuse_model_results
     from edge_ai.features import latest_record, load_feature_frame
     from edge_ai.model import EdgeAnomalyDetector
 
@@ -646,6 +646,7 @@ def _run_inference(
         generic_spatial_result=generic_spatial_result,
         generic_wearable_result=generic_wearable_result,
         personal_result=personal_result,
+        config=FusionConfig(output_score_cap=44.99),
     )
 
     debouncer = AlertDebouncer.load(state_path)

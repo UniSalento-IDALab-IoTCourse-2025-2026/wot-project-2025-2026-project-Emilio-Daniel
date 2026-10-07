@@ -12,6 +12,7 @@ from app.api.routes.task_rules import (
     effective_task_status,
     ensure_task_can_be_completed,
     is_patient_message_task,
+    questionnaire_metadata,
     score_task_result_details,
     validate_questionnaire_result,
 )
@@ -100,6 +101,7 @@ def create_task_result(
         )
     )
     if is_questionnaire_task(task.payload or {}):
+        questionnaire = questionnaire_metadata(task.payload or {})
         event_bus.publish(
             InternalEvent(
                 event_type="questionnaire_completed",
@@ -108,7 +110,7 @@ def create_task_result(
                 payload={
                     "task_id": f"task-{task.id}",
                     "result_id": f"result-{result.id}",
-                    "template_key": (task.payload or {}).get("questionnaire", {}).get("template_key"),
+                    "template_key": questionnaire.get("template_key"),
                 },
             )
         )

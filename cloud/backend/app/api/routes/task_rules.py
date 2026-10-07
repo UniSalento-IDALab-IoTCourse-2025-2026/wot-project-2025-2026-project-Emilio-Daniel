@@ -116,7 +116,15 @@ def validate_questionnaire_result(task_payload: dict[str, Any], answers: Any) ->
         question = question_map[question_id]
         value = validate_answer_value(question, answer.get("value"))
         answered_ids.add(question_id)
-        normalized_answers.append({"question_id": question_id, "value": value})
+        normalized_answer = {
+            "question_id": question_id,
+            "question_text": str(question.get("text") or question_id),
+            "value": value,
+        }
+        display_value = answer_display_value(question, value)
+        if display_value is not None:
+            normalized_answer["display_value"] = display_value
+        normalized_answers.append(normalized_answer)
 
     missing_required = [
         str(question.get("id"))
@@ -137,6 +145,22 @@ def questionnaire_questions(task_payload: dict[str, Any]) -> list[dict[str, Any]
     return questions if isinstance(questions, list) else []
 
 
+def questionnaire_metadata(task_payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalizza il riferimento al questionario per task programmati o manuali."""
+    questionnaire = task_payload.get("questionnaire")
+    if isinstance(questionnaire, dict):
+        return questionnaire
+    content = task_payload.get("content")
+    if not isinstance(content, dict):
+        content = task_payload
+    questionnaire = content.get("questionnaire")
+    if isinstance(questionnaire, dict):
+        return questionnaire
+    if isinstance(questionnaire, str) and questionnaire.strip():
+        return {"template_key": questionnaire.strip()}
+    return {}
+
+
 def validate_answer_value(question: dict[str, Any], value: Any) -> Any:
     """Controlla una singola risposta in base al tipo domanda."""
     question_type = str(question.get("type") or "").strip().lower()
@@ -149,6 +173,12 @@ def validate_answer_value(question: dict[str, Any], value: Any) -> Any:
             return value.strip().lower() in {"yes", "si", "sì", "true"}
         raise HTTPException(status_code=422, detail=f"Question {question.get('id')} requires yes/no value.")
     if question_type == "scale":
+        options = question.get("options")
+        if isinstance(value, str) and isinstance(options, list) and value in choice_values(options):
+            value = next(
+                index for index, option in enumerate(options)
+                if (option.get("value") if isinstance(option, dict) else option) == value
+            )
         try:
             numeric_value = float(value)
         except (TypeError, ValueError) as exc:
@@ -166,6 +196,22 @@ def validate_answer_value(question: dict[str, Any], value: Any) -> Any:
     if not isinstance(value, str):
         raise HTTPException(status_code=422, detail=f"Question {question.get('id')} requires text value.")
     return value.strip()
+
+
+def answer_display_value(question: dict[str, Any], value: Any) -> str | None:
+    """Mantiene una rappresentazione leggibile della risposta per la dashboard."""
+    question_type = str(question.get("type") or "").strip().lower()
+    if question_type == "yes_no" and isinstance(value, bool):
+        return "Si" if value else "No"
+    if question_type == "scale" and isinstance(value, (int, float)):
+        options = question.get("options")
+        index = int(value)
+        if isinstance(options, list) and float(value).is_integer() and 0 <= index < len(options):
+            option = options[index]
+            if isinstance(option, dict):
+                return str(option.get("label") or option.get("value") or value)
+            return str(option)
+    return None
 
 
 def choice_values(options: Any) -> set[Any]:

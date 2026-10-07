@@ -13,17 +13,77 @@ $BackupDir = Join-Path $Cloud "backups"
 $AuditArg = if ($IncludeAudit) { @("--include-audit") } else { @() }
 $ScopeArg = if ($TelemetryOnly) { @("--telemetry-only") } else { @() }
 
+function Invoke-DockerNative {
+    param([Parameter(Mandatory = $true)][string[]] $Arguments)
+
+    $PreviousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $Output = @(& docker @Arguments 2>&1)
+        $ExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $PreviousPreference
+    }
+    return [PSCustomObject]@{
+        ExitCode = $ExitCode
+        Output = $Output
+    }
+}
+
+function Invoke-DockerChecked {
+    param(
+        [Parameter(Mandatory = $true)][string[]] $Arguments,
+        [Parameter(Mandatory = $true)][string] $FailureMessage
+    )
+
+    $Result = Invoke-DockerNative -Arguments $Arguments
+    if ($Result.ExitCode -ne 0) {
+        $Details = ($Result.Output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+        throw "$FailureMessage`n$Details"
+    }
+    return $Result.Output
+}
+
+function Test-ComposeServiceRunning {
+    param([Parameter(Mandatory = $true)][string] $Service)
+
+    $Result = Invoke-DockerNative -Arguments @("compose", "ps", "--status", "running", "--services")
+    return $Result.ExitCode -eq 0 -and $Result.Output -contains $Service
+}
+
+function Wait-PostgresReady {
+    for ($Attempt = 0; $Attempt -lt 30; $Attempt++) {
+        $Ready = $false
+        $Result = Invoke-DockerNative -Arguments @(
+            "compose", "exec", "-T", "postgres", "sh", "-c",
+            'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+        )
+        $Ready = $Result.ExitCode -eq 0
+        if ($Ready) { return }
+        Start-Sleep -Seconds 2
+    }
+    throw "PostgreSQL non pronto dopo 60 secondi."
+}
+
 Push-Location $Cloud
 try {
-    docker compose ps --status running --services | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $ComposeStatus = Invoke-DockerNative -Arguments @("compose", "ps", "--status", "running", "--services")
+    if ($ComposeStatus.ExitCode -ne 0) {
         throw "Stack Docker non raggiungibile. Avviare prima Docker Desktop e lo stack PC."
     }
 
+    if (-not (Test-ComposeServiceRunning -Service "postgres")) {
+        Write-Host "PostgreSQL non attivo: avvio del servizio..."
+        Invoke-DockerChecked -Arguments @("compose", "up", "-d", "postgres") `
+            -FailureMessage "Impossibile avviare PostgreSQL." | Out-Null
+    }
+    Wait-PostgresReady
+
     if (-not $Execute) {
-        docker compose exec -T backend python -m scripts.reset_patient_data `
-            --patient-id $PatientId @AuditArg @ScopeArg
-        if ($LASTEXITCODE -ne 0) { throw "Anteprima pulizia fallita." }
+        $PreviewArguments = @("compose", "exec", "-T", "backend", "python", "-m", "scripts.reset_patient_data", "--patient-id", $PatientId)
+        $PreviewArguments += $AuditArg
+        $PreviewArguments += $ScopeArg
+        Invoke-DockerChecked -Arguments $PreviewArguments -FailureMessage "Anteprima pulizia fallita." | ForEach-Object { Write-Host $_ }
         Write-Host "Anteprima soltanto: nessun dato e' stato modificato."
         Write-Host "Per eseguire: aggiungere -Execute -ConfirmPatientId $PatientId"
         exit 0
@@ -41,28 +101,41 @@ try {
     $ServicesStopped = $false
 
     try {
-        docker compose stop backend-mqtt-worker backend
-        if ($LASTEXITCODE -ne 0) { throw "Impossibile fermare backend e worker." }
+        Invoke-DockerChecked -Arguments @("compose", "stop", "backend-mqtt-worker", "backend") `
+            -FailureMessage "Impossibile fermare backend e worker." | Out-Null
         $ServicesStopped = $true
 
-        docker compose exec -T postgres sh -c `
-            'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f "$1"' `
-            -- $ContainerBackup
-        if ($LASTEXITCODE -ne 0) { throw "Backup PostgreSQL fallito." }
+        Invoke-DockerChecked -Arguments @(
+            "compose", "exec", "-T", "postgres", "sh", "-c",
+            'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f "$1"',
+            "--", $ContainerBackup
+        ) -FailureMessage "Backup PostgreSQL fallito." | Out-Null
 
-        docker cp "iot-postgres:$ContainerBackup" $LocalBackup
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $LocalBackup)) {
+        Invoke-DockerChecked -Arguments @("cp", "iot-postgres:$ContainerBackup", $LocalBackup) `
+            -FailureMessage "Copia locale del backup fallita." | Out-Null
+        if (-not (Test-Path -LiteralPath $LocalBackup)) {
             throw "Copia locale del backup fallita."
         }
 
-        docker compose run --rm --no-deps backend python -m scripts.reset_patient_data `
-            --patient-id $PatientId --execute --confirm $ConfirmPatientId @AuditArg @ScopeArg
-        if ($LASTEXITCODE -ne 0) { throw "Pulizia database fallita; il backup resta disponibile." }
+        $ResetArguments = @(
+            "compose", "run", "--rm", "--no-deps", "backend", "python", "-m", "scripts.reset_patient_data",
+            "--patient-id", $PatientId, "--execute", "--confirm", $ConfirmPatientId
+        )
+        $ResetArguments += $AuditArg
+        $ResetArguments += $ScopeArg
+        Invoke-DockerChecked -Arguments $ResetArguments `
+            -FailureMessage "Pulizia database fallita; il backup resta disponibile." | ForEach-Object { Write-Host $_ }
     } finally {
-        docker compose exec -T postgres rm -f $ContainerBackup 2>$null
+        try {
+            if (Test-ComposeServiceRunning -Service "postgres") {
+                Invoke-DockerNative -Arguments @("compose", "exec", "-T", "postgres", "rm", "-f", $ContainerBackup) | Out-Null
+            }
+        } catch {
+            Write-Warning "Impossibile rimuovere il backup temporaneo dal container PostgreSQL."
+        }
         if ($ServicesStopped) {
-            docker compose start backend | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Backend non riavviato correttamente." }
+            Invoke-DockerChecked -Arguments @("compose", "start", "backend") `
+                -FailureMessage "Backend non riavviato correttamente." | Out-Null
 
             $Ready = $false
             for ($i = 0; $i -lt 30; $i++) {
@@ -74,8 +147,8 @@ try {
             }
             if (-not $Ready) { throw "Backend non pronto dopo la pulizia." }
 
-            docker compose start backend-mqtt-worker | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Worker MQTT non riavviato correttamente." }
+            Invoke-DockerChecked -Arguments @("compose", "start", "backend-mqtt-worker") `
+                -FailureMessage "Worker MQTT non riavviato correttamente." | Out-Null
         }
     }
 
