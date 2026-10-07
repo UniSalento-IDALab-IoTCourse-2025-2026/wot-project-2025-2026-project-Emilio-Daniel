@@ -69,7 +69,10 @@ scelti per la consegna sono:
 
 | Componente | Repository dell'organizzazione |
 | --- | --- |
-| Applicazione completa automatizzata | [https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-project-Emilio-Daniel.git]
+| Edge e gateway | [wot-project-2025-2026-edge-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-edge-Pascadopoli-Spedicato) |
+| Cloud e backend | [wot-project-2025-2026-cloud-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-cloud-Pascadopoli-Spedicato) |
+| Dashboard web | [wot-project-2025-2026-dashboard-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-dashboard-Pascadopoli-Spedicato) |
+| App Android | [wot-project-2025-2026-android-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-android-Pascadopoli-Spedicato) |
 | Sito di presentazione | [wot-project-2025-2026-presentation-Pascadopoli-Spedicato](https://github.com/UniSalento-IDALab-IoTCourse-2025-2026/wot-project-2025-2026-presentation-Pascadopoli-Spedicato) |
 
 Se un collegamento restituisce `404`, il repository corrispondente deve ancora essere
