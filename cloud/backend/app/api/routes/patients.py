@@ -724,6 +724,7 @@ def current_payload(db: Session, patient: Patient) -> dict[str, Any]:
     decision = latest_decision(db, patient.patient_id)
     window = latest_feature_window(db, patient.patient_id)
     edge = latest_edge_device(db, patient.patient_id)
+    cycle = latest_edge_cycle(db, patient.patient_id)
     features = window.features if window else {}
     level = decision.level if decision else "green"
     last_update = decision.timestamp if decision else (window.window_end if window else None)
@@ -731,7 +732,10 @@ def current_payload(db: Session, patient: Patient) -> dict[str, Any]:
         last_update = edge.last_seen_at if edge else datetime.now(timezone.utc)
     available_features = [key for key, value in features.items() if value is not None]
     current_room = infer_current_room(features)
-    edge_online = edge.status == "online" if edge else False
+    settings = get_settings()
+    edge_last_seen = cycle.timestamp if cycle else (edge.last_seen_at if edge else None)
+    edge_online = is_recent(edge_last_seen, now=datetime.now(timezone.utc), stale_minutes=settings.edge_stale_minutes)
+    watch_present = wearable_is_present(features)
     quality_status = quality_status_from_decision(decision)
     return {
         "patient_id": patient.patient_id,
@@ -749,7 +753,7 @@ def current_payload(db: Session, patient: Patient) -> dict[str, Any]:
         "feature_importance": feature_importance_from_payload(decision),
         "current_room": current_room,
         "watch": {
-            "present": bool(features.get("wearable_present")) if features else False,
+            "present": watch_present,
             "battery_pct": features.get("wearable_battery_pct"),
             "available_features": available_features,
         },
@@ -757,9 +761,35 @@ def current_payload(db: Session, patient: Patient) -> dict[str, Any]:
             "online": edge_online,
             "quality_status": quality_status,
             "mqtt_queue_depth": mqtt_queue_depth(decision),
-            "last_seen_at": utc_iso(edge.last_seen_at) if edge else None,
+            "last_seen_at": utc_iso(edge_last_seen),
         },
     }
+
+
+def wearable_is_present(features: dict[str, Any]) -> bool:
+    """Interpreta il flag wearable e, se assente, lo deduce dalle misure ricevute."""
+    explicit = features.get("wearable_present") if features else None
+    if isinstance(explicit, bool):
+        return explicit
+    if isinstance(explicit, (int, float)):
+        return explicit != 0
+    if isinstance(explicit, str):
+        normalized = explicit.strip().lower()
+        if normalized in {"true", "1", "yes", "si", "present", "available"}:
+            return True
+        if normalized in {"false", "0", "no", "absent", "missing", "unavailable"}:
+            return False
+    wearable_features = (
+        "heart_rate_mean",
+        "heart_rate_std",
+        "resting_heart_rate",
+        "hrv_rmssd",
+        "spo2_mean",
+        "steps",
+        "sleep_minutes",
+        "wearable_battery_pct",
+    )
+    return any(features.get(key) is not None for key in wearable_features)
 
 
 def feature_windows_between(db: Session, patient_id: str, start: datetime, end: datetime) -> list[FeatureWindow]:

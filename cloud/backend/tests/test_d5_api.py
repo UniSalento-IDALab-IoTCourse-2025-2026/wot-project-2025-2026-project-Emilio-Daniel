@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.auth.security import hash_password
+from app.api.routes.patients import wearable_is_present
 from app.db import models  # noqa: F401
 from app.db.base import Base
 from app.db.models import (
@@ -228,6 +229,13 @@ def test_login_and_patient_current(client: TestClient) -> None:
     assert body["current_room"] == "kitchen"
     assert body["watch"]["present"] is True
     assert body["edge"]["online"] is True
+
+
+def test_wearable_presence_parses_flags_and_infers_measurements() -> None:
+    assert wearable_is_present({"wearable_present": "false", "heart_rate_mean": 70}) is False
+    assert wearable_is_present({"wearable_present": "true"}) is True
+    assert wearable_is_present({"heart_rate_mean": 70}) is True
+    assert wearable_is_present({"sedentary_minutes": 0}) is False
 
 
 def test_windows_decisions_and_system_status(client: TestClient) -> None:
